@@ -19,6 +19,9 @@ export const IPC = {
   SET_CHROME_OVERLAY: 'chrome:set-overlay',
   SET_TOOLBAR_POPOVER_OPEN: 'chrome:set-toolbar-popover-open',
   CHROME_READY: 'chrome:ready',
+  /** The first-run onboarding flow was finished (or skipped through) -
+   * see main/onboardingStore.ts. */
+  COMPLETE_ONBOARDING: 'chrome:complete-onboarding',
   DELETE_HISTORY_ENTRY: 'chrome:delete-history-entry',
   CLEAR_HISTORY: 'chrome:clear-history',
   REQUEST_HISTORY_PAGE: 'chrome:request-history-page',
@@ -96,6 +99,9 @@ export const IPC = {
   MCP_SERVERS_UPDATED: 'main:mcp-servers-updated',
   MCP_SERVER_TEST_RESULT: 'main:mcp-server-test-result',
   BUILTIN_MCP_STATUS: 'main:builtin-mcp-status',
+  /** Sent on CHROME_READY - `{ completed: false }` tells chrome to open
+   * the first-run onboarding flow. */
+  ONBOARDING_STATE: 'main:onboarding-state',
   MCP_TOKENS_UPDATED: 'main:mcp-tokens-updated',
   MCP_TOKEN_CREATED: 'main:mcp-token-created',
   /** Relayed from chat's REQUEST_OPEN_CHAT_SERVER_SETTINGS below - the chat

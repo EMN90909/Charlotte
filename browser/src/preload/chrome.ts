@@ -82,6 +82,7 @@ const api = {
   setToolbarPopoverOpen: (open: boolean) => ipcRenderer.send(IPC.SET_TOOLBAR_POPOVER_OPEN, open),
   /** Tell main the UI has mounted and is ready to receive initial state. */
   ready: () => ipcRenderer.send(IPC.CHROME_READY),
+  completeOnboarding: () => ipcRenderer.send(IPC.COMPLETE_ONBOARDING),
   deleteHistoryEntry: (id: string) => ipcRenderer.send(IPC.DELETE_HISTORY_ENTRY, id),
   clearHistory: () => ipcRenderer.send(IPC.CLEAR_HISTORY),
   requestHistoryPage: (req: HistoryPageRequest) => ipcRenderer.send(IPC.REQUEST_HISTORY_PAGE, req),
@@ -173,6 +174,7 @@ const api = {
   onBuiltinMcpStatus: (cb: (status: BuiltinMcpServerStatus) => void) => subscribe(IPC.BUILTIN_MCP_STATUS, cb),
   onMcpTokensUpdated: (cb: (tokens: McpTokenInfo[]) => void) => subscribe(IPC.MCP_TOKENS_UPDATED, cb),
   onMcpTokenCreated: (cb: (result: CreateMcpTokenResult) => void) => subscribe(IPC.MCP_TOKEN_CREATED, cb),
+  onOnboardingState: (cb: (state: { completed: boolean }) => void) => subscribe(IPC.ONBOARDING_STATE, cb),
   onChatServersUpdated: (cb: (payload: ChatServersPayload) => void) => subscribe(IPC.CHAT_SERVERS_UPDATED, cb),
   /** Relayed from the chat view's UsernameTakenModal CTA - open Settings
    * deep-linked straight to this server's edit form (see

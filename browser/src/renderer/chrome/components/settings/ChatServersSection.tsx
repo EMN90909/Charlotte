@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import type { ChatServerConfig, AddChatServerPayload, ChatServerUsernameClaimResult } from '../../../../shared/types';
+import { useEffect, useState } from 'react';
+import type { ChatServerConfig, AddChatServerPayload } from '../../../../shared/types';
 import { EditIcon, TrashIcon, StarIcon, CheckIcon } from '../../icons';
+import { useUsernameClaim } from '../../useUsernameClaim';
 
 interface ChatServersSectionProps {
   /** Set when Settings was opened via the chat panel's "fix this server's
@@ -50,8 +51,8 @@ export function ChatServersSection({ focusServerId, focusToken }: ChatServersSec
           Paperkite's page chat is a client of an external chat server (see chat-service) - your copy of the browser
           connects to whichever one's picked here. The default is what every tab joins unless it's switched from the
           picker in the chat panel's own header. Your username is set per server, not globally - each one may enforce
-          its own uniqueness, so the same name isn't guaranteed to be free everywhere. Once claimed, a username can't
-          be changed - usernames are held permanently by whoever claims them first.
+          its own uniqueness, so the same name isn't guaranteed to be free everywhere. You can switch to a new name any
+          time, but every name you've claimed stays reserved for you on that server.
         </p>
 
         {servers.length === 0 ? (
@@ -201,113 +202,89 @@ function ChatServerForm({ servers, editingServer, onDoneEditing }: ChatServerFor
   );
 }
 
-type ClaimStatus = 'idle' | 'pending' | 'taken' | 'error';
-
 /** The username claim itself is server-owned, not just a form field this
- * app persists (see chatServerStore.ts's setChatServerUsername) - typing
- * a name here actually asks the real server whether it's free, the same
- * POST /connect claim a real page-chat connect would make, and stores
- * whatever the server hands back. Once `server.username` is set this
- * always renders read-only instead - see ChatServersSection's own
- * settings-hint on why a username can never change once claimed. */
+ * app persists (see chatServerStore.ts's setChatServerUsername) - Claim
+ * actually asks the real server whether the name is free, the same POST
+ * /connect claim a real page-chat connect would make. Changing it later is
+ * just claiming another name; the old one stays reserved on the server. */
 function ChatServerUsernameField({ server }: { server: ChatServerConfig }) {
   const [value, setValue] = useState('');
-  const [status, setStatus] = useState<ClaimStatus>('idle');
-  const [message, setMessage] = useState<string | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingUsernameRef = useRef<string | null>(null);
+  const [changing, setChanging] = useState(false);
+  const { status, errorText, claim, reset } = useUsernameClaim(server.id, () => {
+    setChanging(false);
+    setValue('');
+  });
 
-  useEffect(() => {
-    return window.paperkite.onChatServerUsernameClaimResult((result: ChatServerUsernameClaimResult) => {
-      // Guards against a stale response for a claim the user has since
-      // moved past (typed something else, or switched servers) - only
-      // the most recently *sent* attempt for this exact server matters.
-      if (result.serverId !== server.id || result.username !== pendingUsernameRef.current) return;
-      if (result.ok) {
-        // No local success state needed - the server list broadcast that
-        // comes with a successful claim updates `server.username` itself,
-        // which flips this component into its read-only branch below
-        // (with its own permanent checkmark) on the very next render.
-        setStatus('idle');
-      } else {
-        setStatus(result.reason === 'taken' ? 'taken' : 'error');
-        setMessage(result.message ?? null);
-      }
-    });
-  }, [server.id]);
-
-  useEffect(() => () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-  }, []);
-
-  const claim = (username: string) => {
-    const trimmed = username.trim();
-    if (!trimmed) {
-      setStatus('idle');
-      setMessage(null);
-      return;
-    }
-    pendingUsernameRef.current = trimmed;
-    setStatus('pending');
-    setMessage(null);
-    window.paperkite.claimChatServerUsername({ serverId: server.id, username: trimmed });
+  const cancelChange = () => {
+    setChanging(false);
+    setValue('');
+    reset();
   };
 
-  const onChange = (next: string) => {
-    setValue(next);
-    setStatus('idle');
-    setMessage(null);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => claim(next), 600);
-  };
-
-  const onBlur = () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    claim(value);
-  };
-
-  if (server.username) {
+  if (server.username && !changing) {
     return (
-      <label className="proxy-form__field proxy-form__field--full">
+      <div className="proxy-form__field proxy-form__field--full">
         <span>Your username on this server</span>
         <div className="username-claim__row">
-          <input value={server.username} disabled readOnly />
+          <input value={server.username} disabled readOnly aria-label="Username" />
           <span className="username-claim__check username-claim__check--set" aria-label="Claimed">
             <CheckIcon size={13} />
           </span>
+          <button type="button" className="settings-cancel-edit username-claim__action" onClick={() => setChanging(true)}>
+            Change
+          </button>
         </div>
-        <p className="settings-hint">Permanent once claimed - this can't be changed here.</p>
-      </label>
+      </div>
     );
   }
 
+  // A plain div, not a <label>/<form> - this sits inside ChatServerForm's
+  // own <form>, so Enter is handled here rather than submitting that.
   return (
-    <label className="proxy-form__field proxy-form__field--full">
-      <span>Your username on this server</span>
+    <div className="proxy-form__field proxy-form__field--full">
+      <span>{changing ? 'New username' : 'Your username on this server'}</span>
       <div className="username-claim__row">
         <input
+          autoFocus={changing}
           value={value}
           spellCheck={false}
-          placeholder="Not set"
+          aria-label={changing ? 'New username' : 'Username'}
+          placeholder={changing ? (server.username ?? '') : 'Not set'}
           disabled={status === 'pending'}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={onBlur}
+          onChange={(e) => {
+            setValue(e.target.value);
+            reset();
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
               claim(value);
+            } else if (e.key === 'Escape' && changing) {
+              e.preventDefault();
+              cancelChange();
             }
           }}
         />
-        {status === 'pending' && <span className="spinner" aria-label="Checking availability" />}
+        <button
+          type="button"
+          className="proxy-form__save username-claim__action"
+          disabled={!value.trim() || status === 'pending'}
+          onClick={() => claim(value)}
+        >
+          {status === 'pending' ? <span className="spinner" aria-label="Checking availability" /> : 'Claim'}
+        </button>
+        {changing && (
+          <button type="button" className="settings-cancel-edit username-claim__action" onClick={cancelChange}>
+            Cancel
+          </button>
+        )}
       </div>
-      {(status === 'taken' || status === 'error') && (
-        <p className="username-claim__error">{message ?? (status === 'taken' ? 'Username already claimed, try another' : 'Something went wrong, try again')}</p>
-      )}
+      {errorText && <p className="username-claim__error">{errorText}</p>}
       <p className="settings-hint">
-        Usually claimed permanently the first time it's used - if this server rejects it as taken, pick a different
-        one here.
+        {changing
+          ? `"${server.username}" stays reserved for you on this server after you switch, so nobody else can take it.`
+          : 'Each name you claim stays reserved on this server - if it says taken, pick a different one.'}
       </p>
-    </label>
+    </div>
   );
 }

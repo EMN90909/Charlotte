@@ -31,6 +31,7 @@ import { PermissionPrompt } from './components/PermissionPrompt';
 import { WhisperRequiredModal } from './components/WhisperRequiredModal';
 import { AudioCaptureErrorModal } from './components/AudioCaptureErrorModal';
 import { NoAudioDetectedModal } from './components/NoAudioDetectedModal';
+import { OnboardingModal } from './components/onboarding/OnboardingModal';
 import { startAudioCapture, type AudioCaptureHandle } from './audioCapture';
 
 export function App() {
@@ -41,6 +42,7 @@ export function App() {
   const [theme, setTheme] = useState<ThemePayload>({ source: 'system', isDark: false });
   const [chatOpen, setChatOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   // Set only by onOpenChatServerSettings below (the chat panel's "fix this
   // server's username" CTA) - never by the normal gear-icon openSettings(),
   // so a plain Settings open doesn't jump sections. `token` increments on
@@ -95,6 +97,7 @@ export function App() {
       window.paperkite.onFindResult(setFindResult),
       window.paperkite.onDownloadsUpdated(setDownloads),
       window.paperkite.onPermissionRequested((request) => setPermissionQueue((q) => [...q, request])),
+      window.paperkite.onOnboardingState(({ completed }) => setOnboardingOpen(!completed)),
       window.paperkite.onOpenChatServerSettings((serverId) => {
         setSettingsOpen(true);
         setPendingChatServerFocus((current) => ({ serverId, token: (current?.token ?? 0) + 1 }));
@@ -236,13 +239,14 @@ export function App() {
   useEffect(() => {
     window.paperkite.setOverlayOpen(
       settingsOpen ||
+        onboardingOpen ||
         downloadsOpen ||
         permissionQueue.length > 0 ||
         whisperModalOpen ||
         noAudioModalOpen ||
         captureErrorOpen,
     );
-  }, [settingsOpen, downloadsOpen, permissionQueue.length, whisperModalOpen, noAudioModalOpen, captureErrorOpen]);
+  }, [settingsOpen, onboardingOpen, downloadsOpen, permissionQueue.length, whisperModalOpen, noAudioModalOpen, captureErrorOpen]);
 
   // Same idea, but a small reserved strip instead of the whole window -
   // see windowManager.ts's setToolbarPopoverOpen. The bookmark/subtitle
@@ -268,6 +272,10 @@ export function App() {
     // starts on General instead of re-jumping to whatever server the last
     // CTA pointed at.
     setPendingChatServerFocus(null);
+  };
+  const finishOnboarding = () => {
+    setOnboardingOpen(false);
+    window.paperkite.completeOnboarding();
   };
   const openDownloads = () => setDownloadsOpen(true);
   const closeDownloads = () => setDownloadsOpen(false);
@@ -397,6 +405,8 @@ export function App() {
         />
       )}
       {captureErrorOpen && <AudioCaptureErrorModal onDismiss={() => setCaptureErrorOpen(false)} />}
+      {/* Last, so it stacks above anything else that opens on first launch. */}
+      {onboardingOpen && <OnboardingModal onFinish={finishOnboarding} />}
     </div>
   );
 }

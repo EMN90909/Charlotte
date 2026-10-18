@@ -184,8 +184,9 @@ export function updateChatServer(payload: UpdateChatServerPayload): ChatServerCo
   // points at (a token is only valid on the server that signed it, so a
   // changed baseUrl is possibly a genuinely different server), so it
   // needs a fresh claim rather than risking a confusing 401 later.
-  // (username itself can no longer change at all once set - see
-  // setChatServerUsername - so it's never a reason to clear this here.)
+  // (username only ever changes through a fresh claim - see
+  // setChatServerUsername - which swaps in its own token, so it's never a
+  // reason to clear this here.)
   if (server.baseUrl !== normalizeBaseUrl(payload.baseUrl)) {
     server.token = null;
   }
@@ -198,12 +199,13 @@ export function updateChatServer(payload: UpdateChatServerPayload): ChatServerCo
 /** The only way a server's username is ever set (see
  * shared/types.ts's UpdateChatServerPayload doc comment) - called after
  * main/ipc.ts's claimChatServerUsername gets a real token back from the
- * server's own POST /connect, never from a plain form save. A no-op if
- * this server somehow already has one, so "permanent once set" holds
- * even if this ever gets called a second time some other way. */
+ * server's own POST /connect, never from a plain form save. Replaces any
+ * existing name: changing it is just claiming a new one. The server's
+ * registry is append-only, so the old name stays reserved there forever -
+ * the caller stores the new name's token alongside this. */
 export function setChatServerUsername(id: string, username: string): ChatServerConfig | null {
   const server = state.servers.find((s) => s.id === id);
-  if (!server || server.username) return null;
+  if (!server) return null;
   server.username = username;
   persist();
   return toPublic(server);

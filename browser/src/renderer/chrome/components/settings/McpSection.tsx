@@ -105,7 +105,7 @@ interface McpServerFormProps {
   onDoneEditing: () => void;
 }
 
-function McpServerForm({ editingServer, onDoneEditing }: McpServerFormProps) {
+export function McpServerForm({ editingServer, onDoneEditing }: McpServerFormProps) {
   const [fields, setFields] = useState<FormFields>(blankFields());
   const [testResult, setTestResult] = useState<McpTestResult | 'testing' | null>(null);
 

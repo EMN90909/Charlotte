@@ -88,7 +88,7 @@ interface AgentFormProps {
   onDoneEditing: () => void;
 }
 
-function AgentForm({ editingAgent, onDoneEditing }: AgentFormProps) {
+export function AgentForm({ editingAgent, onDoneEditing }: AgentFormProps) {
   const [fields, setFields] = useState<FormFields>(blankFields());
 
   useEffect(() => {

@@ -1998,3 +1998,518 @@ html {
   border-color: var(--sky);
   color: var(--sky);
 }
+
+/* ---------- First-run onboarding ---------- */
+
+.onboarding-overlay {
+  z-index: 60;
+  backdrop-filter: blur(8px);
+}
+
+.onboarding {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(600px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  background: var(--paper-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 20px;
+  box-shadow: var(--shadow-raised);
+  overflow: hidden;
+  animation: rise-in 320ms var(--ease) both;
+}
+/* A faint ruled-paper texture, so the card reads as a page in a booklet
+ * rather than another settings dialog. */
+.onboarding::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(to bottom, transparent 0 27px, var(--line) 27px 28px);
+  opacity: 0.35;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 140px, transparent 100%);
+}
+
+/* Kite-string progress: a dashed string with a knot per step. */
+.kite-progress {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 0;
+  padding: 22px 28px 0;
+  list-style: none;
+}
+.kite-progress::before {
+  content: '';
+  position: absolute;
+  top: 31px;
+  left: calc(28px + (100% - 56px) / 8);
+  right: calc(28px + (100% - 56px) / 8);
+  border-top: 1.5px dashed var(--line-strong);
+}
+.kite-progress__step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+.kite-progress__knot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--paper-raised);
+  border: 1.5px solid var(--line-strong);
+  color: var(--accent-ink);
+  transition: background-color var(--base) var(--ease), border-color var(--base) var(--ease);
+}
+.kite-progress__step--done .kite-progress__knot {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper-raised);
+}
+.kite-progress__step--current .kite-progress__knot {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  animation: kite-bob 2.6s ease-in-out infinite;
+}
+.kite-progress__step--current .kite-progress__knot svg {
+  filter: drop-shadow(0 2px 3px var(--accent-glow));
+}
+.kite-progress__label {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.kite-progress__step--current .kite-progress__label {
+  color: var(--ink);
+}
+.kite-progress__step--done .kite-progress__label {
+  color: var(--ink-soft);
+}
+@keyframes kite-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-6deg);
+  }
+  50% {
+    transform: translateY(-3px) rotate(4deg);
+  }
+}
+
+.onboarding__body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 26px 32px 8px;
+  animation: onboarding-page 280ms var(--ease) both;
+}
+@keyframes onboarding-page {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+
+.onboarding__heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.onboarding__numeral {
+  font-family: var(--font-display);
+  font-size: 56px;
+  font-weight: 300;
+  line-height: 0.85;
+  letter-spacing: -0.04em;
+  color: transparent;
+  -webkit-text-stroke: 1.2px var(--line-strong);
+}
+.onboarding__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.onboarding__optional {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+}
+.onboarding h1 {
+  margin: 4px 0 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+  color: var(--ink);
+}
+.onboarding__lede {
+  margin: 0 0 18px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.onboarding__lede strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.onboarding__note {
+  margin: 10px 2px 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+.onboarding__note--sky {
+  color: var(--sky);
+}
+
+/* Step 1: the username field is the whole point of the screen, so it's
+ * big, centered on one line, and the Claim button sits inside it. */
+.onboarding-username__field {
+  display: flex;
+  align-items: center;
+  height: 52px;
+  padding: 0 6px 0 16px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--paper);
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+.onboarding-username__field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-glow);
+}
+.onboarding-username__field--error {
+  border-color: var(--accent);
+}
+.onboarding-username__at {
+  font-family: var(--font-display);
+  font-size: 20px;
+  color: var(--ink-faint);
+  margin-right: 4px;
+}
+.onboarding-username__field input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-family: var(--font-display);
+  font-size: 19px;
+  color: var(--ink);
+  user-select: text;
+}
+.onboarding-username__field input::placeholder {
+  color: var(--ink-faint);
+  opacity: 0.6;
+}
+.onboarding-username__field button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 82px;
+  height: 40px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.onboarding-username__field button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.onboarding-username__field button:disabled {
+  background: var(--line-strong);
+  color: var(--ink-faint);
+}
+.onboarding-username__field button .spinner {
+  border-color: var(--accent-ink);
+  border-top-color: transparent;
+}
+.onboarding-username__error {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  color: var(--accent);
+  animation: pop-in var(--base) var(--ease) both;
+}
+
+.onboarding-claimed {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1.5px solid var(--success);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--success) 8%, var(--paper));
+  animation: pop-in var(--base) var(--ease) both;
+}
+.onboarding-claimed__check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--success);
+  color: var(--paper-raised);
+}
+.onboarding-claimed__name {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 19px;
+  color: var(--ink);
+}
+.onboarding-claimed__hint {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.onboarding__later {
+  margin-top: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 11.5px;
+  color: var(--sky);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.onboarding__later:hover {
+  color: var(--sky-hover);
+}
+
+/* Steps 2-3 embed Settings' own forms - strip the section chrome so they
+ * sit flat on the card. */
+.onboarding__form .settings-section {
+  padding: 14px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+.onboarding__form .settings-section h2 {
+  margin-bottom: 0;
+}
+.onboarding__form .proxy-form__field input,
+.onboarding__form .proxy-form__field select,
+.onboarding__form .proxy-form__field textarea {
+  background: var(--paper-raised);
+}
+
+.onboarding-added {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+.onboarding-added li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--success) 8%, var(--paper));
+  color: var(--success);
+  animation: pop-in var(--base) var(--ease) both;
+}
+.onboarding-added__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.onboarding-added__meta {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+/* Step 4 */
+.onboarding-connect__clients {
+  margin-bottom: 10px;
+}
+.onboarding-connect__off,
+.onboarding-connect__token {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+.onboarding-connect__token {
+  margin-top: 10px;
+}
+.onboarding-snippet {
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--paper);
+  overflow: hidden;
+}
+.onboarding-snippet__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 8px 7px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.onboarding-snippet__bar button {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font-size: 11.5px;
+}
+.onboarding-snippet__bar button:hover {
+  border-color: var(--sky);
+  color: var(--sky);
+}
+.onboarding-snippet pre {
+  margin: 0;
+  padding: 12px 14px;
+  max-height: 200px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.onboarding__footer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 24px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--paper-raised);
+}
+.onboarding__footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.onboarding__primary,
+.onboarding__secondary,
+.onboarding__skip,
+.onboarding__back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.onboarding__primary {
+  border: none;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.onboarding__primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.onboarding__primary:disabled {
+  background: var(--line-strong);
+  color: var(--ink-faint);
+}
+.onboarding__secondary {
+  min-width: 112px;
+  border: 1px solid var(--line-strong);
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+.onboarding__secondary:hover:not(:disabled) {
+  border-color: var(--sky);
+  color: var(--sky);
+}
+.onboarding__skip {
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+.onboarding__skip:hover {
+  background: var(--paper-dim);
+  color: var(--ink);
+}
+.onboarding__back {
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+.onboarding__back:hover {
+  background: var(--hover-wash);
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding,
+  .onboarding__body,
+  .kite-progress__step--current .kite-progress__knot {
+    animation: none;
+  }
+}
+
+.username-claim__action {
+  flex-shrink: 0;
+}
+.username-claim__action .spinner {
+  border-color: var(--accent-ink);
+  border-top-color: transparent;
+}
+
+.onboarding-claimed__text {
+  flex: 1;
+  min-width: 0;
+}
+.onboarding-claimed__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.onboarding__note strong {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.onboarding__note .onboarding__later {
+  margin-top: 0;
+  font-size: inherit;
+}

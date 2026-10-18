@@ -48,6 +48,7 @@ import { WHISPER_ENGINE, WHISPER_TRANSLATE_ENGINE } from '../shared/types';
 import { PAPER_DARK, PAPER_LIGHT, type WindowManager } from './windowManager';
 import { getSystemCountryCode, loadSafetySettings, saveSafetySettings, saveThemeSource } from './userStore';
 import { getScreenshotChain } from './chatStore';
+import { isOnboardingCompleted, markOnboardingCompleted } from './onboardingStore';
 import * as chatSession from './chatSession';
 import * as chatClient from './chatClient';
 import type { ChatServerMessage } from './chatClient';
@@ -284,7 +285,10 @@ export function registerIpcHandlers(wm: WindowManager): void {
     // starts idle regardless and just picks up the next real status push.
     wm.chromeView.webContents.send(IPC.PAGE_TRANSLATE_STATUS, { status: 'idle' });
     void getWhisperStatus(true).then((status) => wm.chromeView.webContents.send(IPC.WHISPER_STATUS, status));
+    wm.chromeView.webContents.send(IPC.ONBOARDING_STATE, { completed: isOnboardingCompleted() });
   });
+
+  ipcMain.on(IPC.COMPLETE_ONBOARDING, () => markOnboardingCompleted());
 
   // No broadcast back for delete/clear - the History section already
   // updates its own local list optimistically (see HistorySection.tsx).
@@ -1165,8 +1169,10 @@ async function claimChatServerUsername(wm: WindowManager, { serverId, username }
 
   const server = getChatServerById(serverId);
   if (!server) return respond({ ok: false, reason: 'error', message: 'Server not found.' });
-  if (server.username) return respond({ ok: false, reason: 'error', message: 'This server already has a username set.' });
   if (!trimmed) return respond({ ok: false, reason: 'error', message: 'Enter a username.' });
+  if (server.username?.toLowerCase() === trimmed.toLowerCase()) {
+    return respond({ ok: false, reason: 'error', message: "That's already your username." });
+  }
 
   try {
     const { token } = await chatClient.connect(server.baseUrl, {
