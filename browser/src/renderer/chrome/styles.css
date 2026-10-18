@@ -2513,3 +2513,155 @@ html {
   margin-top: 0;
   font-size: inherit;
 }
+
+/* ---------- Toolbar tour (after onboarding) ---------- */
+
+/* The overlay itself swallows every click, so the app underneath is
+ * effectively frozen until the tour ends. The dimming comes from the
+ * spotlight's own giant box-shadow, which leaves a clean cut-out around
+ * the target and animates as it moves between stops. */
+.tour {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  animation: fade-in var(--base) var(--ease) both;
+}
+.tour__spot {
+  position: fixed;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 0 6px var(--accent-glow),
+    0 0 0 100vmax var(--scrim);
+  pointer-events: none;
+  transition:
+    top 380ms var(--ease),
+    left 380ms var(--ease),
+    width 380ms var(--ease),
+    height 380ms var(--ease);
+}
+.tour__spot::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  border: 2px solid var(--accent);
+  animation: tour-pulse 1.8s var(--ease) infinite;
+}
+@keyframes tour-pulse {
+  from {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
+.tour__card {
+  position: fixed;
+  padding: 14px 16px 12px;
+  background: var(--paper-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  box-shadow: var(--shadow-raised);
+  animation: tour-card-in 300ms var(--ease) both;
+}
+@keyframes tour-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+.tour__arrow {
+  position: absolute;
+  top: -7px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  background: var(--paper-raised);
+  border-top: 1px solid var(--line-strong);
+  border-left: 1px solid var(--line-strong);
+  transform: rotate(45deg);
+}
+.tour__count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+.tour__card h2 {
+  margin: 4px 0 4px;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.tour__card p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.tour__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+.tour__nav {
+  display: flex;
+  gap: 6px;
+}
+.tour__skip,
+.tour__back,
+.tour__next {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.tour__skip {
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+}
+.tour__skip:hover {
+  color: var(--ink);
+}
+.tour__back {
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--ink-soft);
+}
+.tour__back:hover {
+  background: var(--paper-dim);
+  color: var(--ink);
+}
+.tour__next {
+  border: none;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.tour__next:hover {
+  background: var(--accent-hover);
+}
+.tour__next:focus-visible {
+  outline: 2px solid var(--sky);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour__spot {
+    transition: none;
+  }
+  .tour__spot::after,
+  .tour__card {
+    animation: none;
+  }
+}

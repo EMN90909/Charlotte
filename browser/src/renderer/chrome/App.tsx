@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   NavState,
   TabInfo,
@@ -32,6 +32,7 @@ import { WhisperRequiredModal } from './components/WhisperRequiredModal';
 import { AudioCaptureErrorModal } from './components/AudioCaptureErrorModal';
 import { NoAudioDetectedModal } from './components/NoAudioDetectedModal';
 import { OnboardingModal } from './components/onboarding/OnboardingModal';
+import { ToolbarTour } from './components/onboarding/ToolbarTour';
 import { startAudioCapture, type AudioCaptureHandle } from './audioCapture';
 
 export function App() {
@@ -43,6 +44,7 @@ export function App() {
   const [chatOpen, setChatOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   // Set only by onOpenChatServerSettings below (the chat panel's "fix this
   // server's username" CTA) - never by the normal gear-icon openSettings(),
   // so a plain Settings open doesn't jump sections. `token` increments on
@@ -240,13 +242,14 @@ export function App() {
     window.paperkite.setOverlayOpen(
       settingsOpen ||
         onboardingOpen ||
+        tourOpen ||
         downloadsOpen ||
         permissionQueue.length > 0 ||
         whisperModalOpen ||
         noAudioModalOpen ||
         captureErrorOpen,
     );
-  }, [settingsOpen, onboardingOpen, downloadsOpen, permissionQueue.length, whisperModalOpen, noAudioModalOpen, captureErrorOpen]);
+  }, [settingsOpen, onboardingOpen, tourOpen, downloadsOpen, permissionQueue.length, whisperModalOpen, noAudioModalOpen, captureErrorOpen]);
 
   // Same idea, but a small reserved strip instead of the whole window -
   // see windowManager.ts's setToolbarPopoverOpen. The bookmark/subtitle
@@ -275,8 +278,12 @@ export function App() {
   };
   const finishOnboarding = () => {
     setOnboardingOpen(false);
+    // Marked done now, not after the tour - the tour is just a pointer
+    // walk, so quitting halfway through it shouldn't replay onboarding.
     window.paperkite.completeOnboarding();
+    setTourOpen(true);
   };
+  const closeTour = useCallback(() => setTourOpen(false), []);
   const openDownloads = () => setDownloadsOpen(true);
   const closeDownloads = () => setDownloadsOpen(false);
 
@@ -407,6 +414,7 @@ export function App() {
       {captureErrorOpen && <AudioCaptureErrorModal onDismiss={() => setCaptureErrorOpen(false)} />}
       {/* Last, so it stacks above anything else that opens on first launch. */}
       {onboardingOpen && <OnboardingModal onFinish={finishOnboarding} />}
+      {tourOpen && <ToolbarTour onDone={closeTour} />}
     </div>
   );
 }

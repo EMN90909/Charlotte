@@ -234,7 +234,7 @@ export function Toolbar({
         </button>
       </div>
 
-      <div className={'address-bar' + (editing ? ' address-bar--editing' : '')}>
+      <div className={'address-bar' + (editing ? ' address-bar--editing' : '')} data-tour="address">
         <input
           ref={inputRef}
           value={value}
@@ -304,6 +304,7 @@ export function Toolbar({
           className={'toolbar__star' + (bookmarkEntry ? ' toolbar__star--active' : '')}
           disabled={!navState?.url || navState.url.startsWith('data:')}
           onClick={onStarClick}
+          data-tour="bookmark"
           aria-label={bookmarkEntry ? 'Edit bookmark' : 'Bookmark this page'}
           aria-pressed={!!bookmarkEntry}
           title={bookmarkEntry ? 'Edit bookmark' : 'Bookmark this page'}
@@ -329,6 +330,7 @@ export function Toolbar({
           className={'toolbar__star' + (subtitleSettings.enabled ? ' toolbar__star--active' : '')}
           disabled={!navState?.url || navState.url.startsWith('data:')}
           onClick={onSubtitlesClick}
+          data-tour="subtitles"
           aria-label="Live subtitles"
           aria-pressed={subtitleSettings.enabled}
           title="Live subtitles"
@@ -346,6 +348,7 @@ export function Toolbar({
           className={'toolbar__star' + (pageTranslateSettings.enabled ? ' toolbar__star--active' : '')}
           disabled={!navState?.url || navState.url.startsWith('data:')}
           onClick={onPageTranslateClick}
+          data-tour="translate"
           aria-label="Translate page"
           aria-pressed={pageTranslateSettings.enabled}
           title={pageTranslateStatus.status === 'translating' ? 'Translating…' : 'Translate page'}
@@ -366,6 +369,7 @@ export function Toolbar({
         type="button"
         className="toolbar__downloads"
         onClick={onOpenDownloads}
+        data-tour="downloads"
         aria-label="Downloads"
         title="Downloads"
       >
@@ -373,7 +377,7 @@ export function Toolbar({
         {hasActiveDownload && <span className="toolbar__downloads-badge" aria-hidden />}
       </button>
 
-      <button type="button" className="toolbar__settings" onClick={onOpenSettings} aria-label="Settings" title="Settings">
+      <button type="button" className="toolbar__settings" data-tour="settings" onClick={onOpenSettings} aria-label="Settings" title="Settings">
         <GearIcon />
       </button>
 
@@ -381,6 +385,7 @@ export function Toolbar({
         type="button"
         className={'toolbar__chat-toggle' + (chatOpen ? ' toolbar__chat-toggle--active' : '')}
         onClick={onToggleChat}
+        data-tour="chat"
         aria-label="Toggle chat"
         title="Toggle page chat"
       >
