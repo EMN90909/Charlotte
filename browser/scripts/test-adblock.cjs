@@ -54,6 +54,16 @@ test('invalid exception entries are rejected; duplicates are normalized', () => 
   assert.equal(normalizeAllowedDomain('com'), null);
   assert.equal(normalizeAllowedDomain('foo-.example.com'), null);
   const result = normalizeAdBlockSettings({ mode: 'strict', allowedSites: ['EXAMPLE.COM', 'example.com', 'bad/path', '', 123] }, balanced);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)), { mode: 'strict', allowedSites: ['example.com'] });
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), { mode: 'strict', allowedSites: ['example.com'], allowedHosts: [], blockedHosts: [] });
   assert.equal(normalizeAdBlockSettings({ mode: 'bogus', allowedSites: 'bad' }, balanced).mode, 'balanced');
+});
+
+
+test('manual host allow overrides manual block and excludes malformed domains', () => {
+  const result = normalizeAdBlockSettings({
+    mode: 'strict', allowedSites: [], allowedHosts: ['ADS.EXAMPLE.COM', 'https://evil.com'],
+    blockedHosts: ['ads.example.com', 'metrics.example.com'],
+  }, balanced);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.allowedHosts)), ['ads.example.com']);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.blockedHosts)), ['metrics.example.com']);
 });

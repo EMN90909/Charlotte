@@ -176,13 +176,13 @@ export function normalizeAdBlockSettings(input: unknown, fallback: AdBlockSettin
     }
     return [...valid];
   };
-  const allowedHosts = clean(value.allowedHosts, fallback.allowedHosts);
+  const allowedHosts = clean(value.allowedHosts, fallback.allowedHosts ?? []);
   const allowSet = new Set(allowedHosts);
   return {
     mode,
-    allowedSites: clean(value.allowedSites, fallback.allowedSites),
+    allowedSites: clean(value.allowedSites, fallback.allowedSites ?? []),
     allowedHosts,
-    blockedHosts: clean(value.blockedHosts, fallback.blockedHosts).filter((host) => !allowSet.has(host)),
+    blockedHosts: clean(value.blockedHosts, fallback.blockedHosts ?? []).filter((host) => !allowSet.has(host)),
   };
 }
 
