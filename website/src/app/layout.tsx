@@ -7,7 +7,7 @@ import { Footer } from '@/components/Footer';
 export const metadata: Metadata = {
   title: 'Charlotte: the browser with a room for every page',
   description:
-    'Charlotte is an Noethric-branded browser where anyone viewing the same webpage can chat in real time, bring their own AI agents, and run their own private chat server.',
+    'Charlotte is a Noethric-branded browser where anyone viewing the same webpage can chat in real time, bring their own AI agents, and run their own private chat server.',
 };
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {

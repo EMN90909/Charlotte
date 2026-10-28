@@ -22,7 +22,7 @@ build from source instead:
 ```bash
 cd browser
 npm install
-npm run make          # produces out/make/zip/darwin/<arch>/charlotte-browser-darwin-<arch>-<version>.zip
+npm run make          # produces out/make/zip/darwin/<arch>/Charlotte-darwin-<arch>-<version>.zip
 ```
 
 Since it's built locally rather than downloaded, there's no quarantine
@@ -53,10 +53,10 @@ No package manager needed, just grab the right file from the release page:
 
 | Platform | File | Install |
 |----------|------|---------|
-| Windows (x64) | `charlotte-browser-<version> Setup.exe` | Run it. Unsigned, so SmartScreen will warn once, "More info" → "Run anyway". |
-| Windows (arm64) | `charlotte-browser-win32-arm64-<version>.zip` | Cross-compiled on the x64 runner (see below) - unzip and run `charlotte-browser.exe` rather than relying on a Setup.exe here, since the Squirrel installer isn't verified working for arm64 yet. |
-| Linux (any distro, x64) | `charlotte-browser-linux-x64-<version>.zip` | Unzip, run `./charlotte-browser`. No install, no root. |
-| Linux (any distro, arm64) | `charlotte-browser-linux-arm64-<version>.zip` | Same, unzip and run. |
+| Windows (x64) | `Charlotte Setup.exe` | Run it. Unsigned, so SmartScreen will warn once, "More info" → "Run anyway". |
+| Windows (arm64) | `Charlotte-win32-arm64-<version>.zip` | Cross-compiled on the x64 runner (see below) - unzip and run `Charlotte.exe` rather than relying on a Setup.exe here, since the Squirrel installer isn't verified working for arm64 yet. |
+| Linux (any distro, x64) | `Charlotte-linux-x64-<version>.zip` | Unzip, run `./Charlotte`. No install, no root. |
+| Linux (any distro, arm64) | `Charlotte-linux-arm64-<version>.zip` | Same, unzip and run. |
 | Linux (Debian/Ubuntu, x64) | `charlotte-browser_<version>_amd64.deb` | `sudo dpkg -i charlotte-browser_<version>_amd64.deb` |
 | Linux (Debian/Ubuntu, arm64) | `charlotte-browser_<version>_arm64.deb` | `sudo dpkg -i charlotte-browser_<version>_arm64.deb` |
 | Linux (Fedora/RHEL, x64) | `charlotte-browser-<version>-1.x86_64.rpm` | `sudo rpm -i charlotte-browser-<version>-1.x86_64.rpm` |
@@ -107,3 +107,5 @@ doesn't need a server, just a signing key and a scheduled publish step.
 > **Legacy profiles:** Existing installs may continue using the prior Paperkite app-data directory so upgrading does not discard bookmarks, sessions, or settings. Do not delete that legacy directory until migrating user data is explicitly supported and verified.
 
 > **Rights:** See [COMMERCIAL-LICENSE.md](../COMMERCIAL-LICENSE.md) and the preserved [MIT LICENSE](../LICENSE). Proprietary branding does not supersede Samuel Abolo's original MIT grant.
+
+> **Artifact naming:** Examples are based on Electron Forge's `productName` and package name. Confirm actual names in `browser/out/make/` before publishing installer links, since makers may normalize casing and platform-specific package IDs.
