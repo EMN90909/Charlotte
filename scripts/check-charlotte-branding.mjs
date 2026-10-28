@@ -27,4 +27,13 @@ assert.match(read('browser/src/main/index.ts'), /app\.setPath\('userData', previ
 assert.match(read('website/src/lib/site.ts'), /name: 'Charlotte'/);
 assert.match(read('website/src/app/licensing/page.tsx'), /Samuel Abolo/);
 
+const languageGuide = read('LANGUAGES.md');
+const linguistRules = read('.gitattributes');
+assert.match(languageGuide, /TypeScript/);
+assert.match(languageGuide, /Go/);
+assert.match(languageGuide, /Protocol Buffers/);
+assert.match(linguistRules, /chat-service\/gen\/\*\* linguist-generated=true/);
+assert.match(linguistRules, /\*\.tsx linguist-language=TypeScript/);
+assert.match(read('README.md'), /\[LANGUAGES\.md\]/);
+
 console.log('Charlotte branding and rights regression checks passed.');

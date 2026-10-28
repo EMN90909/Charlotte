@@ -11,7 +11,13 @@ This repository holds three projects:
 |-----------|------------|-------|
 | [`browser/`](browser) | The Charlotte desktop browser | Electron, TypeScript, React |
 | [`chat-service/`](chat-service) | The chat backend the browser talks to | Go |
-| [`website/`](website) | The marketing site, protocol docs, and live status page | Next.js |
+| [`website/`](website) | The marketing site, protocol docs, and live status page | Next.js, TypeScript, React |
+
+## Source languages
+
+Charlotte retains its existing working language stack. **TypeScript and TSX** power the Electron browser and Next.js website, while **Go** powers the chat service. Supporting source includes **CSS**, **JavaScript**, **Shell scripts**, a **Protocol Buffers** schema, and a **Ruby** Homebrew Cask template. JSON and YAML configure tooling and automation; HTML provides renderer entrypoints.
+
+Read [LANGUAGES.md](LANGUAGES.md) for the source-language inventory, major directories, and validation commands. GitHub detects the displayed language breakdown automatically through Linguist; [.gitattributes](.gitattributes) explicitly marks generated files so they do not distort that display. No source language has been migrated.
 
 ## Features
 

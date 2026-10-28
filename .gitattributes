@@ -1,0 +1,20 @@
+# Keep GitHub's source-language statistics focused on authored source.
+# Linguist normally recognizes these extensions, but these annotations make
+# mixed Electron/Go/Next.js source attribution explicit.
+*.ts linguist-language=TypeScript
+*.tsx linguist-language=TypeScript
+*.go linguist-language=Go
+*.js linguist-language=JavaScript
+*.mjs linguist-language=JavaScript
+*.css linguist-language=CSS
+*.html linguist-language=HTML
+*.sh linguist-language=Shell
+*.proto linguist-language=Protocol Buffer
+*.rb linguist-language=Ruby
+
+# Generated bindings and machine-maintained dependency manifests are not
+# authored language implementations. Do not remove or ignore the files.
+chat-service/gen/** linguist-generated=true
+browser/package-lock.json linguist-generated=true
+website/package-lock.json linguist-generated=true
+brand/export/** linguist-generated=true
