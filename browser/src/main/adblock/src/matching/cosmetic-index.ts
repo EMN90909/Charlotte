@@ -57,8 +57,12 @@ export class CosmeticFilterIndex {
 
     // Collect exception selectors for this hostname
     const exceptedSelectors = new Set<string>()
+    const exceptedScriptlets = new Set<string>()
     for (const ex of this.exceptions) {
-      if (ex.matchesHostname(hostname)) {
+      if (!ex.matchesHostname(hostname)) continue
+      if (ex.scriptlet) {
+        exceptedScriptlets.add(`${ex.scriptlet.name}(${ex.scriptlet.args.join(', ')})`)
+      } else {
         exceptedSelectors.add(ex.selector)
       }
     }
@@ -66,8 +70,12 @@ export class CosmeticFilterIndex {
     // Process a filter and add to results if not excepted
     const processFilter = (filter: CosmeticFilter) => {
       if (filter.scriptlet) {
+        // Generic scriptlets from an external list must never run globally.
+        // Respect site-scoped #@# exceptions as well.
         const injection = `${filter.scriptlet.name}(${filter.scriptlet.args.join(', ')})`
-        scriptletInjections.push(injection)
+        if (!filter.isGeneric && !exceptedScriptlets.has(injection)) {
+          scriptletInjections.push(injection)
+        }
       } else if (filter.style) {
         if (!exceptedSelectors.has(filter.selector)) {
           injectStyles.push(`${filter.selector} ${filter.style}`)

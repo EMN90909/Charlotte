@@ -54,3 +54,13 @@ test('cosmetic index resolves domain-specific selectors', () => {
   // Adapter intentionally never executes scriptlets in filter lists.
   assert.equal(result.scriptletInjections.length, 1);
 });
+\ntest('domain-scoped scriptlet exceptions disable a matching injection', () => {
+  const shield = new OpenShield();
+  shield.addFilters('example.com##+js(set-constant, adReady, false)\\nexample.com#@#+js(set-constant, adReady, false)');
+  assert.equal(shield.getCosmeticsForUrl('https://example.com').scriptletInjections.length, 0);
+});
+test('generic scriptlets cannot affect every website', () => {
+  const shield = new OpenShield();
+  shield.addFilters('##+js(abort-on-property-read, adReady)');
+  assert.equal(shield.getCosmeticsForUrl('https://example.com').scriptletInjections.length, 0);
+});

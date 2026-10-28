@@ -9,6 +9,7 @@ import { app } from 'electron';
 import { OpenShield } from './src/index';
 import { DEFAULT_LISTS } from './src/lists/defaults';
 import { ADS, TRACKERS } from './rules';
+import { compileSafeScriptletSource } from './scriptlets';
 
 const LIST_IDS = ['easylist', 'easyprivacy'] as const;
 type ListId = (typeof LIST_IDS)[number];
@@ -50,15 +51,38 @@ export function openShieldStats() {
   };
 }
 
-/** The caller owns mode, tab-scoping, exceptions and main-frame bypass. */
-export function openShieldBlocks(url: string, siteUrl: string, resource: string, strict: boolean): boolean {
+/** A single matching pass returns the allow/block decision and matching list. */
+export function openShieldDecision(
+  url: string,
+  siteUrl: string,
+  resource: string,
+  strict: boolean,
+): { blocked: boolean; source: 'advertising' | 'tracking' | 'exception' | 'none' } {
   const type = ({ mainFrame: 'document', subFrame: 'subdocument',
     xhr: 'xmlhttprequest', fetch: 'xmlhttprequest', webSocket: 'websocket',
     cspReport: 'ping' } as Record<string, string>)[resource] ?? resource.toLowerCase();
-  const first = ads.check(url, siteUrl, type);
-  if (first.blocked) return true;
-  if (first.exception) return false;
-  return strict && trackers.check(url, siteUrl, type).blocked;
+  const adMatch = ads.check(url, siteUrl, type);
+  if (adMatch.blocked) return { blocked: true, source: 'advertising' };
+  if (adMatch.exception) return { blocked: false, source: 'exception' };
+  if (strict) {
+    const privacyMatch = trackers.check(url, siteUrl, type);
+    if (privacyMatch.blocked) return { blocked: true, source: 'tracking' };
+    if (privacyMatch.exception) return { blocked: false, source: 'exception' };
+  }
+  return { blocked: false, source: 'none' };
+}
+
+export function openShieldBlocks(url: string, siteUrl: string, resource: string, strict: boolean): boolean {
+  return openShieldDecision(url, siteUrl, resource, strict).blocked;
+}
+
+export function openShieldScriptlets(url: string): string | null {
+  // Only requested by Strict mode for real, non-exempt browser pages.
+  const candidates = [
+    ...ads.getCosmeticsForUrl(url).scriptletInjections,
+    ...trackers.getCosmeticsForUrl(url).scriptletInjections,
+  ];
+  return compileSafeScriptletSource(candidates);
 }
 
 export function openShieldCosmetics(url: string, strict: boolean): string {
