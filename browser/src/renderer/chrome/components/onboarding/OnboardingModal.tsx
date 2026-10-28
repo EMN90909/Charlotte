@@ -100,7 +100,7 @@ export function OnboardingModal({ onFinish }: OnboardingModalProps) {
   );
 }
 
-const TITLES = ['Pick your username', 'Bring an AI agent', 'Plug in MCP servers', 'Let other apps drive Paperkite'];
+const TITLES = ['Pick your username', 'Bring an AI agent', 'Plug in MCP servers', 'Let other apps drive Charlotte'];
 
 /** The progress bar is a kite string: a dashed line with a knot per step,
  * and the kite itself sitting on whichever step you're on. */
@@ -337,13 +337,13 @@ const CLIENTS: Array<{ id: ClientId; label: string; where: string }> = [
 function configFor(client: ClientId, url: string, token: string): string {
   const bearer = `Bearer ${token}`;
   if (client === 'claude-code') {
-    return `claude mcp add --transport http paperkite ${url} \\\n  --header "Authorization: ${bearer}"`;
+    return `claude mcp add --transport http charlotte ${url} \\\n  --header "Authorization: ${bearer}"`;
   }
   if (client === 'claude-desktop') {
     return JSON.stringify(
       {
         mcpServers: {
-          paperkite: {
+          charlotte: {
             command: 'npx',
             args: ['-y', 'mcp-remote', url, '--header', 'Authorization:${AUTH_HEADER}'],
             env: { AUTH_HEADER: bearer },
@@ -354,7 +354,7 @@ function configFor(client: ClientId, url: string, token: string): string {
       2,
     );
   }
-  return JSON.stringify({ mcpServers: { paperkite: { url, headers: { Authorization: bearer } } } }, null, 2);
+  return JSON.stringify({ mcpServers: { charlotte: { url, headers: { Authorization: bearer } } } }, null, 2);
 }
 
 function ConnectStep() {
@@ -394,7 +394,7 @@ function ConnectStep() {
   return (
     <>
       <p className="onboarding__lede">
-        Paperkite runs its own MCP server on this machine, so tools like Claude Code can open tabs, search your
+        Charlotte runs its own MCP server on this machine, so tools like Claude Code can open tabs, search your
         history and manage bookmarks. Copy the config for your client.
       </p>
 

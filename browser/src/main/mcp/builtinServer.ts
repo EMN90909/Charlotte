@@ -1,7 +1,7 @@
 /**
- * Paperkite's own MCP server - the reverse of main/mcp/client.ts. Exposes
+ * Charlotte's own MCP server - the reverse of main/mcp/client.ts. Exposes
  * bookmarks, history, trusted domains, read-only proxy status, and tab
- * control as MCP tools over a local HTTP endpoint, so both Paperkite's
+ * control as MCP tools over a local HTTP endpoint, so both Charlotte's
  * own agent chat (via an auto-generated internal token, see
  * main/mcpAuth.ts) and genuinely external MCP clients (Claude Desktop,
  * named explicitly in the request this shipped for) can drive the browser.
@@ -371,7 +371,7 @@ async function handleHttpRequest(req: http.IncomingMessage, res: http.ServerResp
   // SDK's own multi-session guidance. Registration is cheap (just closures
   // over the shared stores/wm), so there's no real cost to doing it fresh
   // per session instead of trying to share one across every client.
-  const session = new McpServer({ name: 'paperkite', version: '1.0.0' });
+  const session = new McpServer({ name: 'charlotte', version: '1.0.0' });
   registerTools(session, currentWm);
   await session.connect(transport);
   await transport.handleRequest(reqWithAuth, res);

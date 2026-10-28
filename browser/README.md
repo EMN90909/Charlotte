@@ -1,6 +1,6 @@
-# Paperkite
+# Charlotte
 
-An open-source browser shell built on Electron: a real, multi-tab browsing
+A Noethric-branded commercial browser distribution built on the original MIT-licensed code by Samuel Abolo. Charlotte is built on Electron: a real, multi-tab browsing
 window (BaseWindow + WebContentsView, no `<webview>`, no BrowserView) with a
 per-page chat panel on the side. This milestone is **UI validation only** —
 the chat panel is seeded from a bundled mock JSON file and there's no real
@@ -152,3 +152,9 @@ DRM, extension support, auto-update, code signing, or history/bookmarks/
 downloads. Tabs are still in-memory only (not restored across restarts) -
 chat history, the user profile, safety settings, and theme preference are
 what's persisted to disk, all under the app's `userData` directory.
+
+## Licensing and original author
+
+Charlotte is a Noethric-branded commercial distribution. Original source code remains subject to the MIT licence, copyright (c) 2026 Samuel Abolo, as preserved in [LICENSE](LICENSE). The [commercial rights notice](COMMERCIAL-LICENSE.md) covers only material Noethric actually owns or has authority to license on proprietary terms; it does not take away the original author's rights or existing MIT permissions.
+
+The Electron renderer/preload bridge keeps its internal `window.paperkite` and `window.paperkiteChat` API identifiers for compatibility. The app also continues using the previous user-data directory when one exists, to preserve existing profiles across the rename.

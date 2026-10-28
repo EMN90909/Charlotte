@@ -1,9 +1,9 @@
-## Homebrew Cask template for Paperkite.
+## Homebrew Cask template for Charlotte.
 ##
 ## This file is NOT wired into any tap yet. Homebrew resolves casks by
 ## looking in a repo literally named `homebrew-<tapname>` (e.g.
-## `tecnosam/homebrew-paperkite`), so this only becomes `brew install
-## --cask paperkite` once that tap repo exists and this file (with the
+## `tecnosam/homebrew-charlotte`), so this only becomes `brew install
+## --cask charlotte` once that tap repo exists and this file (with the
 ## placeholders below filled in) is copied into its `Casks/` folder.
 ## See ../README.md for the full setup note.
 ##
@@ -15,22 +15,22 @@
 ## Only Apple Silicon (arm64) is built right now, see ../README.md for
 ## what it'd take to add an Intel build too.
 
-cask "paperkite" do
+cask "charlotte" do
   version "1.0.0"
   sha256 "REPLACE_WITH_SHA256_FROM_RELEASE_CHECKSUMS_TXT"
 
-  url "https://github.com/tecnosam/paperkite/releases/download/v#{version}/paperkite-browser-darwin-arm64-#{version}.zip"
-  name "Paperkite"
-  desc "Open-source browser with a built-in chat room for every page"
-  homepage "https://github.com/tecnosam/paperkite"
+  url "https://github.com/EMN90909/Charlotte/releases/download/browser-v#{version}/Charlotte-darwin-arm64-#{version}.zip"
+  name "Charlotte"
+  desc "Noethric-branded browser with a built-in chat room for every page"
+  homepage "https://github.com/EMN90909/Charlotte"
 
   depends_on arch: :arm64
 
-  app "paperkite-browser.app"
+  app "Charlotte.app"
 
   zap trash: [
-    "~/Library/Application Support/paperkite-browser",
-    "~/Library/Preferences/com.paperkite.browser.plist",
-    "~/Library/Saved Application State/com.paperkite.browser.savedState",
+    "~/Library/Application Support/Charlotte",
+    "~/Library/Preferences/com.charlotte.browser.plist",
+    "~/Library/Saved Application State/com.charlotte.browser.savedState",
   ]
 end

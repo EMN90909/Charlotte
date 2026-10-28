@@ -48,7 +48,7 @@ export function ChatServersSection({ focusServerId, focusToken }: ChatServersSec
       <section className="settings-section">
         <h2>Chat servers</h2>
         <p className="settings-hint">
-          Paperkite's page chat is a client of an external chat server (see chat-service) - your copy of the browser
+          Charlotte's page chat is a client of an external chat server (see chat-service) - your copy of the browser
           connects to whichever one's picked here. The default is what every tab joins unless it's switched from the
           picker in the chat panel's own header. Your username is set per server, not globally - each one may enforce
           its own uniqueness, so the same name isn't guaranteed to be free everywhere. You can switch to a new name any

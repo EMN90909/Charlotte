@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { WhisperStatus } from '../../../../shared/types';
 
 /** Settings > Live Translate - locating whisper.cpp (see
- * main/whisperStore.ts). Paperkite doesn't install, bundle, or manage
+ * main/whisperStore.ts). Charlotte doesn't install, bundle, or manage
  * whisper.cpp itself: the binary is either found on PATH under a name we
  * recognize, or pointed at explicitly here; the model file is always an
  * explicit pick, since there's no download flow. Self-contained, like
@@ -37,7 +37,7 @@ export function LiveTranslateSection() {
       <h2>Live Translate</h2>
       <p className="settings-hint">
         Live translate transcribes tab audio with a local whisper.cpp install, then translates the result with
-        whichever agent you pick in the subtitles popover. Paperkite doesn't install or bundle whisper.cpp - get it
+        whichever agent you pick in the subtitles popover. Charlotte doesn't install or bundle whisper.cpp - get it
         onto your machine however you like, then point at it below.
       </p>
 
