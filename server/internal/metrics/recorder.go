@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/paperkite/chat-service/internal/hll"
+	"github.com/EMN90909/Charlotte/server/internal/hll"
 )
 
 // Snapshot is the estimate reported by GET /custom-metrics.

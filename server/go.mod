@@ -1,4 +1,4 @@
-module github.com/paperkite/chat-service
+module github.com/EMN90909/Charlotte/server
 
 go 1.23
 

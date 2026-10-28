@@ -21,7 +21,7 @@ import (
 	"os"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/paperkite/chat-service/internal/ops"
+	"github.com/EMN90909/Charlotte/server/internal/ops"
 )
 
 func main() {

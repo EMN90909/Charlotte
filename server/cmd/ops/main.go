@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/paperkite/chat-service/internal/ops"
+	"github.com/EMN90909/Charlotte/server/internal/ops"
 )
 
 const (

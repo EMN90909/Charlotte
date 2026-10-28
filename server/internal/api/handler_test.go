@@ -7,10 +7,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/paperkite/chat-service/internal/api"
-	"github.com/paperkite/chat-service/internal/hub"
-	"github.com/paperkite/chat-service/internal/metrics"
-	"github.com/paperkite/chat-service/internal/username"
+	"github.com/EMN90909/Charlotte/server/internal/api"
+	"github.com/EMN90909/Charlotte/server/internal/hub"
+	"github.com/EMN90909/Charlotte/server/internal/metrics"
+	"github.com/EMN90909/Charlotte/server/internal/username"
 )
 
 const testSecret = "handler-test-secret-32-bytes-long!!"

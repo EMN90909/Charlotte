@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	genpb "github.com/paperkite/chat-service/gen/chat"
-	"github.com/paperkite/chat-service/internal/chat"
-	"github.com/paperkite/chat-service/internal/hub"
-	"github.com/paperkite/chat-service/internal/token"
+	genpb "github.com/EMN90909/Charlotte/server/gen/chat"
+	"github.com/EMN90909/Charlotte/server/internal/chat"
+	"github.com/EMN90909/Charlotte/server/internal/hub"
+	"github.com/EMN90909/Charlotte/server/internal/token"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

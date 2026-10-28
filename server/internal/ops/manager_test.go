@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paperkite/chat-service/internal/ops"
+	"github.com/EMN90909/Charlotte/server/internal/ops"
 )
 
 // fakeProcess/fakeLauncher let tests exercise Manager's deploy/rollback

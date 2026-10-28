@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/paperkite/chat-service/internal/hub"
-	"github.com/paperkite/chat-service/internal/metrics"
-	"github.com/paperkite/chat-service/internal/token"
-	"github.com/paperkite/chat-service/internal/username"
+	"github.com/EMN90909/Charlotte/server/internal/hub"
+	"github.com/EMN90909/Charlotte/server/internal/metrics"
+	"github.com/EMN90909/Charlotte/server/internal/token"
+	"github.com/EMN90909/Charlotte/server/internal/username"
 )
 
 type connectRequest struct {

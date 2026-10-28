@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paperkite/chat-service/internal/hub"
+	"github.com/EMN90909/Charlotte/server/internal/hub"
 )
 
 func publish(h *hub.Hub, room, content string) {
