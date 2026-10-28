@@ -158,3 +158,16 @@ what's persisted to disk, all under the app's `userData` directory.
 Charlotte is a Noethric-branded commercial distribution. Original source code remains subject to the MIT licence, copyright (c) 2026 Samuel Abolo, as preserved in [LICENSE](LICENSE). The [commercial rights notice](COMMERCIAL-LICENSE.md) covers only material Noethric actually owns or has authority to license on proprietary terms; it does not take away the original author's rights or existing MIT permissions.
 
 The Electron renderer/preload bridge keeps its internal `window.paperkite` and `window.paperkiteChat` API identifiers for compatibility. The app also continues using the previous user-data directory when one exists, to preserve existing profiles across the rename.
+
+## Charlotte account sign-in (Supabase)
+
+In **Settings → Account**, users can create an email/password account, sign in and sign out. Authentication is handled by the main Electron process; access/refresh tokens are never exposed to webpage JavaScript. Session persistence uses Electron OS-backed `safeStorage` where supported; otherwise sessions are in-memory. Account login does **not** replace the legacy per-server chat username system.
+
+Set these variables when launching the desktop application or when configuring the packaged app's runtime environment:
+
+```sh
+CHARLOTTE_SUPABASE_URL=https://YOUR_CHARLOTTE_PROJECT.supabase.co
+CHARLOTTE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_KEY
+```
+
+Use only a Supabase **publishable** key, not `sb_secret_...`, the service-role key, or a database password. Email confirmation is normally required for new users; after confirming their address they can sign in from Settings. The configuration must refer to the same Supabase project that the Go server uses for `GET /auth/me`. See [server/README.md](../server/README.md).

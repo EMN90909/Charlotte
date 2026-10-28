@@ -12,7 +12,7 @@ Configure the **same** Supabase project in the browser and this server:
 # Server environment
 SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_KEY
-CHARLOTTE_WEB_ORIGIN=https://charlotte.onrender.com
+CHARLOTTE_WEB_ORIGIN=https://charlotte-9wyy.onrender.com
 CHAT_JWT_SECRET=replace-with-long-random-existing-chat-secret
 ```
 
