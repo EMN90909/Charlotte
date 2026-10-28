@@ -38,7 +38,7 @@ export function BookmarksSection({
   const [creatingUnder, setCreatingUnder] = useState<string | null | undefined>(undefined);
   const [importResult, setImportResult] = useState<BookmarkImportResult | null>(null);
 
-  useEffect(() => window.paperkite.onBookmarkImportResult(setImportResult), []);
+  useEffect(() => window.charlotte.onBookmarkImportResult(setImportResult), []);
 
   const q = query.trim().toLowerCase();
   const searching = q.length > 0;
@@ -82,7 +82,7 @@ export function BookmarksSection({
           className="bookmarks-toolbar__new-folder"
           onClick={() => {
             setImportResult(null);
-            window.paperkite.importBookmarks();
+            window.charlotte.importBookmarks();
           }}
         >
           <DownloadIcon size={12} />

@@ -143,14 +143,14 @@ export function Toolbar({
 
   // Cmd/Ctrl+L (main/appMenu.ts) - focus() below triggers the input's own
   // onFocus handler, which already selects all text on focus.
-  useEffect(() => window.paperkite.onFocusAddressBar(() => inputRef.current?.focus()), []);
+  useEffect(() => window.charlotte.onFocusAddressBar(() => inputRef.current?.focus()), []);
 
   // History search for the suggestion dropdown below - reuses the exact
   // same REQUEST_HISTORY_PAGE/HISTORY_PAGE channel Settings > History uses
   // (see main/historyStore.ts's getHistoryPage - case-insensitive substring
   // match against title OR url already, nothing extra needed server-side).
   useEffect(() => {
-    return window.paperkite.onHistoryPage((result) => {
+    return window.charlotte.onHistoryPage((result) => {
       if (result.query !== pendingQueryRef.current) return; // stale - superseded by a later keystroke
       setHistoryMatches(result.entries);
     });
@@ -164,7 +164,7 @@ export function Toolbar({
     }
     const timer = setTimeout(() => {
       pendingQueryRef.current = trimmed;
-      window.paperkite.requestHistoryPage({ offset: 0, limit: HISTORY_FETCH_LIMIT, query: trimmed });
+      window.charlotte.requestHistoryPage({ offset: 0, limit: HISTORY_FETCH_LIMIT, query: trimmed });
     }, SUGGEST_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [value, editing]);

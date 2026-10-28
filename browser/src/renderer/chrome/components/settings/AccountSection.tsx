@@ -11,7 +11,7 @@ export function AccountSection() {
 
   useEffect(() => {
     let active = true;
-    void window.paperkite.getAccountStatus().then((s) => { if (active) setStatus(s); })
+    void window.charlotte.getAccountStatus().then((s) => { if (active) setStatus(s); })
       .catch((e: Error) => { if (active) setNotice(e.message); });
     return () => { active = false; };
   }, []);
@@ -21,8 +21,8 @@ export function AccountSection() {
     setBusy(true); setNotice('');
     try {
       const result = mode === 'signin'
-        ? await window.paperkite.signInAccount(email, password)
-        : await window.paperkite.signUpAccount(email, password);
+        ? await window.charlotte.signInAccount(email, password)
+        : await window.charlotte.signUpAccount(email, password);
       setStatus(result);
       setNotice(result.message ?? (result.authenticated ? 'Signed in successfully.' : ''));
       setPassword('');
@@ -41,7 +41,7 @@ export function AccountSection() {
           {!status.persistent && <p>OS key encryption is unavailable; your session ends when Charlotte closes.</p>}
           <button type="button" className="settings-toggle__label" disabled={busy} onClick={() => {
             setBusy(true);
-            void window.paperkite.signOutAccount().then((next) => { setStatus(next); setNotice('Signed out.'); }).catch((e: Error) => setNotice(e.message)).finally(() => setBusy(false));
+            void window.charlotte.signOutAccount().then((next) => { setStatus(next); setNotice('Signed out.'); }).catch((e: Error) => setNotice(e.message)).finally(() => setBusy(false));
           }}>Sign out</button>
         </div>
       ) : status?.configured ? (

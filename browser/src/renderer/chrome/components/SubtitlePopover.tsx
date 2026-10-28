@@ -24,8 +24,8 @@ export function SubtitlePopover({ settings, onClose, onChange }: SubtitlePopover
   const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const unsub = window.paperkite.onAgentsUpdated(setAgents);
-    window.paperkite.requestAgents();
+    const unsub = window.charlotte.onAgentsUpdated(setAgents);
+    window.charlotte.requestAgents();
     return unsub;
   }, []);
 

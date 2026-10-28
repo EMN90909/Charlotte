@@ -39,12 +39,12 @@ export function BuiltinMcpServerSection() {
 
   useEffect(() => {
     const unsubs = [
-      window.paperkite.onBuiltinMcpStatus(setStatus),
-      window.paperkite.onMcpTokensUpdated(setTokens),
-      window.paperkite.onMcpTokenCreated(setJustCreated),
+      window.charlotte.onBuiltinMcpStatus(setStatus),
+      window.charlotte.onMcpTokensUpdated(setTokens),
+      window.charlotte.onMcpTokenCreated(setJustCreated),
     ];
-    window.paperkite.requestBuiltinMcpStatus();
-    window.paperkite.requestMcpTokens();
+    window.charlotte.requestBuiltinMcpStatus();
+    window.charlotte.requestMcpTokens();
     return () => unsubs.forEach((unsub) => unsub());
   }, []);
 
@@ -73,7 +73,7 @@ export function BuiltinMcpServerSection() {
           className={'switch' + (status.enabled ? ' switch--on' : '')}
           role="switch"
           aria-checked={status.enabled}
-          onClick={() => window.paperkite.setBuiltinMcpEnabled(!status.enabled)}
+          onClick={() => window.charlotte.setBuiltinMcpEnabled(!status.enabled)}
         >
           <span className="switch__thumb" />
         </button>
@@ -120,7 +120,7 @@ export function BuiltinMcpServerSection() {
                 type="button"
                 className="settings-list__delete"
                 aria-label={`Revoke ${token.label}`}
-                onClick={() => window.paperkite.revokeMcpToken(token.jti)}
+                onClick={() => window.charlotte.revokeMcpToken(token.jti)}
               >
                 <TrashIcon />
               </button>
@@ -172,7 +172,7 @@ function NewTokenForm() {
   const submit = () => {
     if (!canGenerate) return;
     const ttlMs = TTL_OPTIONS.find((o) => o.value === ttl)?.ms ?? null;
-    window.paperkite.createMcpToken({ label: label.trim(), scopes: [...scopes], ttlMs });
+    window.charlotte.createMcpToken({ label: label.trim(), scopes: [...scopes], ttlMs });
     setLabel('');
     setScopes(new Set());
     setTtl('never');
