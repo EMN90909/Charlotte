@@ -1,7 +1,7 @@
 const THEME_SCRIPT = `
 (function () {
   try {
-    var stored = localStorage.getItem('paperkite-theme');
+    var stored = localStorage.getItem('charlotte-theme');
     if (stored === 'light' || stored === 'dark') {
       document.documentElement.setAttribute('data-theme', stored);
     }
