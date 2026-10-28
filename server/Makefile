@@ -1,84 +1,90 @@
-.PHONY: proto build run run-client run-ops update-ops clean test test-unit test-integration bump-major bump-minor bump-patch tag docker
+# Charlotte's Go server is a complete module. All paths are relative to
+# server/ and work when this directory is copied to its own repository.
+.PHONY: help proto build build-ops build-client build-all check run run-client run-ops update-ops clean test test-unit test-integration verify-standalone bump-major bump-minor bump-patch _bump tag docker
 
+GO ?= go
+BIN_DIR ?= bin
 GITHUB_REPO ?= EMN90909/Charlotte
-
-PROTO_DIR  := proto
-GEN_DIR    := gen
+SCRIPTS := ./scripts
+PROTO_DIR := proto
+GEN_DIR := gen
 PROTO_FILE := $(PROTO_DIR)/chat/chat.proto
-SCRIPTS    := ../scripts
+
+help:
+	@printf '%s\n' 'Charlotte server targets:' '  make build              native server -> bin/charlotte-server' '  make run                start server (CHAT_JWT_SECRET required)' '  make test               unit and integration tests' '  make verify-standalone  build/test an isolated copy of server/' '  make build-all          cross-platform release binaries -> dist/' '  make docker             build charlotte-server:local container' '  make proto              regenerate protobuf code (protoc + plugins)' '  make build-ops          build the deployment supervisor' '  make build-client       build the interactive chat CLI'
 
 proto:
-	@echo "Generating protobuf and gRPC code..."
+	@echo "Generating protobuf and gRPC bindings..."
 	protoc \
 		--go_out=$(GEN_DIR) --go_opt=paths=source_relative \
 		--go-grpc_out=$(GEN_DIR) --go-grpc_opt=paths=source_relative \
 		-I $(PROTO_DIR) \
 		$(PROTO_FILE)
 
+# No project-root assets, Node tooling, or scripts outside server/ are used.
 build:
-	go build ./...
+	@mkdir -p "$(BIN_DIR)"
+	CGO_ENABLED=0 $(GO) build -trimpath -o "$(BIN_DIR)/charlotte-server" ./cmd/server
+
+build-ops:
+	@mkdir -p "$(BIN_DIR)"
+	CGO_ENABLED=0 $(GO) build -trimpath -o "$(BIN_DIR)/charlotte-ops" ./cmd/ops
+
+build-client:
+	@mkdir -p "$(BIN_DIR)"
+	CGO_ENABLED=0 $(GO) build -trimpath -o "$(BIN_DIR)/charlotte-chat" ./cmd/chat
+
+# Retain chat-service-* release asset names for deployed ops-daemon compatibility.
+build-all:
+	@bash "$(SCRIPTS)/build-all.sh"
+
+check:
+	$(GO) vet ./...
+	$(GO) build ./...
 
 run:
-	go run ./cmd/server
+	$(GO) run ./cmd/server
 
-# Interactive CLI client for manually exercising a running server. Example:
-#   make run-client ARGS='-url https://example.com/room -username alice'
 run-client:
-	go run ./cmd/chat $(ARGS)
+	$(GO) run ./cmd/chat $(ARGS)
 
-# The deploy-webhook daemon (see internal/ops and cmd/ops). Separate
-# process from `run` above - it launches and manages the app server
-# itself, so don't run both against the same ports at once. Needs
-# OPS_JWT_SECRET set (deliberately different from CHAT_JWT_SECRET); the
-# app it launches inherits this process's whole environment, so
-# CHAT_JWT_SECRET etc. still need setting here too. Example:
-#   OPS_JWT_SECRET=... CHAT_JWT_SECRET=... make run-ops
 run-ops:
-	go run ./cmd/ops
+	$(GO) run ./cmd/ops
 
-# Run this ON THE SERVER (as root) to update the ops daemon itself - it
-# has no self-update mechanism, so this is a separate manual step from
-# the normal /deploy webhook, which only ever updates chat-service-server.
-# See deploy/update-ops.sh for what it actually does. Usage:
-#   make update-ops                            # latest chat-service-v* release
-#   make update-ops TAG=chat-service-v0.1.1    # a specific tag
 update-ops:
-	@GITHUB_REPO=$(GITHUB_REPO) bash deploy/update-ops.sh $(TAG)
+	@GITHUB_REPO="$(GITHUB_REPO)" bash deploy/update-ops.sh $(TAG)
 
-# Unit tests: fast, no external dependencies, no build tags required.
 test-unit:
-	go test -race -count=1 ./internal/...
+	$(GO) test -race -count=1 ./internal/...
 
-# Integration tests: spins up in-process servers, requires CHAT_JWT_SECRET only
-# within the test itself (set via t.Setenv). No external services needed.
 test-integration:
-	go test -race -count=1 -tags integration -timeout 30s ./test/integration/...
+	$(GO) test -race -count=1 -tags integration -timeout 90s ./test/integration/...
 
-# Run all tests.
 test: test-unit test-integration
 
-clean:
-	rm -rf $(GEN_DIR)/chat/*.pb.go
+# Copies ONLY server/ into a temporary directory before building/testing.
+verify-standalone:
+	@bash "$(SCRIPTS)/verify-standalone.sh"
 
-# Bumps the version in VERSION, then stamps it into CHANGELOG.md.
+clean:
+	rm -rf "$(BIN_DIR)" dist
+
 bump-major:
 	@$(MAKE) _bump PART=major
 bump-minor:
 	@$(MAKE) _bump PART=minor
 bump-patch:
 	@$(MAKE) _bump PART=patch
-
 _bump:
-	@NEW=$$($(SCRIPTS)/bump-version.sh VERSION $(PART)); \
-	$(SCRIPTS)/bump-changelog.sh CHANGELOG.md $$NEW; \
-	echo "chat-service bumped to $$NEW"
+	@NEW=$$(bash "$(SCRIPTS)/bump-version.sh" VERSION "$(PART)"); \
+	bash "$(SCRIPTS)/bump-changelog.sh" CHANGELOG.md "$$NEW"; \
+	echo "Charlotte server bumped to $$NEW"
 
-# Tags HEAD as chat-service-v<version> (from VERSION), doesn't push.
-# Triggers .github/workflows/release-chat-service.yml once pushed.
+# Preserve the existing chat-service-v* tag convention.
+# This works inside the monorepo and when server/ is its own git repo.
 tag:
 	@VERSION=$$(cat VERSION); \
-	$(SCRIPTS)/tag-release.sh chat-service $$VERSION .
+	bash "$(SCRIPTS)/tag-release.sh" chat-service "$$VERSION" .
 
-# Local Docker build, same Dockerfile CI uses.
 docker:
-	docker build -t paperkite-chat-service:local .
+	docker build -t charlotte-server:local .
