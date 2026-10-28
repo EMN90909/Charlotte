@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import type { ReactNode } from 'react';
 import './globals.css';
 import { ThemeScript } from '@/components/ThemeScript';
 import { Navbar } from '@/components/Navbar';
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
     'Charlotte is a Noethric-branded browser where anyone viewing the same webpage can chat in real time, bring their own AI agents, and run their own private chat server.',
 };
 
-export default function RootLayout({ children }: LayoutProps<'/'>) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>

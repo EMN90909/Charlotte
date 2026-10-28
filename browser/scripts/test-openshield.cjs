@@ -42,7 +42,9 @@ test('ABP exceptions and hostname boundaries remain intact', () => {
   const shield = new OpenShield();
   shield.addFilters('||ads.example.com^\n@@||ads.example.com/okay^');
   assert.equal(shield.check('https://ads.example.com/a','https://page.com','script').blocked, true);
-  assert.equal(shield.check('https://ads.example.com/okay.js','https://page.com','script').blocked, false);
+  assert.equal(shield.check('https://ads.example.com/okay/creative.js','https://page.com','script').blocked, false);
+  // ABP ^ separator excludes dots: `/okay^` must NOT match okay.js.
+  assert.equal(shield.check('https://ads.example.com/okay.js','https://page.com','script').blocked, true);
   assert.equal(shield.check('https://ads.example.com.evil.net/a','https://page.com','script').blocked, false);
 });
 test('cosmetic index resolves domain-specific selectors', () => {
