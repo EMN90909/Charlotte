@@ -11,7 +11,8 @@
     "make": "electron-forge make",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
-    "test:adblock": "node --test scripts/test-adblock.cjs"
+    "test:adblock": "node --test scripts/test-adblock.cjs",
+    "test:openshield": "node --test scripts/test-openshield.cjs"
   },
   "keywords": [],
   "author": {

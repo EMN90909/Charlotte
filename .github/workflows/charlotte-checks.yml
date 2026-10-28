@@ -67,7 +67,7 @@ jobs:
       - run: npx tsc --noEmit
       - name: Test network ad blocker
         if: matrix.component == 'browser'
-        run: npm run test:adblock
+        run: npm run test:adblock && npm run test:openshield
       - name: Verify static website output
         if: matrix.component == 'website'
         run: npm run build

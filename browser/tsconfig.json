@@ -21,5 +21,10 @@
   "include": [
     "src",
     "forge.env.d.ts"
+  ],
+  "exclude": [
+    "src/main/adblock/tests",
+    "src/main/adblock/tsup.config.ts",
+    "src/main/adblock/vitest.config.ts"
   ]
 }
