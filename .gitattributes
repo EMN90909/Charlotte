@@ -14,7 +14,7 @@
 
 # Generated bindings and machine-maintained dependency manifests are not
 # authored language implementations. Do not remove or ignore the files.
-chat-service/gen/** linguist-generated=true
+server/gen/** linguist-generated=true
 browser/package-lock.json linguist-generated=true
 website/package-lock.json linguist-generated=true
 brand/export/** linguist-generated=true
