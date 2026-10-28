@@ -765,7 +765,7 @@ export function registerIpcHandlers(wm: WindowManager): void {
   });
 
   // Charlotte's own MCP server (Settings > MCP's "let other apps control
-  // Paperkite" section) - see main/mcp/builtinServer.ts + main/mcpAuth.ts.
+  // Charlotte" section) - see main/mcp/builtinServer.ts + main/mcpAuth.ts.
   const broadcastMcpTokens = () => {
     void getTokens().then((tokens) => wm.chromeView.webContents.send(IPC.MCP_TOKENS_UPDATED, tokens));
   };

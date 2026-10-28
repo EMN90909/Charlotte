@@ -120,7 +120,7 @@ export function saveImageToDownloads(dataUrl: string, onChange: () => void): { o
 
   try {
     const buffer = Buffer.from(dataUrl.slice(prefix.length), 'base64');
-    const savePath = uniqueDownloadPath(`paperkite-screenshot-${Date.now()}.jpg`);
+    const savePath = uniqueDownloadPath(`charlotte-screenshot-${Date.now()}.jpg`);
     fs.mkdirSync(path.dirname(savePath), { recursive: true });
     fs.writeFileSync(savePath, buffer);
 

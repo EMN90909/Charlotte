@@ -24,12 +24,12 @@ import { getInternalToken } from '../mcpAuth';
 import { getBuiltinServerStatus } from './builtinServer';
 import type { AddMcpServerPayload, McpServerConfig, McpTestResult } from '../../shared/types';
 
-/** Sentinel id for Paperkite's own MCP server (main/mcp/builtinServer.ts) -
+/** Sentinel id for Charlotte's own MCP server (main/mcp/builtinServer.ts) -
  * not a real mcpStore entry (it can't be edited/deleted the normal way),
  * so it's connected to separately, via the internal token rather than a
  * stored credential. See ensureBuiltinConnected. */
 const BUILTIN_SERVER_ID = '__builtin__';
-const BUILTIN_SERVER_NAME = 'Paperkite';
+const BUILTIN_SERVER_NAME = 'Charlotte';
 
 export interface McpTool {
   serverId: string;
@@ -60,7 +60,7 @@ interface DraftServer {
 }
 
 const NAMESPACE_PREFIX = 'mcp__';
-const CLIENT_INFO = { name: 'paperkite', version: '1.0.0' };
+const CLIENT_INFO = { name: 'charlotte', version: '1.0.0' };
 
 const connections = new Map<string, ConnectedServer>();
 
@@ -107,7 +107,7 @@ function parseNamespacedTool(name: string): { serverId: string; toolName: string
 
 /** Connects, lists tools, and caches the connection under `serverId` -
  * shared by ensureConnected (user-configured servers) and
- * ensureBuiltinConnected (Paperkite's own server). `null` on any failure -
+ * ensureBuiltinConnected (Charlotte's own server). `null` on any failure -
  * a down/misconfigured server just contributes no tools this turn. */
 async function connectAndCache(serverId: string, serverName: string, transport: Transport): Promise<McpTool[] | null> {
   try {
@@ -145,7 +145,7 @@ export async function ensureConnected(serverId: string): Promise<McpTool[] | nul
   );
 }
 
-/** Same idea as ensureConnected, but for Paperkite's own server - not an
+/** Same idea as ensureConnected, but for Charlotte's own server - not an
  * mcpStore entry, so its connection info comes from main/mcp/builtinServer.ts's
  * live status and main/mcpAuth.ts's internal token instead of a stored config. */
 async function ensureBuiltinConnected(): Promise<McpTool[] | null> {
@@ -159,7 +159,7 @@ async function ensureBuiltinConnected(): Promise<McpTool[] | null> {
   return connectAndCache(BUILTIN_SERVER_ID, BUILTIN_SERVER_NAME, buildTransport({ transport: 'http', url: status.url, authHeader: `Bearer ${token}` }));
 }
 
-/** Every tool from every configured server plus Paperkite's own, connecting
+/** Every tool from every configured server plus Charlotte's own, connecting
  * to each in parallel - the set offered to the LLM on a given message. */
 export async function getAllAvailableTools(): Promise<McpTool[]> {
   const configs = getMcpServers();
