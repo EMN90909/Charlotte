@@ -371,6 +371,7 @@ export function App() {
           domainTrust={domainTrust}
           proxySettings={proxySettings}
           adBlockStatus={adBlockStatus}
+          currentSiteUrl={navState?.url ?? ''}
           focusChatServerId={pendingChatServerFocus?.serverId ?? null}
           focusToken={pendingChatServerFocus?.token ?? 0}
           onClose={closeSettings}

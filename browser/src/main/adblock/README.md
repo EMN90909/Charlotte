@@ -598,3 +598,26 @@ npm run test:adblock
 npx tsc --noEmit
 npm run make
 ```
+
+
+## Live Shields inspector and safe scriptlets
+
+The main-process request hook synchronously checks browsing-tab resources
+(images, JavaScript, audio/video, styles, fonts, frames and others).
+It measures local rule evaluation with `performance.now()` and holds at most
+120 sanitized decisions **in memory**. The Settings UI displays the latest 60
+hostnames with Allow/Block, rule source, resource category and local evaluation
+time. It batches updates every ~300ms. No raw URLs, paths, query strings,
+cookies or resource bodies are recorded. Millisecond processing is measured,
+not guaranteed.
+
+Controls include request filters, current-site scope and saved manual host
+Allow/Block/Reset overrides. Priority: Off or main document, site exception,
+manual allowed host, manual blocked host, ads list, then Strict tracker list.
+
+Strict mode supports a tiny reviewed scriptlet subset: `set-constant` for
+restricted scalar values and `abort-on-property-read` on safe property paths.
+Only site-scoped scriptlets, never arbitrary filter-list JavaScript, are
+compiled into fixed JS templates. Execution after DOM ready can affect dynamic
+ad scripts but not every early inline script. Reload to undo existing page
+script effects. This does not claim complete Brave Shields parity.

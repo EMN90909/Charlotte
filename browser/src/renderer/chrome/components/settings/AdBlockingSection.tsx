@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { ShieldsInspector } from './ShieldsInspector';
 import type { AdBlockSettings, AdBlockStatus } from '../../../../shared/types';
 
 interface AdBlockingSectionProps {
   status: AdBlockStatus;
+  currentSiteUrl: string;
   onSave: (settings: AdBlockSettings) => void;
 }
 
@@ -12,7 +14,7 @@ const MODES: Array<{ value: AdBlockSettings['mode']; label: string }> = [
   { value: 'strict', label: 'Strict' },
 ];
 
-export function AdBlockingSection({ status, onSave }: AdBlockingSectionProps) {
+export function AdBlockingSection({ status, onSave, currentSiteUrl }: AdBlockingSectionProps) {
   const [domain, setDomain] = useState('');
   const { settings, blockedCount } = status;
   const candidate = domain.trim().toLowerCase().replace(/\.$/, '');
@@ -22,9 +24,9 @@ export function AdBlockingSection({ status, onSave }: AdBlockingSectionProps) {
 
   return (
     <section className="settings-section">
-      <h2>Ad &amp; tracker blocking</h2>
+      <h2>Charlotte Shields</h2>
       <p className="settings-hint">
-        OpenShield blocks advertising and tracking requests locally, with cosmetic hiding for ad placeholders. No extra extension or service.
+        OpenShield filters requests in real time, hides ad placeholders, and supports safe Strict-mode scriptlets. No separate extension or service.
       </p>
       <div className="segmented" role="radiogroup" aria-label="Ad blocking level">
         {MODES.map(({ value, label }) => (
@@ -52,12 +54,14 @@ export function AdBlockingSection({ status, onSave }: AdBlockingSectionProps) {
         <span>requests blocked this session</span>
       </div>
 
+      <ShieldsInspector status={status} currentSiteUrl={currentSiteUrl} onSave={onSave} />
       <h2>Filter engine</h2>
       <p className="settings-hint">
         {status.engine ? `${status.engine.networkRules.toLocaleString()} network rules, ${status.engine.cosmeticRules.toLocaleString()} cosmetic rules. ${status.engine.cachedLists} community lists active.` : 'Loading local protection.'}
         {status.engine?.lastUpdated ? ` Updated ${new Date(status.engine.lastUpdated).toLocaleDateString()}.` : ''}
       </p>
       {status.engine?.lastError && <p className="settings-hint" role="status">Community filters could not update. Existing offline protection remains enabled.</p>}
+      <p className="settings-hint">Strict-only scriptlet executions this session: {status.scriptletsApplied ?? 0}. Only safe built-in scriptlet templates are permitted. Reload to revert scriptlet changes.</p>
       <h2>Site exceptions</h2>
       <p className="settings-hint">
         Allow ads and trackers on sites that need them to work. The exception covers the domain and its subdomains.

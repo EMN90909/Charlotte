@@ -2673,3 +2673,29 @@ html {
 .adblock-exceptions { display: grid; gap: 8px; margin: 14px 0 20px; }
 .adblock-exception { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border, #8884); border-radius: 9px; font-size: 13px; overflow-wrap: anywhere; }
 .adblock-exception button { cursor: pointer; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; }
+
+/* Charlotte Shields live resource inspector */
+.shields-inspector { margin:22px 0; }
+.shields-inspector h2 { margin-top:20px; }
+.shields-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:12px 0 20px; }
+.shields-stats > div { border:1px solid var(--line); background:var(--paper-dim); padding:10px; border-radius:9px; display:flex; flex-direction:column; gap:4px; }
+.shields-stats strong { font-size:16px; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.shields-stats span { font-size:10px; color:var(--ink-soft); }
+.shields-controls { display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:end; margin:12px 0; }
+.shields-resource { display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--ink-soft); }
+.shields-resource select { border:1px solid var(--line-strong); border-radius:7px; padding:7px; color:var(--ink); background:var(--paper-raised); width:100%; }
+.shields-site { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11px; color:var(--ink-soft); padding:8px 0; }
+.shields-site strong { color:var(--ink); overflow-wrap:anywhere; }
+.shields-list { max-height:330px; overflow-y:auto; border:1px solid var(--line); border-radius:9px; }
+.shields-request { display:flex; gap:8px; align-items:center; padding:8px; border-bottom:1px solid var(--line); }
+.shields-request:last-child { border-bottom:0; }
+.shields-action { text-transform:uppercase; font-size:9px; font-weight:700; min-width:40px; padding:5px 3px; text-align:center; border-radius:6px; }
+.shields-action--block { background:var(--accent-glow); color:var(--accent); }
+.shields-action--allow { background:var(--paper-dim); color:var(--ink-soft); }
+.shields-request__info { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.shields-request__info strong { font-size:11px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.shields-request__info span { font-size:10px; color:var(--ink-faint); overflow-wrap:anywhere; }
+.shields-request__override { background:var(--paper-raised); border:1px solid var(--line-strong); border-radius:7px; padding:6px; color:var(--ink); font-size:10px; white-space:nowrap; }
+.shields-request__override:disabled { opacity:.45; }
+.shields-empty { padding:12px; }
+@media(max-width:640px) { .shields-controls { grid-template-columns:1fr; } .shields-request { flex-wrap:wrap; } }

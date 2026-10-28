@@ -24,6 +24,7 @@ interface SettingsModalProps {
   domainTrust: DomainTrustLists;
   proxySettings: ProxySettings;
   adBlockStatus: AdBlockStatus;
+  currentSiteUrl: string;
   /** Set together with `focusToken` when Settings was opened via the chat
    * panel's "fix this server's username" CTA (see App.tsx's
    * pendingChatServerFocus) - jumps straight to Chat Servers with this
@@ -122,7 +123,7 @@ export function SettingsModal(props: SettingsModalProps) {
             {section === 'general' && <GeneralSection themeSource={props.themeSource} onSaveTheme={props.onSaveTheme} />}
             {section === 'safety' && <SafetySection safety={props.safety} onSaveSafety={props.onSaveSafety} />}
             {section === 'privacy' && <PrivacyDataSection />}
-            {section === 'adBlocking' && <AdBlockingSection status={props.adBlockStatus} onSave={props.onSaveAdBlockSettings} />}
+            {section === 'adBlocking' && <AdBlockingSection status={props.adBlockStatus} currentSiteUrl={props.currentSiteUrl} onSave={props.onSaveAdBlockSettings} />}
             {section === 'history' && <HistorySection onOpenInNewTab={props.onOpenInNewTab} />}
             {section === 'bookmarks' && (
               <BookmarksSection
