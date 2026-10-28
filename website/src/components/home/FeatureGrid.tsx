@@ -10,7 +10,7 @@ const features = [
   {
     icon: ServerIcon,
     title: 'Ships with its own MCP server',
-    body: "Paperkite exposes the page you're on, its content, the room, and the chat, as MCP tools of its own. External agents can act on what you're browsing instead of only discussing it.",
+    body: "Charlotte exposes the page you're on, its content, the room, and the chat, as MCP tools of its own. External agents can act on what you're browsing instead of only discussing it.",
   },
   {
     icon: MicIcon,
@@ -24,8 +24,8 @@ const features = [
   },
   {
     icon: LockOpenIcon,
-    title: 'Fully open source',
-    body: 'Browser, chat protocol, and server are all MIT licensed. Read the wire format, run your own fork, audit every byte that leaves the app.',
+    title: 'Original rights retained',
+    body: 'The original project remains MIT-licensed under Samuel Abolo. Noethric-owned new additions may carry separate commercial terms.',
   },
 ];
 
@@ -35,7 +35,7 @@ export function FeatureGrid() {
       <div className="shell">
         <div className={styles.head}>
           <span className="eyebrow">What&apos;s in the box</span>
-          <h2 className={styles.title}>What Paperkite ships with.</h2>
+          <h2 className={styles.title}>What Charlotte ships with.</h2>
         </div>
 
         <div className={styles.grid}>

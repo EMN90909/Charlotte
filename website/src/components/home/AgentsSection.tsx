@@ -20,7 +20,7 @@ export function AgentsSection() {
           <h2 className={styles.title}>Chat with an agent about the page you&apos;re on.</h2>
           <p className={styles.body}>
             Open the agent panel next to any tab and ask about what&apos;s in front of you.
-            Paperkite ships adapters for the major hosted providers and for open-source models
+            Charlotte ships adapters for the major hosted providers and for open-source models
             through Ollama. Pick a provider per conversation, keep your keys local, and switch
             anytime.
           </p>

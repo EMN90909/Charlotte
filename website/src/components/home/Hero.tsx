@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { site } from '@/lib/site';
-import { ArrowRightIcon, GithubIcon, KiteMark } from '@/components/icons';
+import { ArrowRightIcon, KiteMark } from '@/components/icons';
 import { BrowserMock } from './BrowserMock';
 import styles from './Hero.module.css';
 
@@ -15,7 +15,7 @@ export function Hero() {
         <div className={styles.copy}>
           <span className="eyebrow">
             <span className={styles.eyebrowDot} />
-            Open source · Electron browser
+            Charlotte by Noethric · Electron browser
           </span>
 
           <h1 className={styles.headline}>
@@ -27,24 +27,21 @@ export function Hero() {
           </h1>
 
           <p className={styles.sub}>
-            Paperkite is a browser with a chat panel built into every tab. Anyone else on the
+            Charlotte is a browser with a chat panel built into every tab. Anyone else on the
             same URL right now can talk to you there. No accounts, no invites, no separate app.
             Bring an AI agent into the conversation, or run the server yourself.
           </p>
 
           <div className={styles.ctas}>
             <Link href="/download" className="btn btn--primary">
-              Download Paperkite
+              Download Charlotte
               <ArrowRightIcon size={15} />
             </Link>
-            <a href={site.githubRepo} target="_blank" rel="noreferrer" className="btn btn--ghost">
-              <GithubIcon size={16} />
-              View source
-            </a>
+            <Link href="/licensing" className="btn btn--ghost">Licensing &amp; original author</Link>
           </div>
 
           <div className={styles.meta}>
-            <span>MIT licensed</span>
+            <span>Original MIT rights preserved</span>
             <span className={styles.metaSep} />
             <span>macOS · Windows · Linux</span>
             <span className={styles.metaSep} />

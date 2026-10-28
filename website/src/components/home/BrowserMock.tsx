@@ -10,7 +10,7 @@ const messages = [
 
 export function BrowserMock() {
   return (
-    <div className={styles.window} role="img" aria-label="Paperkite browser window showing a live chat panel next to a webpage">
+    <div className={styles.window} role="img" aria-label="Charlotte browser window showing a live chat panel next to a webpage">
       <div className={styles.titlebar}>
         <div className={styles.dots}>
           <span /><span /><span />
