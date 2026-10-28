@@ -20,7 +20,7 @@ export function useUsernameClaim(serverId: string | null, onClaimed?: () => void
     pendingRef.current = null;
     setStatus('idle');
     setMessage(null);
-    return window.paperkite.onChatServerUsernameClaimResult((result) => {
+    return window.charlotte.onChatServerUsernameClaimResult((result) => {
       // Ignore stale answers for a name the user has since moved past.
       if (result.serverId !== serverId || result.username !== pendingRef.current) return;
       pendingRef.current = null;
@@ -40,7 +40,7 @@ export function useUsernameClaim(serverId: string | null, onClaimed?: () => void
     pendingRef.current = trimmed;
     setStatus('pending');
     setMessage(null);
-    window.paperkite.claimChatServerUsername({ serverId, username: trimmed });
+    window.charlotte.claimChatServerUsername({ serverId, username: trimmed });
   };
 
   /** Clears a shown error once the user starts editing again. */
