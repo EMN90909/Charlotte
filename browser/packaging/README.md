@@ -104,7 +104,7 @@ it later, GitHub Pages + `reprepro` is the lowest-cost option since it
 doesn't need a server, just a signing key and a scheduled publish step.
 
 
-> **Legacy profiles:** Existing installs may continue using the prior Paperkite app-data directory so upgrading does not discard bookmarks, sessions, or settings. Do not delete that legacy directory until migrating user data is explicitly supported and verified.
+> **Legacy profiles:** Existing installs may continue using the prior Charlotte app-data directory so upgrading does not discard bookmarks, sessions, or settings. Do not delete that legacy directory until migrating user data is explicitly supported and verified.
 
 > **Rights:** See [COMMERCIAL-LICENSE.md](../COMMERCIAL-LICENSE.md) and the preserved [MIT LICENSE](../LICENSE). Proprietary branding does not supersede Samuel Abolo's original MIT grant.
 
