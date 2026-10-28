@@ -5,6 +5,7 @@
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { IPC } from '../shared/ipcChannels';
+import type { AccountStatus } from '../main/supabaseAuth';
 import type {
   TabsUpdatedPayload,
   NavState,
@@ -62,6 +63,10 @@ function subscribe<T>(channel: string, callback: (payload: T) => void): () => vo
 }
 
 const api = {
+  getAccountStatus: (): Promise<AccountStatus> => ipcRenderer.invoke(IPC.ACCOUNT_STATUS),
+  signInAccount: (email: string, password: string): Promise<AccountStatus> => ipcRenderer.invoke(IPC.ACCOUNT_SIGN_IN, email, password),
+  signUpAccount: (email: string, password: string): Promise<AccountStatus> => ipcRenderer.invoke(IPC.ACCOUNT_SIGN_UP, email, password),
+  signOutAccount: (): Promise<AccountStatus> => ipcRenderer.invoke(IPC.ACCOUNT_SIGN_OUT),
   // commands
   /** `url` opens that address directly instead of the new-tab page - used
    * by History/Bookmarks rows in Settings to open in a new tab. */

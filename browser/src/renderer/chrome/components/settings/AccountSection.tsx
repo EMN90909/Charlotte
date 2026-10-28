@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { AccountStatus } from '../../../../main/supabaseAuth';
 
 export function AccountSection() {
@@ -16,7 +16,7 @@ export function AccountSection() {
     return () => { active = false; };
   }, []);
 
-  const submit = async (event: React.FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true); setNotice('');
     try {

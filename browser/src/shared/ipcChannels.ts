@@ -4,6 +4,10 @@
  */
 export const IPC = {
   // chrome -> main
+  ACCOUNT_STATUS: 'chrome:account-status',
+  ACCOUNT_SIGN_IN: 'chrome:account-sign-in',
+  ACCOUNT_SIGN_UP: 'chrome:account-sign-up',
+  ACCOUNT_SIGN_OUT: 'chrome:account-sign-out',
   NEW_TAB: 'chrome:new-tab',
   CLOSE_TAB: 'chrome:close-tab',
   SWITCH_TAB: 'chrome:switch-tab',

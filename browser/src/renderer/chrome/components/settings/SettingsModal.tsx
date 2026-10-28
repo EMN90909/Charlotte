@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { SafetySettings, ThemeSource, BookmarkEntry, BookmarkFolder, DomainTrustLists, ProxySettings } from '../../../../shared/types';
 import { CloseIcon } from '../../icons';
 import { GeneralSection } from './GeneralSection';
+import { AccountSection } from './AccountSection';
 import { SafetySection } from './SafetySection';
 import { HistorySection } from './HistorySection';
 import { BookmarksSection } from './BookmarksSection';
@@ -47,6 +48,7 @@ interface SettingsModalProps {
 
 type SectionId =
   | 'general'
+  | 'account'
   | 'safety'
   | 'privacy'
   | 'history'
@@ -61,6 +63,7 @@ type SectionId =
 
 const SECTIONS: Array<{ id: SectionId; label: string }> = [
   { id: 'general', label: 'General' },
+  { id: 'account', label: 'Account' },
   { id: 'safety', label: 'Safety' },
   { id: 'privacy', label: 'Privacy & Data' },
   { id: 'history', label: 'History' },
@@ -110,6 +113,7 @@ export function SettingsModal(props: SettingsModalProps) {
           </nav>
 
           <div className="settings-panel__content">
+            {section === 'account' && <AccountSection />}
             {section === 'general' && <GeneralSection themeSource={props.themeSource} onSaveTheme={props.onSaveTheme} />}
             {section === 'safety' && <SafetySection safety={props.safety} onSaveSafety={props.onSaveSafety} />}
             {section === 'privacy' && <PrivacyDataSection />}

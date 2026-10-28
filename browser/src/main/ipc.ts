@@ -4,6 +4,7 @@
  * state back out ("main -> chrome", "main -> chat") in response.
  */
 import { ipcMain, nativeTheme, shell, dialog, app } from 'electron';
+import { getAccountStatus, signIn, signUp, signOut } from './supabaseAuth';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { IPC } from '../shared/ipcChannels';
@@ -214,6 +215,24 @@ export function registerIpcHandlers(wm: WindowManager): void {
     // attempt doesn't keep presenting the same bad one.
     onTokenInvalid: (serverId) => clearChatServerToken(serverId),
   });
+
+  // Authentication is callable only by the trusted Chrome renderer; websites
+  // and the chat panel cannot invoke credentials or account operations.
+  const allowChrome = (event: Electron.IpcMainInvokeEvent) => {
+    if (event.sender.id !== wm.chromeView.webContents.id) throw Error('Unauthorized IPC sender');
+  };
+  ipcMain.handle(IPC.ACCOUNT_STATUS, (event) => { allowChrome(event); return getAccountStatus(); });
+  ipcMain.handle(IPC.ACCOUNT_SIGN_IN, (event, email: unknown, password: unknown) => {
+    allowChrome(event);
+    if (typeof email !== 'string' || typeof password !== 'string' || email.length > 320 || password.length > 4096) throw Error('Invalid sign-in request');
+    return signIn(email, password);
+  });
+  ipcMain.handle(IPC.ACCOUNT_SIGN_UP, (event, email: unknown, password: unknown) => {
+    allowChrome(event);
+    if (typeof email !== 'string' || typeof password !== 'string' || email.length > 320 || password.length > 4096) throw Error('Invalid sign-up request');
+    return signUp(email, password);
+  });
+  ipcMain.handle(IPC.ACCOUNT_SIGN_OUT, (event) => { allowChrome(event); return signOut(); });
 
   // --- chrome -> main ---
   ipcMain.on(IPC.NEW_TAB, (_event, url?: string) => wm.tabs.newTab(url));
