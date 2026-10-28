@@ -46,28 +46,28 @@ export function App() {
 
   useEffect(() => {
     const unsubs = [
-      window.paperkiteChat.onRoomChanged((payload) => setUrl(payload.url)),
-      window.paperkiteChat.onMessages((payload) => {
+      window.charlotteChat.onRoomChanged((payload) => setUrl(payload.url)),
+      window.charlotteChat.onMessages((payload) => {
         // Ignore a stale delivery for a room we've since navigated away from.
         setUrl((current) => {
           if (current === '' || current === payload.url) setMessages(payload.list);
           return current;
         });
       }),
-      window.paperkiteChat.onSafetySettings(setSafety),
-      window.paperkiteChat.onTheme(setTheme),
-      window.paperkiteChat.onDomainTrust(setDomainTrust),
-      window.paperkiteChat.onChatServersUpdated((payload) => {
+      window.charlotteChat.onSafetySettings(setSafety),
+      window.charlotteChat.onTheme(setTheme),
+      window.charlotteChat.onDomainTrust(setDomainTrust),
+      window.charlotteChat.onChatServersUpdated((payload) => {
         setChatServers(payload.servers);
         setDefaultServerId(payload.defaultServerId);
       }),
-      window.paperkiteChat.onActiveChatServer((payload) => {
+      window.charlotteChat.onActiveChatServer((payload) => {
         setOverrideServerId(payload.overrideServerId);
         setEffectiveServerId(payload.effectiveServerId);
       }),
-      window.paperkiteChat.onChatConnectionStatus(setConnectionStatus),
+      window.charlotteChat.onChatConnectionStatus(setConnectionStatus),
     ];
-    window.paperkiteChat.ready();
+    window.charlotteChat.ready();
     return () => unsubs.forEach((unsub) => unsub());
   }, []);
 
@@ -97,7 +97,7 @@ export function App() {
   // shown at a time in practice, but OR them together regardless so
   // neither accidentally shrinks the view out from under the other.
   useEffect(() => {
-    window.paperkiteChat.setOverlayOpen(lightboxAttachment !== null || showUsernameTakenModal);
+    window.charlotteChat.setOverlayOpen(lightboxAttachment !== null || showUsernameTakenModal);
   }, [lightboxAttachment, showUsernameTakenModal]);
 
   const togglePin = (id: string) => {
@@ -156,7 +156,7 @@ export function App() {
             defaultServerId={defaultServerId}
             overrideServerId={overrideServerId}
             status={connectionStatus}
-            onSelect={(id) => window.paperkiteChat.setActiveChatServer(id)}
+            onSelect={(id) => window.charlotteChat.setActiveChatServer(id)}
           />
         )}
       </header>
@@ -178,13 +178,13 @@ export function App() {
           {effectiveServer && !effectiveServer.username ? (
             <SetUsernameCta
               serverName={effectiveServer.name}
-              onOpenSettings={() => window.paperkiteChat.requestOpenChatServerSettings(effectiveServer.id)}
+              onOpenSettings={() => window.charlotteChat.requestOpenChatServerSettings(effectiveServer.id)}
             />
           ) : (
             <MessageInput
               disabled={inputDisabled}
               placeholder={inputPlaceholderFor(effectiveServer, connectionStatus)}
-              onSend={(content) => window.paperkiteChat.sendMessage(content)}
+              onSend={(content) => window.charlotteChat.sendMessage(content)}
             />
           )}
         </>
@@ -197,7 +197,7 @@ export function App() {
         <UsernameTakenModal
           serverName={effectiveServer.name}
           username={effectiveServer.username ?? ''}
-          onOpenSettings={() => window.paperkiteChat.requestOpenChatServerSettings(effectiveServer.id)}
+          onOpenSettings={() => window.charlotteChat.requestOpenChatServerSettings(effectiveServer.id)}
           onDismiss={() => setDismissedUsernameTakenKey(usernameTakenKey)}
         />
       )}

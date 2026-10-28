@@ -23,7 +23,7 @@ export function AgentMarkdown({ text }: AgentMarkdownProps) {
 
 const components: Components = {
   a: ({ href, children }) => {
-    const open = () => href && window.paperkiteChat.openLink(href);
+    const open = () => href && window.charlotteChat.openLink(href);
     return (
       <span
         className="message__link message__link--trusted"

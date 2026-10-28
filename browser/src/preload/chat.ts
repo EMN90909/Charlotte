@@ -1,5 +1,5 @@
 /**
- * Preload script for the chat panel view. Exposes `window.paperkiteChat`,
+ * Preload script for the chat panel view. Exposes `window.charlotteChat`,
  * a narrow, typed surface over the IPC contract in shared/ipcChannels.ts.
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
@@ -95,6 +95,6 @@ const api = {
   onAgentMessageRetry: (cb: (payload: RetryAgentMessagePayload) => void) => subscribe(IPC.AGENT_MESSAGE_RETRY, cb),
 };
 
-export type PaperkiteChatApi = typeof api;
+export type CharlotteChatApi = typeof api;
 
-contextBridge.exposeInMainWorld('paperkiteChat', api);
+contextBridge.exposeInMainWorld('charlotteChat', api);

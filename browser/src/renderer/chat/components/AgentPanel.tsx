@@ -20,8 +20,8 @@ export function AgentPanel({ onImageClick }: AgentPanelProps) {
 
   useEffect(() => {
     const unsubs = [
-      window.paperkiteChat.onAgentsUpdated(setAgents),
-      window.paperkiteChat.onAgentThreads((list) => {
+      window.charlotteChat.onAgentsUpdated(setAgents),
+      window.charlotteChat.onAgentThreads((list) => {
         setThreads(list);
         if (awaitingNewThread.current && list.length > 0) {
           awaitingNewThread.current = false;
@@ -29,8 +29,8 @@ export function AgentPanel({ onImageClick }: AgentPanelProps) {
         }
       }),
     ];
-    window.paperkiteChat.requestAgents();
-    window.paperkiteChat.requestAgentThreads();
+    window.charlotteChat.requestAgents();
+    window.charlotteChat.requestAgentThreads();
     return () => unsubs.forEach((unsub) => unsub());
   }, []);
 
@@ -45,7 +45,7 @@ export function AgentPanel({ onImageClick }: AgentPanelProps) {
         agent={agent}
         onBack={() => setSelectedThreadId(null)}
         onDelete={() => {
-          window.paperkiteChat.deleteAgentThread(selectedThread.id);
+          window.charlotteChat.deleteAgentThread(selectedThread.id);
           setSelectedThreadId(null);
         }}
         onImageClick={onImageClick}
@@ -60,9 +60,9 @@ export function AgentPanel({ onImageClick }: AgentPanelProps) {
       onSelectThread={setSelectedThreadId}
       onCreateThread={(agentId) => {
         awaitingNewThread.current = true;
-        window.paperkiteChat.createAgentThread(agentId);
+        window.charlotteChat.createAgentThread(agentId);
       }}
-      onDeleteThread={(id) => window.paperkiteChat.deleteAgentThread(id)}
+      onDeleteThread={(id) => window.charlotteChat.deleteAgentThread(id)}
     />
   );
 }

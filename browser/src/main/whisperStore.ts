@@ -1,7 +1,7 @@
 /**
  * Locates and persists config for whisper.cpp - the local speech-to-text
  * engine live translate uses to transcribe tab audio (see
- * whisperTranscribe.ts). Paperkite doesn't install, bundle, or manage
+ * whisperTranscribe.ts). Charlotte doesn't install, bundle, or manage
  * whisper.cpp itself; the user gets it onto their machine however they
  * like (Homebrew, building from source, whatever) and either it resolves
  * on PATH under a name we recognize, or they point at it explicitly in
@@ -66,7 +66,7 @@ function verifyBinary(binPath: string): Promise<boolean> {
  * one started from an interactive shell) doesn't necessarily inherit the
  * shell's PATH - Homebrew's own install dirs are the classic case that
  * goes missing. Falling back to checking these directly means "I just
- * brew installed it" keeps working regardless of how Paperkite itself was
+ * brew installed it" keeps working regardless of how Charlotte itself was
  * launched. */
 const HOMEBREW_BIN_DIRS = ['/opt/homebrew/bin', '/usr/local/bin'];
 
