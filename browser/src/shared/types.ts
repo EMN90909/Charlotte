@@ -533,13 +533,36 @@ export const DEFAULT_DOMAIN_TRUST_LISTS: DomainTrustLists = {
 /** Local, device-wide network ad-blocking level and website exceptions. */
 export interface AdBlockSettings {
   mode: 'off' | 'balanced' | 'strict';
+  /** Turn off Shields on these sites (including subdomains). */
   allowedSites: string[];
+  /** Allow individual request hosts, without disabling the entire website. */
+  allowedHosts: string[];
+  /** Always block these request hosts when used as subresources. */
+  blockedHosts: string[];
+}
+
+export type AdBlockResource = 'JavaScript' | 'Images' | 'Audio / video' | 'Styles' | 'Fonts' | 'Documents' | 'Other';
+export type AdBlockRuleSource = 'advertising' | 'tracking' | 'exception' | 'manual allow' | 'manual block' | 'site exception' | 'no match' | 'disabled';
+/** An ephemeral, sanitized, in-memory record. Never includes URLs or request bodies. */
+export interface AdBlockRequestEntry {
+  id: number;
+  site: string;
+  host: string;
+  resource: AdBlockResource;
+  action: 'allow' | 'block';
+  rule: AdBlockRuleSource;
+  elapsedMs: number;
+  at: number;
 }
 
 export interface AdBlockStatus {
   settings: AdBlockSettings;
   /** Requests cancelled since browser launch, not a lifetime statistic. */
   blockedCount: number;
+  allowedCount?: number;
+  recentRequests?: AdBlockRequestEntry[];
+  averageEvaluationMs?: number;
+  scriptletsApplied?: number;
   engine?: {
     networkRules: number;
     cosmeticRules: number;
@@ -552,6 +575,8 @@ export interface AdBlockStatus {
 export const DEFAULT_AD_BLOCK_SETTINGS: AdBlockSettings = {
   mode: 'balanced',
   allowedSites: [],
+  allowedHosts: [],
+  blockedHosts: [],
 };
 
 /** Manual proxy configuration, applied via session.setProxy(). 'direct'

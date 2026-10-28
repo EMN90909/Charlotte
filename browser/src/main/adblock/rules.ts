@@ -163,18 +163,27 @@ export function normalizeAllowedDomain(raw: string): string | null {
 }
 
 export function normalizeAdBlockSettings(input: unknown, fallback: AdBlockSettings): AdBlockSettings {
-  if (!input || typeof input !== 'object') return { mode: fallback.mode, allowedSites: [...fallback.allowedSites] };
-  const value = input as Partial<AdBlockSettings>;
+  const value = input && typeof input === 'object' ? input as Partial<AdBlockSettings> : {};
   const mode = value.mode === 'off' || value.mode === 'balanced' || value.mode === 'strict'
     ? value.mode : fallback.mode;
-  const sites = Array.isArray(value.allowedSites) ? value.allowedSites : fallback.allowedSites;
-  const valid = new Set<string>();
-  for (const site of sites.slice(0, 128)) {
-    if (typeof site !== 'string') continue;
-    const domain = normalizeAllowedDomain(site);
-    if (domain) valid.add(domain);
-  }
-  return { mode, allowedSites: [...valid] };
+  const clean = (candidate: unknown, defaults: string[]): string[] => {
+    const values = Array.isArray(candidate) ? candidate : defaults;
+    const valid = new Set<string>();
+    for (const site of values.slice(0, 128)) {
+      if (typeof site !== 'string') continue;
+      const domain = normalizeAllowedDomain(site);
+      if (domain) valid.add(domain);
+    }
+    return [...valid];
+  };
+  const allowedHosts = clean(value.allowedHosts, fallback.allowedHosts);
+  const allowSet = new Set(allowedHosts);
+  return {
+    mode,
+    allowedSites: clean(value.allowedSites, fallback.allowedSites),
+    allowedHosts,
+    blockedHosts: clean(value.blockedHosts, fallback.blockedHosts).filter((host) => !allowSet.has(host)),
+  };
 }
 
 function httpHostname(value: string): string | null {

@@ -54,13 +54,32 @@ test('cosmetic index resolves domain-specific selectors', () => {
   // Adapter intentionally never executes scriptlets in filter lists.
   assert.equal(result.scriptletInjections.length, 1);
 });
-\ntest('domain-scoped scriptlet exceptions disable a matching injection', () => {
+
+test('domain-scoped scriptlet exceptions disable a matching injection', () => {
   const shield = new OpenShield();
-  shield.addFilters('example.com##+js(set-constant, adReady, false)\\nexample.com#@#+js(set-constant, adReady, false)');
+  shield.addFilters('example.com##+js(set-constant, adReady, false)\nexample.com#@#+js(set-constant, adReady, false)');
   assert.equal(shield.getCosmeticsForUrl('https://example.com').scriptletInjections.length, 0);
 });
 test('generic scriptlets cannot affect every website', () => {
   const shield = new OpenShield();
   shield.addFilters('##+js(abort-on-property-read, adReady)');
   assert.equal(shield.getCosmeticsForUrl('https://example.com').scriptletInjections.length, 0);
+});
+
+const { parseSafeScriptlets, compileSafeScriptletSource } = load(path.join(root, 'scriptlets.ts'));
+test('strict scriptlets accept only limited commands and valid property paths', () => {
+  const rules = parseSafeScriptlets([
+    'set-constant(adReady, false)',
+    'abort-on-property-read(window.alert)',
+    'set-constant(__proto__.polluted, true)',
+    'set-constant(navigator.plugins, false)',
+    'set-constant(flag, alert(1))',
+    'set-constant(adReady, false)',
+    'abort-on-property-read(adsDisabled)',
+  ]);
+  assert.equal(rules.length, 2);
+  const source = compileSafeScriptletSource(['set-constant(adReady, false)']);
+  assert.equal(typeof source, 'string');
+  assert.equal(source.includes("eval("), false);
+  assert.equal(compileSafeScriptletSource(['unknown(adsDisabled)']), null);
 });

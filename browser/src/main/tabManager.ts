@@ -25,7 +25,7 @@ import { buildErrorPageUrl, buildCrashPageUrl } from './errorPage';
 import type { NavState, TabsUpdatedPayload, SubtitleSettings, PageTranslateSettings } from '../shared/types';
 import { DEFAULT_SUBTITLE_SETTINGS, DEFAULT_PAGE_TRANSLATE_SETTINGS } from '../shared/types';
 import { IPC } from '../shared/ipcChannels';
-import { applyAdBlockCosmetics, detachAdBlockCosmetics } from './adblock/adblocker';
+import { applyAdBlockCosmetics, applyAdBlockScriptlets, detachAdBlockCosmetics } from './adblock/adblocker';
 
 /** Navigations that don't represent a real failure - a new load
  * superseding this one, the user hitting stop, a download starting, etc.
@@ -483,6 +483,7 @@ export class TabManager {
     // sit there untranslated until the user re-toggles it by hand.
     wc.on('dom-ready', () => {
       void applyAdBlockCosmetics(wc);
+      applyAdBlockScriptlets(wc);
       if (tab.pageTranslate.enabled && tab.pageTranslate.agentId) {
         wc.send(IPC.PAGE_TRANSLATE_ENABLE);
       }

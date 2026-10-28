@@ -18,7 +18,8 @@ export function parseSafeScriptlets(injections: readonly string[]): SafeScriptle
   const accepted: SafeScriptlet[] = [];
   const unique = new Set<string>();
   for (const injection of injections) {
-    if (accepted.length >= 12 || injection.length > 180) break;
+    if (accepted.length >= 12) break;
+    if (injection.length > 180) continue;
     const match = /^(set-constant|abort-on-property-read)\(([^()]*)\)$/.exec(injection.trim());
     if (!match) continue;
     const args = match[2].split(',').map((s) => s.trim());
