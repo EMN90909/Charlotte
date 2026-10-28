@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/EMN90909/Charlotte/server/internal/hub"
 	"github.com/EMN90909/Charlotte/server/internal/metrics"
 	"github.com/EMN90909/Charlotte/server/internal/sse"
+	"github.com/EMN90909/Charlotte/server/internal/supabaseauth"
 	"github.com/EMN90909/Charlotte/server/internal/username"
 	"golang.org/x/crypto/acme/autocert"
 	"google.golang.org/grpc"
@@ -236,10 +238,21 @@ func buildHTTP(h *hub.Hub, reg *username.Registry, rec *metrics.Recorder) http.H
 	mux.Handle("GET /poll", api.PollHandler(h))
 	mux.Handle("GET /events", sse.Handler(h))
 	mux.Handle("GET /custom-metrics", api.MetricsHandler(rec))
+	mux.Handle("GET /auth/me", supabaseauth.MeHandlerFromEnv())
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "ok")
 	})
-	return mux
+	// The static marketing site makes browser-side health/metric reads.
+	// Allow a single explicit origin, never all origins or credentials.
+	allowedOrigin := strings.TrimSpace(os.Getenv("CHARLOTTE_WEB_ORIGIN"))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if allowedOrigin != "" && r.Header.Get("Origin") == allowedOrigin &&
+			(r.URL.Path == "/healthz" || r.URL.Path == "/custom-metrics") {
+			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+			w.Header().Set("Vary", "Origin")
+		}
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func serveGRPC(srv *grpc.Server, addr string, log *slog.Logger) error {
