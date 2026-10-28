@@ -69,7 +69,7 @@ export async function transcribeWavChunk(
   previousText = '',
   pageContext = '',
 ): Promise<string> {
-  const tmpFile = path.join(os.tmpdir(), `paperkite-subtitle-${randomUUID()}.wav`);
+  const tmpFile = path.join(os.tmpdir(), `charlotte-subtitle-${randomUUID()}.wav`);
   await fs.writeFile(tmpFile, wavBytes);
 
   try {

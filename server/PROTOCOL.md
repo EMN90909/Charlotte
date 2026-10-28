@@ -367,7 +367,7 @@ estimate, not a guarantee — a client should still confirm liveness (e.g.
 `GET /healthz`) before reconnecting rather than assuming the server is
 back the instant that time elapses, and should back off with jitter on
 top of it if it isn't, rather than have every disconnected client retry
-in lockstep. See the Paperkite browser's `chatSession.ts` for a
+in lockstep. See the Charlotte browser's `chatSession.ts` for a
 reference implementation of the queue-and-backoff behavior this is meant
 to enable.
 

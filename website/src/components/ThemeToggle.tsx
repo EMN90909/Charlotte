@@ -4,10 +4,10 @@ import { useSyncExternalStore } from 'react';
 import { MoonIcon, SunIcon } from '@/components/icons';
 import styles from './ThemeToggle.module.css';
 
-const CHANGE_EVENT = 'paperkite-theme-change';
+const CHANGE_EVENT = 'charlotte-theme-change';
 
 function getSnapshot(): 'light' | 'dark' {
-  const stored = localStorage.getItem('paperkite-theme');
+  const stored = localStorage.getItem('charlotte-theme');
   if (stored === 'light' || stored === 'dark') return stored;
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
@@ -33,7 +33,7 @@ export function ThemeToggle() {
 
   function toggle() {
     const next = getSnapshot() === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('paperkite-theme', next);
+    localStorage.setItem('charlotte-theme', next);
     document.documentElement.setAttribute('data-theme', next);
     window.dispatchEvent(new Event(CHANGE_EVENT));
   }

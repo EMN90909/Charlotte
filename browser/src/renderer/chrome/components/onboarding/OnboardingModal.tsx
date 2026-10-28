@@ -37,9 +37,9 @@ export function OnboardingModal({ onFinish }: OnboardingModalProps) {
   const [usernameReady, setUsernameReady] = useState(false);
 
   useEffect(() => {
-    const unsubs = [window.paperkite.onAgentsUpdated(setAgents), window.paperkite.onMcpServersUpdated(setMcpServers)];
-    window.paperkite.requestAgents();
-    window.paperkite.requestMcpServers();
+    const unsubs = [window.charlotte.onAgentsUpdated(setAgents), window.charlotte.onMcpServersUpdated(setMcpServers)];
+    window.charlotte.requestAgents();
+    window.charlotte.requestMcpServers();
     return () => unsubs.forEach((unsub) => unsub());
   }, []);
 
@@ -143,11 +143,11 @@ function UsernameStep({ onReadyChange, onSkip }: { onReadyChange: (ready: boolea
   });
 
   useEffect(() => {
-    const unsub = window.paperkite.onChatServersUpdated(({ servers, defaultServerId }) => {
+    const unsub = window.charlotte.onChatServersUpdated(({ servers, defaultServerId }) => {
       setServer(servers.find((s) => s.id === defaultServerId) ?? null);
       setLoaded(true);
     });
-    window.paperkite.requestChatServers();
+    window.charlotte.requestChatServers();
     return unsub;
   }, []);
 
@@ -366,13 +366,13 @@ function ConnectStep() {
 
   useEffect(() => {
     const unsubs = [
-      window.paperkite.onBuiltinMcpStatus(setStatus),
-      window.paperkite.onMcpTokenCreated((result) => {
+      window.charlotte.onBuiltinMcpStatus(setStatus),
+      window.charlotte.onMcpTokenCreated((result) => {
         setJwt(result.jwt);
         setCreating(false);
       }),
     ];
-    window.paperkite.requestBuiltinMcpStatus();
+    window.charlotte.requestBuiltinMcpStatus();
     return () => unsubs.forEach((unsub) => unsub());
   }, []);
 
@@ -388,7 +388,7 @@ function ConnectStep() {
 
   const createToken = () => {
     setCreating(true);
-    window.paperkite.createMcpToken({ label: `${meta?.label ?? 'MCP client'} (onboarding)`, scopes: ALL_SCOPES, ttlMs: null });
+    window.charlotte.createMcpToken({ label: `${meta?.label ?? 'MCP client'} (onboarding)`, scopes: ALL_SCOPES, ttlMs: null });
   };
 
   return (
@@ -401,7 +401,7 @@ function ConnectStep() {
       {!status.enabled ? (
         <div className="onboarding-connect__off">
           <span>The local MCP server is off.</span>
-          <button type="button" className="onboarding__primary" onClick={() => window.paperkite.setBuiltinMcpEnabled(true)}>
+          <button type="button" className="onboarding__primary" onClick={() => window.charlotte.setBuiltinMcpEnabled(true)}>
             Turn it on
           </button>
         </div>

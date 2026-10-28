@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRightIcon, KiteMark } from '@/components/icons';
+import { ArrowRightIcon, CharlotteMark } from '@/components/icons';
 import { BrowserMock } from './BrowserMock';
 import styles from './Hero.module.css';
 
@@ -7,7 +7,7 @@ export function Hero() {
   return (
     <section className={styles.hero}>
       <div className={styles.kiteFloat} aria-hidden>
-        <KiteMark size={64} />
+        <CharlotteMark size={64} />
       </div>
 
       <div className={`shell ${styles.grid}`}>

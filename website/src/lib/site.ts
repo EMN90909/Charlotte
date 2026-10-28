@@ -26,7 +26,7 @@ export const site = {
   // see PROTOCOL.md, gRPC is documented as an alternate path for
   // server-side integrations, not something either of those clients use.
   publicServer: {
-    httpUrl: 'https://paperkite-chat-service.samuelabolo.dev',
+    httpUrl: process.env.NEXT_PUBLIC_CHARLOTTE_CHAT_SERVER_URL || 'https://paperkite-chat-service.samuelabolo.dev',
     grpcHost: 'TODO-not-yet-exposed:50051',
     healthPath: '/healthz',
     // Unauthenticated HyperLogLog cardinality estimates (unique_rooms,

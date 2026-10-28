@@ -1,6 +1,6 @@
 /**
  * Preload script for the chrome view. Runs with Node access in an
- * isolated context; the only thing exposed to the page is `window.paperkite`,
+ * isolated context; the only thing exposed to the page is `window.charlotte`,
  * a narrow, typed surface over the IPC contract in shared/ipcChannels.ts.
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
@@ -193,6 +193,6 @@ const api = {
     subscribe(IPC.CHAT_SERVER_USERNAME_CLAIM_RESULT, cb),
 };
 
-export type PaperkiteChromeApi = typeof api;
+export type CharlotteChromeApi = typeof api;
 
-contextBridge.exposeInMainWorld('paperkite', api);
+contextBridge.exposeInMainWorld('charlotte', api);

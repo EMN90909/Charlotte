@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { site } from '@/lib/site';
-import { ArrowUpRightIcon, GithubIcon, KiteMark } from '@/components/icons';
+import { ArrowUpRightIcon, GithubIcon, CharlotteMark } from '@/components/icons';
 import styles from './Footer.module.css';
 
 export function Footer() {
@@ -9,7 +9,7 @@ export function Footer() {
       <div className={`shell ${styles.grid}`}>
         <div className={styles.col}>
           <div className={styles.brand}>
-            <KiteMark size={24} />
+            <CharlotteMark size={24} />
             <span>Charlotte</span>
           </div>
           <p className={styles.tagline}>{site.tagline}</p>

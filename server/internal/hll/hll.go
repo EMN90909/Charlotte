@@ -32,7 +32,7 @@ const (
 // accuracy (see the package doc comment) - the two are incompatible
 // on-disk formats (different register counts), hence the version bump
 // rather than reusing v1's magic.
-const fileMagic = "paperkite-hll-v2\n"
+const fileMagic = "charlotte-hll-v2\n"
 
 // HLL is a HyperLogLog cardinality estimator. It is not safe for
 // concurrent use on its own - see internal/metrics.Recorder, which owns

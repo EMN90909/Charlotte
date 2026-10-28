@@ -51,7 +51,7 @@ export function MessageText({ text, safety, currentPageHost, domainTrust }: Mess
 }
 
 function ChatLink({ url }: { url: string }) {
-  const open = () => window.paperkiteChat.openLink(url);
+  const open = () => window.charlotteChat.openLink(url);
   return (
     <span
       className="message__link message__link--trusted"

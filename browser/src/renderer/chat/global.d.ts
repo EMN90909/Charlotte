@@ -1,8 +1,8 @@
-import type { PaperkiteChatApi } from '../../preload/chat';
+import type { CharlotteChatApi } from '../../preload/chat';
 
 declare global {
   interface Window {
-    paperkiteChat: PaperkiteChatApi;
+    charlotteChat: CharlotteChatApi;
   }
 }
 

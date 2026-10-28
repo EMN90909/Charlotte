@@ -13,11 +13,11 @@ export function LiveTranslateSection() {
   const [binaryDraft, setBinaryDraft] = useState('');
 
   useEffect(() => {
-    const unsub = window.paperkite.onWhisperStatus((s) => {
+    const unsub = window.charlotte.onWhisperStatus((s) => {
       setStatus(s);
       setBinaryDraft(s.binaryPathOverride ?? '');
     });
-    window.paperkite.requestWhisperStatus();
+    window.charlotte.requestWhisperStatus();
     return unsub;
   }, []);
 
@@ -25,7 +25,7 @@ export function LiveTranslateSection() {
 
   const saveBinaryPath = () => {
     const trimmed = binaryDraft.trim();
-    window.paperkite.setWhisperConfig({
+    window.charlotte.setWhisperConfig({
       binaryPath: trimmed || null,
       modelPath: status?.modelPath ?? null,
       translateModelPath: status?.translateModelPath ?? null,
@@ -76,7 +76,7 @@ export function LiveTranslateSection() {
         <span>Model file (.bin)</span>
         <div className="bookmark-popover__new-folder">
           <input value={status?.modelPath ?? ''} spellCheck={false} placeholder="No model selected" readOnly />
-          <button type="button" onClick={() => window.paperkite.pickWhisperModel()}>
+          <button type="button" onClick={() => window.charlotte.pickWhisperModel()}>
             Choose…
           </button>
         </div>
@@ -89,7 +89,7 @@ export function LiveTranslateSection() {
         <span>Translate model (optional)</span>
         <div className="bookmark-popover__new-folder">
           <input value={status?.translateModelPath ?? ''} spellCheck={false} placeholder="Same as model above" readOnly />
-          <button type="button" onClick={() => window.paperkite.pickWhisperTranslateModel()}>
+          <button type="button" onClick={() => window.charlotte.pickWhisperTranslateModel()}>
             Choose…
           </button>
         </div>

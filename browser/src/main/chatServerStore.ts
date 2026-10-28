@@ -47,7 +47,7 @@ function seedServers(): ChatServersFile {
       {
         id,
         name: 'Charlotte community server',
-        baseUrl: 'https://paperkite-chat-service.samuelabolo.dev',
+        baseUrl: process.env.CHARLOTTE_CHAT_SERVER_URL || 'https://paperkite-chat-service.samuelabolo.dev',
         username: null,
         token: null,
         createdAt: Date.now(),

@@ -1,12 +1,12 @@
 /**
- * Auth for Paperkite's own MCP server (main/mcp/builtinServer.ts): a
+ * Auth for Charlotte's own MCP server (main/mcp/builtinServer.ts): a
  * signed-JWT token store, mirroring the encrypted-credential pattern
  * already used by agentStore.ts/mcpStore.ts. Persisted to
  * `userData/mcpAuth.json`.
  *
  * Two kinds of token, one verification path:
  *  - The **internal** token (`jti: 'internal'`) is full-scope, never
- *    expires, and is what Paperkite's own agent chat uses to reach its
+ *    expires, and is what Charlotte's own agent chat uses to reach its
  *    own server (see main/mcp/client.ts) - auto-created on first use,
  *    never shown as revocable, never exposed as a value the user could
  *    have generated themselves.
@@ -138,7 +138,7 @@ async function ensureInternalToken(): Promise<{ jwt: string; createdAt: number }
   return cachedInternal;
 }
 
-/** Used exclusively by main/mcp/client.ts to authenticate Paperkite's own
+/** Used exclusively by main/mcp/client.ts to authenticate Charlotte's own
  * agent-chat connection to its own server. */
 export async function getInternalToken(): Promise<string> {
   return (await ensureInternalToken()).jwt;
@@ -151,7 +151,7 @@ export async function getTokens(): Promise<McpTokenInfo[]> {
   const internal = await ensureInternalToken();
   const internalInfo: McpTokenInfo = {
     jti: INTERNAL_JTI,
-    label: 'Paperkite chat (internal)',
+    label: 'Charlotte chat (internal)',
     scopes: ALL_MCP_SCOPES,
     createdAt: internal.createdAt,
     expiresAt: null,

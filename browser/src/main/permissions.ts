@@ -50,12 +50,12 @@ function capabilitiesFor(permission: string, mediaTypes?: Array<'video' | 'audio
  * see main/index.ts for the wiring and ipc.ts's PERMISSION_RESPONSE
  * handler for resolvePermissionRequest() below.
  *
- * `isTrustedWebContents` identifies Paperkite's own chrome view specifically
+ * `isTrustedWebContents` identifies Charlotte's own chrome view specifically
  * (see main/index.ts) - its own getDisplayMedia call for live translate's
  * tab-audio capture (see renderer/chrome/audioCapture.ts) triggers this
  * same session-wide 'media' permission hook, since Electron doesn't
  * distinguish "screen/tab capture" from "camera/mic" at this layer. That
- * request is for Paperkite's own first-party, non-navigable chrome UI, not
+ * request is for Charlotte's own first-party, non-navigable chrome UI, not
  * an arbitrary website asking for camera/mic - the Allow/Block prompt this
  * module exists for is about the latter, so the former skips it and is
  * granted outright. Confirmed by hand as a real, not hypothetical, bug:

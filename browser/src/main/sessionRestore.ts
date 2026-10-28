@@ -1,6 +1,6 @@
 /**
  * Persists the open tab list (URLs, in order, plus which one was active)
- * across restarts, so quitting Paperkite doesn't throw away every open
+ * across restarts, so quitting Charlotte doesn't throw away every open
  * tab - same disk-backed-flat-file idea as historyStore.ts/bookmarkStore.ts,
  * saved to `userData/session.json`. TabManager itself doesn't know this
  * module exists - main/index.ts wires saves off the existing onTabsChanged

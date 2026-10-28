@@ -17,11 +17,11 @@ export function ChatServersSection({ focusServerId, focusToken }: ChatServersSec
   const [editingServer, setEditingServer] = useState<ChatServerConfig | null>(null);
 
   useEffect(() => {
-    const unsub = window.paperkite.onChatServersUpdated((payload) => {
+    const unsub = window.charlotte.onChatServersUpdated((payload) => {
       setServers(payload.servers);
       setDefaultServerId(payload.defaultServerId);
     });
-    window.paperkite.requestChatServers();
+    window.charlotte.requestChatServers();
     return unsub;
   }, []);
 
@@ -74,7 +74,7 @@ export function ChatServersSection({ focusServerId, focusToken }: ChatServersSec
                   aria-label={server.id === defaultServerId ? `${server.name} is the default` : `Make ${server.name} the default`}
                   title={server.id === defaultServerId ? 'Default server' : 'Set as default'}
                   disabled={server.id === defaultServerId}
-                  onClick={() => window.paperkite.setDefaultChatServer(server.id)}
+                  onClick={() => window.charlotte.setDefaultChatServer(server.id)}
                 >
                   <StarIcon filled={server.id === defaultServerId} />
                 </button>
@@ -92,7 +92,7 @@ export function ChatServersSection({ focusServerId, focusToken }: ChatServersSec
                   aria-label={`Remove ${server.name}`}
                   onClick={() => {
                     if (editingServer?.id === server.id) setEditingServer(null);
-                    window.paperkite.deleteChatServer(server.id);
+                    window.charlotte.deleteChatServer(server.id);
                   }}
                 >
                   <TrashIcon />
@@ -148,9 +148,9 @@ function ChatServerForm({ servers, editingServer, onDoneEditing }: ChatServerFor
   const submit = () => {
     if (!canSave) return;
     if (editingServer) {
-      window.paperkite.updateChatServer({ id: editingServer.id, ...buildDraft() });
+      window.charlotte.updateChatServer({ id: editingServer.id, ...buildDraft() });
     } else {
-      window.paperkite.createChatServer(buildDraft());
+      window.charlotte.createChatServer(buildDraft());
     }
     setFields(blankFields());
     onDoneEditing();

@@ -12,14 +12,14 @@ export function PermissionsSection() {
   const [sites, setSites] = useState<SitePermissions[]>([]);
 
   useEffect(() => {
-    const unsub = window.paperkite.onSitePermissions(setSites);
-    window.paperkite.requestSitePermissions();
+    const unsub = window.charlotte.onSitePermissions(setSites);
+    window.charlotte.requestSitePermissions();
     return unsub;
   }, []);
 
   const toggle = (site: SitePermissions, capability: PermissionCapability) => {
     const current = site[capability];
-    window.paperkite.setSitePermission({
+    window.charlotte.setSitePermission({
       origin: site.origin,
       capability,
       decision: current === 'granted' ? 'denied' : 'granted',
@@ -61,7 +61,7 @@ export function PermissionsSection() {
                 className="settings-list__delete"
                 aria-label={`Reset permissions for ${site.origin}`}
                 title="Reset - this site will be prompted again"
-                onClick={() => window.paperkite.resetSitePermissions(site.origin)}
+                onClick={() => window.charlotte.resetSitePermissions(site.origin)}
               >
                 <TrashIcon />
               </button>

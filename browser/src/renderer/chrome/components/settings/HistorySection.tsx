@@ -52,7 +52,7 @@ export function HistorySection({ onOpenInNewTab }: HistorySectionProps) {
   // response that arrives after a reset) is discarded rather than
   // corrupting the list.
   useEffect(() => {
-    return window.paperkite.onHistoryPage((result: HistoryPageResult) => {
+    return window.charlotte.onHistoryPage((result: HistoryPageResult) => {
       if (result.query !== debouncedQueryRef.current) return;
       setEntries((current) => (result.offset === 0 ? result.entries : [...current, ...result.entries]));
       setHasMore(result.hasMore);
@@ -66,13 +66,13 @@ export function HistorySection({ onOpenInNewTab }: HistorySectionProps) {
     setEntries([]);
     setHasMore(true);
     setLoading(true);
-    window.paperkite.requestHistoryPage({ offset: 0, limit: PAGE_SIZE, query: debouncedQuery });
+    window.charlotte.requestHistoryPage({ offset: 0, limit: PAGE_SIZE, query: debouncedQuery });
   }, [debouncedQuery]);
 
   const loadMore = () => {
     if (loadingRef.current || !hasMoreRef.current) return;
     setLoading(true);
-    window.paperkite.requestHistoryPage({ offset: entriesLengthRef.current, limit: PAGE_SIZE, query: debouncedQueryRef.current });
+    window.charlotte.requestHistoryPage({ offset: entriesLengthRef.current, limit: PAGE_SIZE, query: debouncedQueryRef.current });
   };
 
   // The list itself doesn't scroll independently - .settings-panel__content
@@ -92,12 +92,12 @@ export function HistorySection({ onOpenInNewTab }: HistorySectionProps) {
   const groups = useMemo(() => groupByDate(entries), [entries]);
 
   const deleteEntry = (id: string) => {
-    window.paperkite.deleteHistoryEntry(id);
+    window.charlotte.deleteHistoryEntry(id);
     setEntries((current) => current.filter((e) => e.id !== id));
   };
 
   const clearHistory = () => {
-    window.paperkite.clearHistory();
+    window.charlotte.clearHistory();
     setEntries([]);
     setHasMore(false);
     setConfirmingClear(false);

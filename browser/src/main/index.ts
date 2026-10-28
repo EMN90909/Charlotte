@@ -21,7 +21,7 @@ if (started) {
   app.quit();
 }
 
-// Preserve existing Paperkite user data when upgrading to Charlotte. Fresh
+// Preserve legacy browser profile data when upgrading to Charlotte. Fresh
 // installs use Charlotte's default userData path; existing installs keep
 // their bookmarks, chat, settings, tokens, and sessions under the old path.
 // Do not rename the on-disk directory until a separate tested migration.
@@ -51,7 +51,7 @@ async function createWindow(): Promise<void> {
 
   // Strips this app's own name/version and " Electron/x.y.z" out of the
   // User-Agent Chromium computes by default (confirmed by hand:
-  // "... paperkite-browser/1.0.0 Chrome/150.0.7871.129 Electron/43.2.0 ...")
+  // "... charlotte-browser/1.0.0 Chrome/150.0.7871.129 Electron/43.2.0 ...")
   // - both are a clean, trivial-to-sniff signal that this is an Electron
   // app rather than a real browser, sent on every single request and
   // readable via plain navigator.userAgent by any page. Derived from

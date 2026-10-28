@@ -29,30 +29,30 @@ export function AgentConversation({ thread, agent, onBack, onDelete, onImageClic
 
   useEffect(() => {
     const unsubs = [
-      window.paperkiteChat.onAgentMessages((payload) => {
+      window.charlotteChat.onAgentMessages((payload) => {
         if (payload.threadId === threadIdRef.current) setMessages(payload.list);
       }),
-      window.paperkiteChat.onAgentMessageAdded((payload) => {
+      window.charlotteChat.onAgentMessageAdded((payload) => {
         if (payload.threadId !== threadIdRef.current) return;
         setMessages((current) => [...current, payload.message]);
         if (payload.message.role === 'assistant') setStreamingId(payload.message.id);
       }),
-      window.paperkiteChat.onAgentMessageChunk((payload) => {
+      window.charlotteChat.onAgentMessageChunk((payload) => {
         if (payload.threadId !== threadIdRef.current) return;
         setMessages((current) =>
           current.map((m) => (m.id === payload.messageId ? { ...m, text: m.text + payload.textDelta } : m)),
         );
       }),
-      window.paperkiteChat.onAgentMessageStatus((payload) => {
+      window.charlotteChat.onAgentMessageStatus((payload) => {
         if (payload.threadId !== threadIdRef.current) return;
         setWorkingStatus(payload.status);
       }),
-      window.paperkiteChat.onAgentMessageDone((payload) => {
+      window.charlotteChat.onAgentMessageDone((payload) => {
         if (payload.threadId !== threadIdRef.current) return;
         setStreamingId((current) => (current === payload.messageId ? null : current));
         setWorkingStatus(null);
       }),
-      window.paperkiteChat.onAgentMessageError((payload) => {
+      window.charlotteChat.onAgentMessageError((payload) => {
         if (payload.threadId !== threadIdRef.current) return;
         setStreamingId((current) => (current === payload.messageId ? null : current));
         setWorkingStatus(null);
@@ -61,13 +61,13 @@ export function AgentConversation({ thread, agent, onBack, onDelete, onImageClic
       // Sent right as a retry starts - reset that message's own text/error
       // locally and re-enter "streaming" for it, same as a fresh send's
       // onAgentMessageAdded does for a brand-new placeholder.
-      window.paperkiteChat.onAgentMessageRetry((payload) => {
+      window.charlotteChat.onAgentMessageRetry((payload) => {
         if (payload.threadId !== threadIdRef.current) return;
         setMessages((current) => current.map((m) => (m.id === payload.messageId ? { ...m, text: '', error: undefined } : m)));
         setStreamingId(payload.messageId);
         setWorkingStatus(null);
       }),
-      window.paperkiteChat.onScreenshotCaptured((result) => {
+      window.charlotteChat.onScreenshotCaptured((result) => {
         setCapturing(false);
         if (result) setPendingAttachment(result);
       }),
@@ -79,7 +79,7 @@ export function AgentConversation({ thread, agent, onBack, onDelete, onImageClic
     setMessages([]);
     setStreamingId(null);
     setWorkingStatus(null);
-    window.paperkiteChat.requestAgentMessages(thread.id);
+    window.charlotteChat.requestAgentMessages(thread.id);
   }, [thread.id]);
 
   useEffect(() => {
@@ -89,13 +89,13 @@ export function AgentConversation({ thread, agent, onBack, onDelete, onImageClic
   const captureScreenshot = () => {
     if (pendingAttachment || capturing) return;
     setCapturing(true);
-    window.paperkiteChat.captureScreenshot();
+    window.charlotteChat.captureScreenshot();
   };
 
   const submit = () => {
     const text = value.trim();
     if (!text || streamingId || !agent) return;
-    window.paperkiteChat.sendAgentMessage({ threadId: thread.id, text, attachment: pendingAttachment ?? undefined });
+    window.charlotteChat.sendAgentMessage({ threadId: thread.id, text, attachment: pendingAttachment ?? undefined });
     setValue('');
     setPendingAttachment(null);
   };
@@ -170,7 +170,7 @@ export function AgentConversation({ thread, agent, onBack, onDelete, onImageClic
                       type="button"
                       className="agent-message-retry"
                       aria-label="Retry this message"
-                      onClick={() => window.paperkiteChat.retryAgentMessage({ threadId: thread.id, messageId: message.id })}
+                      onClick={() => window.charlotteChat.retryAgentMessage({ threadId: thread.id, messageId: message.id })}
                     >
                       <RetryIcon size={11} />
                       Retry
@@ -235,7 +235,7 @@ export function AgentConversation({ thread, agent, onBack, onDelete, onImageClic
               type="button"
               className="message-input__send"
               aria-label="Stop generating"
-              onClick={() => window.paperkiteChat.stopAgentMessage(thread.id)}
+              onClick={() => window.charlotteChat.stopAgentMessage(thread.id)}
             >
               <StopIcon size={13} />
             </button>

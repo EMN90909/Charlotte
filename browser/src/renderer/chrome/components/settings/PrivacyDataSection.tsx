@@ -62,15 +62,15 @@ export function PrivacyDataSection() {
   const [confirming, setConfirming] = useState<Category | null>(null);
 
   useEffect(() => {
-    const unsub = window.paperkite.onDataUsageSummary(setSummary);
-    window.paperkite.requestDataUsageSummary();
+    const unsub = window.charlotte.onDataUsageSummary(setSummary);
+    window.charlotte.requestDataUsageSummary();
     return unsub;
   }, []);
 
   const clear = (id: Category) => {
-    if (id === 'history') window.paperkite.clearHistory();
-    if (id === 'bookmarks') window.paperkite.clearAllBookmarks();
-    if (id === 'agents') window.paperkite.clearAllAgentThreads();
+    if (id === 'history') window.charlotte.clearHistory();
+    if (id === 'bookmarks') window.charlotte.clearAllBookmarks();
+    if (id === 'agents') window.charlotte.clearAllAgentThreads();
     setConfirming(null);
     // Zero out optimistically - main doesn't push a fresh summary on its
     // own after a clear (only BOOKMARKS_UPDATED/AGENT_THREADS go out, for
@@ -84,7 +84,7 @@ export function PrivacyDataSection() {
           }
         : current,
     );
-    window.paperkite.requestDataUsageSummary();
+    window.charlotte.requestDataUsageSummary();
   };
 
   return (

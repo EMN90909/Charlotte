@@ -57,7 +57,7 @@ const (
 	// autocertCacheDir is where obtained certificates are persisted so a
 	// restart (or a deploy launching a new binary) doesn't force a fresh
 	// Let's Encrypt request every time - relative to the process's working
-	// directory (WorkingDirectory=/opt/paperkite in the ops systemd unit,
+	// directory (WorkingDirectory=/opt/charlotte in the ops systemd unit,
 	// stable across deploys unlike the versioned binary path itself).
 	// Override with AUTOCERT_CACHE_DIR.
 	autocertCacheDir = "autocert-cache"

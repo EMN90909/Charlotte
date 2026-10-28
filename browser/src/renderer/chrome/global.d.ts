@@ -1,8 +1,8 @@
-import type { PaperkiteChromeApi } from '../../preload/chrome';
+import type { CharlotteChromeApi } from '../../preload/chrome';
 
 declare global {
   interface Window {
-    paperkite: PaperkiteChromeApi;
+    charlotte: CharlotteChromeApi;
   }
 }
 

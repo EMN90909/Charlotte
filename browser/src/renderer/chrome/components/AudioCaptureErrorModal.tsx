@@ -18,7 +18,7 @@ export function AudioCaptureErrorModal({ onDismiss }: AudioCaptureErrorModalProp
         </span>
         <h1>Couldn't capture audio</h1>
         <p>
-          Paperkite likely needs permission. Open System Settings → Privacy &amp; Security → Screen &amp; System Audio
+          Charlotte likely needs permission. Open System Settings → Privacy &amp; Security → Screen &amp; System Audio
           Recording, and turn it on for this app - then try again.
         </p>
         <button type="button" onClick={onDismiss}>

@@ -11,8 +11,8 @@ export function AgentsSection() {
   const [editingAgent, setEditingAgent] = useState<AgentConfig | null>(null);
 
   useEffect(() => {
-    const unsub = window.paperkite.onAgentsUpdated(setAgents);
-    window.paperkite.requestAgents();
+    const unsub = window.charlotte.onAgentsUpdated(setAgents);
+    window.charlotte.requestAgents();
     return unsub;
   }, []);
 
@@ -54,7 +54,7 @@ export function AgentsSection() {
                   aria-label={`Remove ${agent.name}`}
                   onClick={() => {
                     if (editingAgent?.id === agent.id) setEditingAgent(null);
-                    window.paperkite.deleteAgent(agent.id);
+                    window.charlotte.deleteAgent(agent.id);
                   }}
                 >
                   <TrashIcon />
@@ -123,9 +123,9 @@ export function AgentForm({ editingAgent, onDoneEditing }: AgentFormProps) {
       systemPrompt: fields.systemPrompt.trim() || undefined,
     };
     if (editingAgent) {
-      window.paperkite.updateAgent({ id: editingAgent.id, ...shared, apiKey: isOllama ? undefined : fields.apiKey.trim() || undefined });
+      window.charlotte.updateAgent({ id: editingAgent.id, ...shared, apiKey: isOllama ? undefined : fields.apiKey.trim() || undefined });
     } else {
-      window.paperkite.createAgent({ provider: fields.provider, ...shared, apiKey: isOllama ? undefined : fields.apiKey.trim() });
+      window.charlotte.createAgent({ provider: fields.provider, ...shared, apiKey: isOllama ? undefined : fields.apiKey.trim() });
     }
     setFields(blankFields());
     onDoneEditing();
