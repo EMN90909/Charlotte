@@ -6,7 +6,7 @@ and publishes two things whenever a `chat-service-v*` tag is pushed:
 1. Cross-compiled binaries for linux/darwin/windows (amd64 + arm64),
    attached to a GitHub Release along with a `checksums.txt`.
 2. A multi-arch (linux/amd64, linux/arm64) Docker image, pushed to
-   `ghcr.io/<owner>/paperkite-chat-service`, tagged both `:<version>` and
+   `ghcr.io/<owner>/charlotte-chat-service`, tagged both `:<version>` and
    `:latest`.
 
 No signing, no external package registry, no provisioned server, just
@@ -25,8 +25,8 @@ CHAT_JWT_SECRET=... ./chat-service-server-linux-amd64
 ```bash
 docker run -p 8080:8080 -p 50051:50051 \
   -e CHAT_JWT_SECRET=... \
-  -v paperkite-data:/app/data \
-  ghcr.io/<owner>/paperkite-chat-service:latest
+  -v charlotte-data:/app/data \
+  ghcr.io/<owner>/charlotte-chat-service:latest
 ```
 
 The `-v` mount is optional but keeps the claimed-usernames log
@@ -36,7 +36,7 @@ container starts with an empty claims registry.
 **One manual step**: a package pushed to GHCR via the default
 `GITHUB_TOKEN` is private by default. To let people `docker pull` it
 without authenticating, go to the package's settings on GitHub
-(Packages tab → paperkite-chat-service → Package settings) and change
+(Packages tab → charlotte-chat-service → Package settings) and change
 its visibility to public. This only needs doing once, it isn't reset on
 subsequent pushes.
 
@@ -57,11 +57,11 @@ launches and manages the app itself:
 ```bash
 OPS_JWT_SECRET=<a long random secret, different from CHAT_JWT_SECRET> \
 CHAT_JWT_SECRET=... \
-CHAT_USERNAMES_FILE=/var/lib/paperkite/usernames.log \
+CHAT_USERNAMES_FILE=/var/lib/charlotte/usernames.log \
 make run-ops
 ```
 
-(or `go build -o /usr/local/bin/paperkite-ops ./cmd/ops` and run that
+(or `go build -o /usr/local/bin/charlotte-ops ./cmd/ops` and run that
 under systemd/whatever you use to keep a process alive - the ops daemon
 itself has no supervisor of its own, only the app process it manages).
 
