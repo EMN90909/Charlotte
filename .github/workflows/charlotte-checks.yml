@@ -1,6 +1,15 @@
 name: Charlotte branding and type checks
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'browser/**'
+      - 'website/**'
+      - 'scripts/check-charlotte-branding.mjs'
+      - 'README.md'
+      - 'LICENSE'
+      - '.github/workflows/charlotte-checks.yml'
   pull_request:
     paths:
       - 'browser/**'
@@ -56,6 +65,9 @@ jobs:
           cache-dependency-path: ${{ matrix.component }}/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit
+      - name: Test network ad blocker
+        if: matrix.component == 'browser'
+        run: npm run test:adblock
       - name: Verify static website output
         if: matrix.component == 'website'
         run: npm run build

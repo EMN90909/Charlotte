@@ -126,6 +126,7 @@ export interface TabManagerCallbacks {
 
 export class TabManager {
   private tabs = new Map<string, Tab>();
+  private readonly browsingWebContentsIds = new Set<number>();
   private order: string[] = [];
   private activeId: string | null = null;
   /** Most-recently-closed last (a stack) - see closeTab/reopenClosedTab. */
@@ -163,6 +164,7 @@ export class TabManager {
       chatServerId: null,
     };
     this.tabs.set(id, tab);
+    this.browsingWebContentsIds.add(view.webContents.id);
     this.order.push(id);
     this.wireEvents(tab);
     void view.webContents.loadURL(tab.url);
@@ -202,6 +204,7 @@ export class TabManager {
     const wasActive = this.activeId === id;
     this.order = this.order.filter((tabId) => tabId !== id);
     this.tabs.delete(id);
+    this.browsingWebContentsIds.delete(tab.view.webContents.id);
     tab.view.webContents.close();
 
     if (wasActive) {
@@ -309,6 +312,11 @@ export class TabManager {
   captureActivePage(): Promise<NativeImage> | null {
     const wc = this.activeTab()?.view.webContents;
     return wc ? wc.capturePage() : null;
+  }
+
+  /** O(1) lookup for the ad blocker request hot path. */
+  isBrowsingWebContentsId(id: number): boolean {
+    return this.browsingWebContentsIds.has(id);
   }
 
   getActiveView(): WebContentsView | null {

@@ -12,7 +12,8 @@ from **browsing tabs**, implemented with Electron's
 - Top-level navigations, internal chrome/chat, local resources and other
   non-tab requests are not intercepted. On changes, newly created requests
   adopt the new mode immediately; reload to re-fetch existing resources.
-- Hot path uses prebuilt hash sets and label-boundary suffix matching; no
+- Hot path uses prebuilt hash sets, O(1) tab membership and domain-label suffix
+  matching; site exceptions are compiled on settings updates. No
   network filter downloads, regular expression matching or DOM traversal.
 - Blocked count is session-only, delivered to React at most once per 250 ms.
 

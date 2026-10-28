@@ -5,7 +5,7 @@
 import { session, type WebContents } from 'electron';
 import type { AdBlockSettings, AdBlockStatus } from '../../shared/types';
 import { DEFAULT_AD_BLOCK_SETTINGS } from '../../shared/types';
-import { matchesDomain, normalizeAdBlockSettings, shouldBlockRequest } from './rules';
+import { normalizeAdBlockSettings, shouldBlockRequest } from './rules';
 import { loadAdBlockSettings, saveAdBlockSettings } from './store';
 
 let settings: AdBlockSettings = loadAdBlockSettings();
@@ -41,20 +41,8 @@ export function installAdBlocker(isBrowsingTab: (webContents: WebContents) => bo
       return;
     }
 
-    const pageUrl = wc.getURL();
-    // Fast exception path before evaluating rule sets. Uses the top-level
-    // page address, not a frame's untrusted referrer.
-    if (exceptions.size) {
-      try {
-        const host = new URL(pageUrl).hostname;
-        if (matchesDomain(host, exceptions)) {
-          callback({});
-          return;
-        }
-      } catch { /* A fresh tab may not have committed its first URL yet. */ }
-    }
-
-    if (!shouldBlockRequest(details.url, pageUrl, settings)) {
+    // This exception set was prepared when settings last changed.
+    if (!shouldBlockRequest(details.url, wc.getURL(), settings, exceptions)) {
       callback({});
       return;
     }

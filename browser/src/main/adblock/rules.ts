@@ -192,19 +192,23 @@ function httpHostname(value: string): string | null {
  * navigations are excluded by the Electron adapter, so visiting a site never
  * yields an ad-block error page. No costly rule compilation per request.
  */
-export function shouldBlockRequest(requestUrl: string, topLevelUrl: string, settings: AdBlockSettings): boolean {
+export function shouldBlockRequest(
+  requestUrl: string,
+  topLevelUrl: string,
+  settings: AdBlockSettings,
+  exceptions: ReadonlySet<string> = new Set(settings.allowedSites),
+): boolean {
   if (settings.mode === 'off') return false;
   const host = httpHostname(requestUrl);
   if (!host) return false;
 
+  // Most resources aren't ad-network hosts. Reject them before parsing
+  // the active page URL or checking user exceptions.
+  if (!matchesDomain(host, ADS) && !(settings.mode === 'strict' && matchesDomain(host, TRACKERS))) return false;
   const pageHost = httpHostname(topLevelUrl);
   if (pageHost) {
-    // Keep the current site itself functional, even when it hosts ads.
     if (host === pageHost) return false;
-    // The exemption follows the site and its subdomains, not unrelated suffixes.
-    if (matchesDomain(pageHost, new Set(settings.allowedSites))) return false;
+    if (matchesDomain(pageHost, exceptions)) return false;
   }
-
-  if (matchesDomain(host, ADS)) return true;
-  return settings.mode === 'strict' && matchesDomain(host, TRACKERS);
+  return true;
 }

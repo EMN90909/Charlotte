@@ -120,7 +120,7 @@ async function createWindow(): Promise<void> {
   // Install before the first browsing tab loads. Only page WebContents
   // participate; browser chrome, chat and internal requests are untouched.
   installAdBlocker(
-    (webContents) => wm.tabs.getTabByWebContents(webContents) !== null,
+    (webContents) => wm.tabs.isBrowsingWebContentsId(webContents.id),
     () => wm.chromeView.webContents.send(IPC.AD_BLOCK_STATUS, getAdBlockStatus()),
   );
 
