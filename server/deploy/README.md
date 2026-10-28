@@ -4,16 +4,16 @@
 script: paste it into a new droplet's "User Data" field exactly as-is
 (see "Secrets" below - no editing needed) and it provisions a fully
 running install -
-creates an unprivileged `paperkite` user, downloads the latest
+creates an unprivileged `charlotte` user, downloads the latest
 `chat-service-ops-linux-<arch>` **and** `chat-service-server-linux-<arch>`
 binaries from this repo's GitHub Releases, installs the ops daemon as the
-systemd service in [`paperkite-ops.service`](paperkite-ops.service), and
+systemd service in [`charlotte-ops.service`](charlotte-ops.service), and
 starts it.
 
 On that first start, the ops daemon adopts the already-downloaded server
 binary as its initial running version (`OPS_INITIAL_BINARY` in
 `ops.env` - see `Manager.Bootstrap` in `internal/ops`), so within ~10-15s
-of boot both `paperkite-ops` (`:9090`) and `chat-service-server`
+of boot both `charlotte-ops` (`:9090`) and `chat-service-server`
 (`:8080`/`:50051`) are actually running - not just ops waiting on a
 webhook.
 
@@ -44,7 +44,7 @@ running binary isn't something to build casually. To update `ops`, run
 ```
 
 or, from a checkout, `make update-ops` (add `TAG=chat-service-v0.1.1` for
-a specific tag) from inside `chat-service/`. It stops `paperkite-ops`,
+a specific tag) from inside `chat-service/`. It stops `charlotte-ops`,
 downloads the new binary, and starts it back up - a few seconds of `ops`
 downtime, during which `chat-service-server` (a separate process) keeps
 running and serving clients unaffected.
@@ -58,7 +58,7 @@ The script needs no editing - paste it into User Data exactly as-is. For
    running it by hand: `CHAT_JWT_SECRET=... OPS_JWT_SECRET=... ./setup-droplet.sh`
    over SSH - User Data has no mechanism to inject separate env vars
    alongside pasted script content).
-2. Otherwise reuses whatever's already in `/etc/paperkite/ops.env` from a
+2. Otherwise reuses whatever's already in `/etc/charlotte/ops.env` from a
    prior run - so re-running this script (e.g. to update to a newer
    release manually) never rotates secrets out from under a
    `OPS_JWT_SECRET` you've already put in GitHub.
@@ -71,13 +71,13 @@ retrieve it from the droplet's cloud-init log:
 DigitalOcean dashboard. Either way, **copy `OPS_JWT_SECRET` into this
 repo's GitHub secret of the same name** - it has to match exactly for
 the deploy webhook to work, and there's no way to retrieve it again
-after this run short of reading `/etc/paperkite/ops.env` on the box
+after this run short of reading `/etc/charlotte/ops.env` on the box
 itself (root-readable only, `chmod 600`).
 
 ## Domain and TLS
 
 `chat-service-server` terminates its own TLS - no reverse proxy in
-front of it. Setting `PUBLIC_HOSTNAME` in `/etc/paperkite/ops.env` makes
+front of it. Setting `PUBLIC_HOSTNAME` in `/etc/charlotte/ops.env` makes
 it also bind `:443` with a certificate obtained and renewed
 automatically from Let's Encrypt (via `golang.org/x/crypto/acme/autocert`,
 using the TLS-ALPN-01 challenge - that's why `:443` specifically has to
@@ -96,14 +96,14 @@ to be public HTTPS in the first place).
    (Vercel, in your case - Project/domain settings -> DNS Records, or
    wherever Vercel exposes it for a domain not tied to a specific
    deployment). Type A, pointed at your droplet's public IPv4:
-   - `paperkite-chat-service`
+   - `charlotte-chat-service`
 
    A plain A record, nothing else to configure on the Vercel side.
 2. **Wait for propagation**, then set `PUBLIC_HOSTNAME` on the droplet
    and restart:
    ```
-   echo 'PUBLIC_HOSTNAME=paperkite-chat-service.samuelabolo.dev' >> /etc/paperkite/ops.env
-   systemctl restart paperkite-ops
+   echo 'PUBLIC_HOSTNAME=paperkite-chat-service.samuelabolo.dev' >> /etc/charlotte/ops.env
+   systemctl restart charlotte-ops
    ```
    DNS has to already resolve to this droplet before the restart, or the
    first TLS-ALPN-01 handshake (and every one after it, until it does)
@@ -115,14 +115,14 @@ to be public HTTPS in the first place).
    request after the restart is slow (autocert's blocking on the ACME
    round-trip); after that, cached in
    `AUTOCERT_CACHE_DIR` (`autocert-cache/` under the working directory,
-   `/opt/paperkite` - override if that's not where you want certs
+   `/opt/charlotte` - override if that's not where you want certs
    persisted across restarts).
 4. **Point the app at the new domain**: `website/src/lib/site.ts`'s
    `publicServer.httpUrl` already points at
    `https://paperkite-chat-service.samuelabolo.dev` - flip `deployed` to
    `true` once step 3 above is confirmed working end to end.
 
-**Binding `:443` without running as root**: `paperkite-ops.service` grants
+**Binding `:443` without running as root**: `charlotte-ops.service` grants
 itself `AmbientCapabilities=CAP_NET_BIND_SERVICE` (+ the matching
 `CapabilityBoundingSet`), which Linux propagates across fork/exec to
 every binary `ops` launches as its child - including `chat-service-server`

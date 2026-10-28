@@ -56,7 +56,7 @@ func main() {
 	}
 
 	// Relaunch whatever this daemon last successfully deployed, if
-	// anything - without this, every restart of paperkite-ops (a config
+	// anything - without this, every restart of charlotte-ops (a config
 	// change needing `systemctl restart`, a crash-triggered auto-restart,
 	// a reboot) silently kills chat-service-server and leaves it dead
 	// until someone notices and fires a fresh /deploy by hand, all while

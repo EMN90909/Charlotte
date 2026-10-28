@@ -40,12 +40,12 @@ if [ -z "$TAG" ]; then
 fi
 echo "updating ops to ${TAG}"
 
-systemctl stop paperkite-ops
-curl -fsSL -o /opt/paperkite/bin/ops \
+systemctl stop charlotte-ops
+curl -fsSL -o /opt/charlotte/bin/ops \
   "https://github.com/${GITHUB_REPO}/releases/download/${TAG}/chat-service-ops-linux-${GOARCH}"
-chmod +x /opt/paperkite/bin/ops
-id -u paperkite &>/dev/null && chown paperkite:paperkite /opt/paperkite/bin/ops
-systemctl start paperkite-ops
+chmod +x /opt/charlotte/bin/ops
+id -u charlotte &>/dev/null && chown charlotte:charlotte /opt/charlotte/bin/ops
+systemctl start charlotte-ops
 
 echo "ops updated to ${TAG} and restarted."
 echo "check with: curl -s localhost:9090/version"

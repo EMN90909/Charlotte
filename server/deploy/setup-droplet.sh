@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DigitalOcean droplet first-boot setup for the Paperkite chat-service ops
+# DigitalOcean droplet first-boot setup for the Charlotte chat-service ops
 # daemon (see ../packaging/README.md's "Auto-deploy via the ops daemon").
 #
 # Usage: paste this file as-is into the droplet's "User Data" field
@@ -21,12 +21,12 @@
 # deploy webhook to work.
 #
 # Re-running this script (e.g. to pick up a newer release manually)
-# reuses whatever secrets are already in /etc/paperkite/ops.env rather
+# reuses whatever secrets are already in /etc/charlotte/ops.env rather
 # than generating new ones - so it won't silently invalidate a
 # OPS_JWT_SECRET you've already put in GitHub. Override GITHUB_REPO the
 # same way if you're running this against a fork.
 #
-# What it does: creates an unprivileged `paperkite` user, downloads the
+# What it does: creates an unprivileged `charlotte` user, downloads the
 # latest ops daemon AND chat-service-server binaries from this repo's
 # chat-service-v* GitHub Releases, installs the ops daemon as a systemd
 # service, and starts it. On that first start, the ops daemon adopts the
@@ -46,7 +46,7 @@
 set -euo pipefail
 
 GITHUB_REPO="${GITHUB_REPO:-EMN90909/Charlotte}"
-ENV_FILE=/etc/paperkite/ops.env
+ENV_FILE=/etc/charlotte/ops.env
 
 # Prints the current value of key in ENV_FILE, if it exists - used below
 # so re-running this script reuses secrets from a prior run instead of
@@ -85,10 +85,10 @@ case "$(uname -m)" in
   *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 
-id -u paperkite &>/dev/null || useradd --system --create-home --home-dir /opt/paperkite --shell /usr/sbin/nologin paperkite
+id -u charlotte &>/dev/null || useradd --system --create-home --home-dir /opt/charlotte --shell /usr/sbin/nologin charlotte
 
-mkdir -p /opt/paperkite/bin /opt/paperkite/data /etc/paperkite
-chown -R paperkite:paperkite /opt/paperkite
+mkdir -p /opt/charlotte/bin /opt/charlotte/data /etc/charlotte
+chown -R charlotte:charlotte /opt/charlotte
 
 # Simple grep/sed parse rather than requiring jq - GitHub's JSON key
 # ordering is consistent in practice, this is the same pattern most
@@ -110,55 +110,55 @@ echo "found ${LATEST_TAG}"
 
 VERSION="${LATEST_TAG#chat-service-v}"
 
-curl -fsSL -o /opt/paperkite/bin/ops \
+curl -fsSL -o /opt/charlotte/bin/ops \
   "https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/chat-service-ops-linux-${GOARCH}"
-chmod +x /opt/paperkite/bin/ops
+chmod +x /opt/charlotte/bin/ops
 
 # Staged for the ops daemon to adopt on its first start (OPS_INITIAL_BINARY
 # below) - not started directly, and not the path it'll actually run from
 # long-term. Manager.Bootstrap copies it into OPS_DATA_DIR/bin/ under its
 # own naming convention, so this staged copy is disposable once that's
 # happened; left here untouched otherwise.
-curl -fsSL -o /opt/paperkite/bin/chat-service-server-initial \
+curl -fsSL -o /opt/charlotte/bin/chat-service-server-initial \
   "https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/chat-service-server-linux-${GOARCH}"
-chmod +x /opt/paperkite/bin/chat-service-server-initial
+chmod +x /opt/charlotte/bin/chat-service-server-initial
 
-chown -R paperkite:paperkite /opt/paperkite/bin
+chown -R charlotte:charlotte /opt/charlotte/bin
 
-cat > /etc/paperkite/ops.env << EOF
+cat > /etc/charlotte/ops.env << EOF
 OPS_JWT_SECRET=${OPS_JWT_SECRET}
 CHAT_JWT_SECRET=${CHAT_JWT_SECRET}
-CHAT_USERNAMES_FILE=/opt/paperkite/data/usernames.log
-OPS_DATA_DIR=/opt/paperkite/data
+CHAT_USERNAMES_FILE=/opt/charlotte/data/usernames.log
+OPS_DATA_DIR=/opt/charlotte/data
 OPS_ADDR=:9090
 OPS_APP_HEALTH_URL=http://localhost:8080/healthz
-OPS_INITIAL_BINARY=/opt/paperkite/bin/chat-service-server-initial
+OPS_INITIAL_BINARY=/opt/charlotte/bin/chat-service-server-initial
 OPS_INITIAL_VERSION=${VERSION}
 PUBLIC_HOSTNAME=${PUBLIC_HOSTNAME}
 AUTOCERT_CACHE_DIR=${AUTOCERT_CACHE_DIR}
 EOF
-chmod 600 /etc/paperkite/ops.env
-chown paperkite:paperkite /etc/paperkite/ops.env
+chmod 600 /etc/charlotte/ops.env
+chown charlotte:charlotte /etc/charlotte/ops.env
 
-cat > /etc/systemd/system/paperkite-ops.service << 'UNIT'
+cat > /etc/systemd/system/charlotte-ops.service << 'UNIT'
 [Unit]
-Description=Paperkite ops daemon (chat-service deploy webhook + process supervisor)
+Description=Charlotte ops daemon (chat-service deploy webhook + process supervisor)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=paperkite
-Group=paperkite
-WorkingDirectory=/opt/paperkite
-EnvironmentFile=/etc/paperkite/ops.env
-ExecStart=/opt/paperkite/bin/ops
+User=charlotte
+Group=charlotte
+WorkingDirectory=/opt/charlotte
+EnvironmentFile=/etc/charlotte/ops.env
+ExecStart=/opt/charlotte/bin/ops
 Restart=on-failure
 RestartSec=5
 KillMode=control-group
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/paperkite
+ReadWritePaths=/opt/charlotte
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
@@ -167,9 +167,9 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable --now paperkite-ops
+systemctl enable --now charlotte-ops
 
-echo "paperkite-ops is installed and running (systemctl status paperkite-ops)."
+echo "charlotte-ops is installed and running (systemctl status charlotte-ops)."
 echo "it bootstraps chat-service-server ${VERSION} on its own within ~10-15s of"
 echo "starting - check with: curl -s localhost:9090/version"
 echo "and:                   curl -s localhost:8080/healthz"

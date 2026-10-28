@@ -1,15 +1,15 @@
 [Unit]
-Description=Paperkite ops daemon (chat-service deploy webhook + process supervisor)
+Description=Charlotte ops daemon (chat-service deploy webhook + process supervisor)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=paperkite
-Group=paperkite
-WorkingDirectory=/opt/paperkite
-EnvironmentFile=/etc/paperkite/ops.env
-ExecStart=/opt/paperkite/bin/ops
+User=charlotte
+Group=charlotte
+WorkingDirectory=/opt/charlotte
+EnvironmentFile=/etc/charlotte/ops.env
+ExecStart=/opt/charlotte/bin/ops
 Restart=on-failure
 RestartSec=5
 # The app process ops launches (cmd/server) is a *child* of this one -
@@ -23,7 +23,7 @@ KillMode=control-group
 # deploy/README.md's security note.
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/paperkite
+ReadWritePaths=/opt/charlotte
 
 # Lets chat-service-server (launched as this process's *child* via
 # os/exec - see internal/ops/launcher.go) bind :443 for its Let's
