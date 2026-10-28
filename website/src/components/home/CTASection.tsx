@@ -1,13 +1,13 @@
 import Link from 'next/link';
 import { site } from '@/lib/site';
-import { ArrowRightIcon, GithubIcon, KiteMark } from '@/components/icons';
+import { ArrowRightIcon, GithubIcon, CharlotteMark } from '@/components/icons';
 import styles from './CTASection.module.css';
 
 export function CTASection() {
   return (
     <section className={styles.section}>
       <div className={`shell ${styles.inner}`}>
-        <KiteMark size={44} className={styles.kite} />
+        <CharlotteMark size={44} className={styles.kite} />
         <h2 className={styles.title}>Download Charlotte.</h2>
         <p className={styles.body}>
           Charlotte is a Noethric-branded commercial distribution. Original code remains subject to Samuel Abolo&apos;s MIT licence.
