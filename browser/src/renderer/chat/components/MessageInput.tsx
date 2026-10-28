@@ -23,7 +23,7 @@ export function MessageInput({ disabled, placeholder, onSend }: MessageInputProp
 
   useEffect(
     () =>
-      window.paperkiteChat.onScreenshotCaptured((result) => {
+      window.charlotteChat.onScreenshotCaptured((result) => {
         setCapturing(false);
         if (result) setPendingAttachment(result);
       }),
@@ -33,7 +33,7 @@ export function MessageInput({ disabled, placeholder, onSend }: MessageInputProp
   const captureScreenshot = () => {
     if (pendingAttachment || capturing) return;
     setCapturing(true);
-    window.paperkiteChat.captureScreenshot();
+    window.charlotteChat.captureScreenshot();
   };
 
   const submit = () => {

@@ -60,7 +60,7 @@ export function ImageLightbox({ attachment, onClose }: ImageLightboxProps) {
 
   useEffect(
     () =>
-      window.paperkiteChat.onImageSaved((result) => {
+      window.charlotteChat.onImageSaved((result) => {
         setSaveState(result.ok ? 'saved' : 'error');
       }),
     [],
@@ -71,7 +71,7 @@ export function ImageLightbox({ attachment, onClose }: ImageLightboxProps) {
   // listeners registered.
   useEffect(
     () =>
-      window.paperkiteChat.onScreenshotChain((result) => {
+      window.charlotteChat.onScreenshotChain((result) => {
         if (result.targetId === latestRequestedId.current) setChainNodes(result.nodes);
       }),
     [],
@@ -82,13 +82,13 @@ export function ImageLightbox({ attachment, onClose }: ImageLightboxProps) {
   // the strip blanking out on every click.
   useEffect(() => {
     latestRequestedId.current = displayed.id;
-    window.paperkiteChat.requestScreenshotChain(displayed.id);
+    window.charlotteChat.requestScreenshotChain(displayed.id);
   }, [displayed.id]);
 
   const save = () => {
     if (saveState === 'saving') return;
     setSaveState('saving');
-    window.paperkiteChat.saveImage(displayed.dataUrl);
+    window.charlotteChat.saveImage(displayed.dataUrl);
   };
 
   const saveLabel = { idle: 'Save to Downloads', saving: 'Saving…', saved: 'Saved', error: 'Failed - try again' }[saveState];
@@ -104,7 +104,7 @@ export function ImageLightbox({ attachment, onClose }: ImageLightboxProps) {
           type="button"
           className="lightbox__source"
           title={displayed.url}
-          onClick={() => window.paperkiteChat.openLink(displayed.url)}
+          onClick={() => window.charlotteChat.openLink(displayed.url)}
         >
           {displayUrl(displayed.url)}
         </button>
