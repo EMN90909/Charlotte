@@ -85,8 +85,8 @@ To run it in Docker instead:
 
 ```bash
 cd server
-make docker                              # builds charlotte-chat-service:local
-docker run -p 8080:8080 -p 50051:50051 -e CHAT_JWT_SECRET=dev-secret charlotte-chat-service:local
+make docker                              # builds charlotte-server:local
+docker run -p 8080:8080 -p 50051:50051 -e CHAT_JWT_SECRET=dev-secret charlotte-server:local
 ```
 
 Running your own server long-term? `cmd/ops` is a small daemon that
@@ -159,7 +159,7 @@ project, since the tag prefix is what tells CI what changed:
 - `chat-service-v*` → [`release-chat-service.yml`](.github/workflows/release-chat-service.yml)
   cross-compiles binaries for linux/darwin/windows (amd64 + arm64),
   attaches them to a GitHub Release, pushes a multi-arch Docker image to
-  `ghcr.io/<owner>/charlotte-chat-service`, and, if `OPS_WEBHOOK_URL` is
+  the release's native server artifacts, and, if `OPS_WEBHOOK_URL` is
   configured, notifies a running `cmd/ops` daemon to deploy it (download,
   health-checked swap, automatic rollback on failure). See
   [`server/packaging/README.md`](server/packaging/README.md).

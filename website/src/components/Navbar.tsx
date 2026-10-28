@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { site } from '@/lib/site';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { ArrowUpRightIcon, GithubIcon, KiteMark } from '@/components/icons';
+import { ArrowUpRightIcon, GithubIcon, CharlotteMark } from '@/components/icons';
 import styles from './Navbar.module.css';
 
 export function Navbar() {
@@ -14,7 +14,7 @@ export function Navbar() {
     <header className={styles.header}>
       <div className={`shell ${styles.bar}`}>
         <Link href="/" className={styles.brand} onClick={() => setOpen(false)}>
-          <KiteMark size={26} />
+          <CharlotteMark size={26} />
           <span>Charlotte</span>
         </Link>
 

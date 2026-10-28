@@ -21,7 +21,7 @@ if (started) {
   app.quit();
 }
 
-// Preserve existing Charlotte user data when upgrading to Charlotte. Fresh
+// Preserve legacy browser profile data when upgrading to Charlotte. Fresh
 // installs use Charlotte's default userData path; existing installs keep
 // their bookmarks, chat, settings, tokens, and sessions under the old path.
 // Do not rename the on-disk directory until a separate tested migration.

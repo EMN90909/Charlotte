@@ -48,6 +48,14 @@ set -euo pipefail
 GITHUB_REPO="${GITHUB_REPO:-EMN90909/Charlotte}"
 ENV_FILE=/etc/charlotte/ops.env
 
+# Do not silently start a new empty Charlotte state directory on a machine
+# running a legacy installation. Back up and migrate its username registry,
+# metrics and signing secrets explicitly; see deploy/MIGRATION.md.
+if [ -f /etc/paperkite/ops.env ] && [ ! -f "$ENV_FILE" ]; then
+  echo "Legacy server installation detected. Read deploy/MIGRATION.md and migrate data first." >&2
+  exit 1
+fi
+
 # Prints the current value of key in ENV_FILE, if it exists - used below
 # so re-running this script reuses secrets from a prior run instead of
 # generating new ones every time.

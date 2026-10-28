@@ -44,7 +44,7 @@ running binary isn't something to build casually. To update `ops`, run
 ```
 
 or, from a checkout, `make update-ops` (add `TAG=chat-service-v0.1.1` for
-a specific tag) from inside `chat-service/`. It stops `charlotte-ops`,
+a specific tag) from inside `server/`. It stops `charlotte-ops`,
 downloads the new binary, and starts it back up - a few seconds of `ops`
 downtime, during which `chat-service-server` (a separate process) keeps
 running and serving clients unaffected.

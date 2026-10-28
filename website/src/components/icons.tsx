@@ -11,7 +11,7 @@ const base = {
   strokeLinejoin: 'round' as const,
 };
 
-export function KiteMark({ size = 28, className }: IconProps) {
+export function CharlotteMark({ size = 28, className }: IconProps) {
   return (
     <svg width={size} height={(size * 38) / 32} viewBox="0 0 32 38" className={className} aria-hidden>
       <path d="M16 3 27 15 16 29 5 15Z" fill="var(--accent)" stroke="none" />
