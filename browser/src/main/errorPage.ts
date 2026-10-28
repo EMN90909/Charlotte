@@ -28,7 +28,7 @@ const COPY: Record<ErrorCategory, CategoryCopy> = {
   },
   invalid: {
     title: "This address isn't valid",
-    detail: (host) => `"${host}" isn't a web address Paperkite can open.`,
+    detail: (host) => `"${host}" isn't a web address Charlotte can open.`,
   },
   offline: {
     title: "You're offline",

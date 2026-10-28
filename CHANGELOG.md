@@ -11,6 +11,10 @@ and each component is versioned independently under
 
 ## [Unreleased]
 
+### Changed
+
+- Rebranded the browser and marketing materials to Charlotte by Noethric while retaining Samuel Abolo's original MIT licence and copyright notice.
+
 ### Added
 
 ### Changed

@@ -5,8 +5,8 @@ import { StatusBoard } from './StatusBoard';
 import styles from './status.module.css';
 
 export const metadata: Metadata = {
-  title: 'Live status | Paperkite',
-  description: 'Unique rooms, total users, liveness, and response time for the public Paperkite chat server.',
+  title: 'Live status | Charlotte',
+  description: 'Unique rooms, total users, liveness, and response time for the public Charlotte chat server.',
 };
 
 export const dynamic = 'force-dynamic';

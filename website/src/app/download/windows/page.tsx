@@ -10,8 +10,8 @@ import headerStyles from '../download.module.css';
 import styles from '../platform.module.css';
 
 export const metadata: Metadata = {
-  title: 'Download Paperkite for Windows',
-  description: 'Get the Paperkite browser for Windows: x64 and ARM64 builds.',
+  title: 'Download Charlotte for Windows',
+  description: 'Get the Charlotte browser for Windows: x64 and ARM64 builds.',
 };
 
 export const revalidate = 600;
@@ -29,7 +29,7 @@ export default async function WindowsDownloadPage() {
         <span className="eyebrow">
           <WindowsIcon size={13} /> Windows
         </span>
-        <h1 className={headerStyles.h1}>Download Paperkite for Windows.</h1>
+        <h1 className={headerStyles.h1}>Download Charlotte for Windows.</h1>
         <p className={headerStyles.lede}>
           {release ? (
             <>

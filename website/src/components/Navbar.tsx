@@ -15,7 +15,7 @@ export function Navbar() {
       <div className={`shell ${styles.bar}`}>
         <Link href="/" className={styles.brand} onClick={() => setOpen(false)}>
           <KiteMark size={26} />
-          <span>Paperkite</span>
+          <span>Charlotte</span>
         </Link>
 
         <nav className={`${styles.nav} ${open ? styles.navOpen : ''}`}>

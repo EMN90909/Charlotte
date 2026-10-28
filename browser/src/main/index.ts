@@ -1,5 +1,6 @@
 import { app, BaseWindow, nativeTheme, session, desktopCapturer } from 'electron';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import started from 'electron-squirrel-startup';
 import { WindowManager } from './windowManager';
 import { registerIpcHandlers, resyncChatSession } from './ipc';
@@ -17,6 +18,15 @@ import { loadSession, scheduleSessionSave, flushSessionSave } from './sessionRes
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
+}
+
+// Preserve existing Paperkite user data when upgrading to Charlotte. Fresh
+// installs use Charlotte's default userData path; existing installs keep
+// their bookmarks, chat, settings, tokens, and sessions under the old path.
+// Do not rename the on-disk directory until a separate tested migration.
+const previousUserDataPath = path.join(app.getPath('appData'), 'paperkite-browser');
+if (existsSync(previousUserDataPath)) {
+  app.setPath('userData', previousUserDataPath);
 }
 
 // Must be set before the app is ready - live translate's audio capture
@@ -113,7 +123,7 @@ async function createWindow(): Promise<void> {
   });
 
   // Same session-wide scope, for geolocation/camera/microphone requests
-  // from any tab. Paperkite's own chrome view is exempted from the 'media'
+  // from any tab. Charlotte's own chrome view is exempted from the 'media'
   // prompt specifically - see permissions.ts's isTrustedWebContents doc
   // comment for why (its own getDisplayMedia call for live translate hits
   // this same hook).
@@ -203,7 +213,7 @@ app.on('ready', () => {
   // (see forge.config.ts's packagerConfig.icon) - only an unpackaged
   // `electron-forge start` dev run needs this nudge, or the dock and
   // Cmd+Tab switcher show Electron's own generic icon instead of
-  // Paperkite's for the whole session.
+  // Charlotte's for the whole session.
   if (!app.isPackaged && process.platform === 'darwin') {
     app.dock?.setIcon(path.join(app.getAppPath(), 'assets', 'icon.png'));
   }

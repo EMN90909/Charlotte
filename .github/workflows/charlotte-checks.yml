@@ -1,0 +1,45 @@
+name: Charlotte branding and type checks
+
+on:
+  pull_request:
+    paths:
+      - 'browser/**'
+      - 'website/**'
+      - 'scripts/check-charlotte-branding.mjs'
+      - 'README.md'
+      - 'LICENSE'
+      - '.github/workflows/charlotte-checks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  branding:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify original MIT rights and Charlotte branding
+        run: node scripts/check-charlotte-branding.mjs
+
+  typecheck:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [browser, website]
+    defaults:
+      run:
+        working-directory: ${{ matrix.component }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit

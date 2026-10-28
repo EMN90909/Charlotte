@@ -1,6 +1,6 @@
-# Paperkite
+# Charlotte
 
-Paperkite is an open-source browser where anyone viewing the same webpage
+Charlotte is a Noethric-branded commercial browser distribution where anyone viewing the same webpage
 can talk to each other in real time. Open a page, land in its chat room,
 no accounts, no invites. Bring an AI agent into the conversation, or run
 the whole chat backend yourself.
@@ -9,9 +9,15 @@ This repository holds three projects:
 
 | Directory | What it is | Stack |
 |-----------|------------|-------|
-| [`browser/`](browser) | The Paperkite desktop browser | Electron, TypeScript, React |
+| [`browser/`](browser) | The Charlotte desktop browser | Electron, TypeScript, React |
 | [`chat-service/`](chat-service) | The chat backend the browser talks to | Go |
-| [`website/`](website) | The marketing site, protocol docs, and live status page | Next.js |
+| [`website/`](website) | The marketing site, protocol docs, and live status page | Next.js, TypeScript, React |
+
+## Source languages
+
+Charlotte retains its existing working language stack. **TypeScript and TSX** power the Electron browser and Next.js website, while **Go** powers the chat service. Supporting source includes **CSS**, **JavaScript**, **Shell scripts**, a **Protocol Buffers** schema, and a **Ruby** Homebrew Cask template. JSON and YAML configure tooling and automation; HTML provides renderer entrypoints.
+
+Read [LANGUAGES.md](LANGUAGES.md) for the source-language inventory, major directories, and validation commands. GitHub detects the displayed language breakdown automatically through Linguist; [.gitattributes](.gitattributes) explicitly marks generated files so they do not distort that display. No source language has been migrated.
 
 ## Features
 
@@ -23,14 +29,13 @@ This repository holds three projects:
 - **AI agents.** Chat with Claude, GPT, Gemini, or a local Ollama model
   about the page you're on, from a panel next to the tab.
 - **MCP client and server.** Add any Model Context Protocol server to the
-  browser for your agents to use. Paperkite also exposes the page, room,
+  browser for your agents to use. Charlotte also exposes the page, room,
   and chat as MCP tools of its own.
 - **Live audio translation.** Whisper-powered, with support for swapping
   in custom models.
 - **Whole-page translation.** Open-source or commercial models, your
   choice.
-- **Fully open source.** MIT licensed, browser, protocol, and server
-  alike.
+- **Existing rights preserved.** The original browser, protocol and server carry Samuel Abolo's 2026 MIT notice; new Noethric-owned commercial additions may be proprietary.
 
 See [chat-service/PROTOCOL.md](chat-service/PROTOCOL.md) for the wire
 protocol, or the same thing rendered at [`website/`](website)'s
@@ -161,5 +166,8 @@ project, since the tag prefix is what tells CI what changed:
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Each project also carries its own copy of
-the same license. Contributions and forks welcome.
+**Original work:** MIT, copyright (c) 2026 Samuel Abolo. The [original licence](LICENSE) and each component's MIT notice remain unchanged. Previously granted MIT rights remain in force and may be exercised by recipients of that original code.
+
+**Charlotte commercial distribution:** Noethric is the commercial product brand/distributor. Only separately owned or authorized Noethric material is subject to proprietary terms. Read [browser/COMMERCIAL-LICENSE.md](browser/COMMERCIAL-LICENSE.md). Renaming a product, making this repository private or adding a proprietary notice does **not** transfer the original author's copyright or terminate the original MIT grant. A separate signed copyright assignment or exclusive licence would be needed to change ownership of the original work.
+
+Third-party dependencies retain their individual licences; preserve all applicable notices in binary distributions.

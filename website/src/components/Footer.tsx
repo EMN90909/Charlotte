@@ -10,11 +10,11 @@ export function Footer() {
         <div className={styles.col}>
           <div className={styles.brand}>
             <KiteMark size={24} />
-            <span>Paperkite</span>
+            <span>Charlotte</span>
           </div>
           <p className={styles.tagline}>{site.tagline}</p>
           <p className={styles.oss}>
-            MIT licensed. Every line of the browser, protocol, and server is open source.
+            Charlotte by Noethric. Original code © 2026 Samuel Abolo, MIT licensed; original rights retained.
           </p>
         </div>
 
@@ -29,9 +29,7 @@ export function Footer() {
           <span className={styles.colTitle}>Developers</span>
           <Link href="/protocol" className={styles.link}>Protocol</Link>
           <Link href="/status" className={styles.link}>Live status</Link>
-          <a href={site.githubRepo} target="_blank" rel="noreferrer" className={styles.link}>
-            Source code
-          </a>
+          <Link href="/licensing" className={styles.link}>Licensing &amp; attribution</Link>
         </div>
 
         <div className={styles.col}>
@@ -46,8 +44,8 @@ export function Footer() {
       </div>
 
       <div className={`shell ${styles.bottom}`}>
-        <span>© {new Date().getFullYear()} Paperkite.</span>
-        <span className={styles.mono}>MIT License</span>
+        <span>Charlotte by Noethric. Original work © 2026 Samuel Abolo.</span>
+        <Link href="/licensing" className={styles.mono}>Original MIT + commercial notices</Link>
       </div>
     </footer>
   );

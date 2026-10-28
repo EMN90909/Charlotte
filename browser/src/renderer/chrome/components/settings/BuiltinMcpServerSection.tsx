@@ -28,7 +28,7 @@ const SCOPE_LABELS: Record<McpScope, string> = {
   'tabs:write': 'Tabs: write',
 };
 
-/** Settings > MCP's "let other apps control Paperkite" section - the
+/** Settings > MCP's "let other apps control Charlotte" section - the
  * reverse of the rest of that page (which configures servers *this app*
  * connects out to). See main/mcp/builtinServer.ts + main/mcpAuth.ts. */
 export function BuiltinMcpServerSection() {
@@ -56,16 +56,16 @@ export function BuiltinMcpServerSection() {
 
   return (
     <section className="settings-section">
-      <h2>Paperkite's MCP server</h2>
+      <h2>Charlotte's MCP server</h2>
       <p className="settings-hint">
         Lets other apps - Claude Desktop, for example - control this browser: open and manage tabs, read history,
-        manage bookmarks and trusted domains, and check (never change) the proxy. Paperkite's own agent chat always
+        manage bookmarks and trusted domains, and check (never change) the proxy. Charlotte's own agent chat always
         has access; anything else needs a token below.
       </p>
 
       <div className="settings-toggle">
         <div className="settings-toggle__text">
-          <span className="settings-toggle__label">Let other apps control Paperkite</span>
+          <span className="settings-toggle__label">Let other apps control Charlotte</span>
           <span className="settings-toggle__desc">{status.enabled ? `Listening at ${status.url}` : 'Currently off.'}</span>
         </div>
         <button

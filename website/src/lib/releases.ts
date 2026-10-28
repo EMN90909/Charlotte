@@ -79,10 +79,12 @@ export async function getLatestBrowserRelease(): Promise<BrowserRelease | null> 
     // this is a monorepo with browser-v*/chat-service-v*/website-v* tags
     // interleaved, and /latest is scoped to the single most recent tag
     // across ALL of them, not just this component's.
-    const res = await fetch(`https://api.github.com/repos/tecnosam/paperkite/releases`, {
+    const res = await fetch(`https://api.github.com/repos/EMN90909/Charlotte/releases`, {
       headers: { Accept: 'application/vnd.github+json' },
       next: { revalidate: 600 }, // release cadence is nowhere near this fast
     });
+    // A private repository is not publicly queryable; the caller displays
+    // an unavailable/download fallback rather than inventing a build.
     if (!res.ok) return null;
 
     const releases: GithubRelease[] = await res.json();

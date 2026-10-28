@@ -738,7 +738,7 @@ export function registerIpcHandlers(wm: WindowManager): void {
     });
   });
 
-  // Paperkite's own MCP server (Settings > MCP's "let other apps control
+  // Charlotte's own MCP server (Settings > MCP's "let other apps control
   // Paperkite" section) - see main/mcp/builtinServer.ts + main/mcpAuth.ts.
   const broadcastMcpTokens = () => {
     void getTokens().then((tokens) => wm.chromeView.webContents.send(IPC.MCP_TOKENS_UPDATED, tokens));
@@ -1128,7 +1128,7 @@ export function resyncChatSession(wm: WindowManager): void {
       ? {
           url,
           username: effectiveServer.username,
-          browser: `Paperkite/${app.getVersion()}`,
+          browser: `Charlotte/${app.getVersion()}`,
           session_id: tabId,
           region: getSystemCountryCode(),
           // Prefer reusing a cached token over asserting `username` fresh -
@@ -1178,7 +1178,7 @@ async function claimChatServerUsername(wm: WindowManager, { serverId, username }
     const { token } = await chatClient.connect(server.baseUrl, {
       url: server.baseUrl,
       username: trimmed,
-      browser: `Paperkite/${app.getVersion()}`,
+      browser: `Charlotte/${app.getVersion()}`,
       session_id: randomUUID(),
       region: getSystemCountryCode(),
     });

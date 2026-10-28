@@ -1,6 +1,6 @@
 /**
  * HTTP client for the external chat-service (see ../../chat-service/PROTOCOL.md
- * in this workspace - Paperkite is a CLIENT of that service, never the
+ * in this workspace - Charlotte is a CLIENT of that service, never the
  * service itself). Implements the endpoints a client needs: POST /connect,
  * POST /send, GET /poll, and GET /events (Server-Sent Events - the
  * protocol's recommended default transport for an interactive client like

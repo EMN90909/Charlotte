@@ -5,9 +5,9 @@ import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 
 export const metadata: Metadata = {
-  title: 'Paperkite: the browser with a room for every page',
+  title: 'Charlotte: the browser with a room for every page',
   description:
-    'Paperkite is an open-source browser where anyone viewing the same webpage can chat in real time, bring their own AI agents, and run their own private chat server.',
+    'Charlotte is a Noethric-branded browser where anyone viewing the same webpage can chat in real time, bring their own AI agents, and run their own private chat server.',
 };
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {

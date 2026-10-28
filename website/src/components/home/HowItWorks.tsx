@@ -4,7 +4,7 @@ const steps = [
   {
     n: '01',
     title: 'Open any page',
-    body: 'No setup. Paperkite hashes the URL into a room the instant a tab loads it.',
+    body: 'No setup. Charlotte hashes the URL into a room the instant a tab loads it.',
   },
   {
     n: '02',

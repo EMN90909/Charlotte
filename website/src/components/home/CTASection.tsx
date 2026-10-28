@@ -8,9 +8,9 @@ export function CTASection() {
     <section className={styles.section}>
       <div className={`shell ${styles.inner}`}>
         <KiteMark size={44} className={styles.kite} />
-        <h2 className={styles.title}>Download Paperkite.</h2>
+        <h2 className={styles.title}>Download Charlotte.</h2>
         <p className={styles.body}>
-          Paperkite is free and open source. Read the source before you trust it with anything.
+          Charlotte is a Noethric-branded commercial distribution. Original code remains subject to Samuel Abolo&apos;s MIT licence.
         </p>
         <div className={styles.ctas}>
           <Link href="/download" className="btn btn--primary">

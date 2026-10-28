@@ -4,7 +4,7 @@ import { CodeBlock } from '@/components/CodeBlock';
 import styles from './protocol.module.css';
 
 export const metadata: Metadata = {
-  title: 'Protocol | Paperkite',
+  title: 'Protocol | Charlotte',
   description: 'The wire protocol chat-service speaks: HTTP/JSON, gRPC, long-polling, and Server-Sent Events.',
 };
 
@@ -26,7 +26,7 @@ export default function ProtocolPage() {
         <span className="eyebrow">Reference</span>
         <h1 className={styles.h1}>The chat-service wire protocol</h1>
         <p className={styles.lede}>
-          Everything a client needs to talk to a Paperkite chat server, straight from{' '}
+          Everything a client needs to talk to a Charlotte chat server, straight from{' '}
           <code className={styles.inlineCode}>PROTOCOL.md</code> in the chat-service repo. No
           WebSocket, no server-side sessions. A client&apos;s entire state is a JWT, a cursor,
           and, if polling, a backoff hint.

@@ -36,7 +36,7 @@ export function PrivateServersSection() {
           <h2 className={styles.title}>Don&apos;t trust our server. Run yours.</h2>
           <p className={styles.body}>
             The chat backend is a small, stateless Go service. Deploy it in a container, on a
-            VPS, or on your laptop for a LAN. Point Paperkite at it from Settings, and every
+            VPS, or on your laptop for a LAN. Point Charlotte at it from Settings, and every
             room on that instance runs on your infrastructure.
           </p>
           <Link href="/protocol" className={styles.link}>

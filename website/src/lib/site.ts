@@ -1,13 +1,13 @@
 /**
- * Single place to swap placeholder URLs for real ones once the project
- * has a public repo, a deployed chat-service, and a stats backend.
+ * Charlotte's marketing configuration. The code repository is currently private;
+ * preserve the legacy chat backend URL for existing protocol compatibility.
  */
 export const site = {
-  name: 'Paperkite',
+  name: 'Charlotte',
   tagline: 'A browser with a room for everyone already reading the page.',
 
-  githubRepo: 'https://github.com/tecnosam/paperkite',
-  githubReleases: 'https://github.com/tecnosam/paperkite/releases',
+  githubRepo: 'https://github.com/EMN90909/Charlotte',
+  githubReleases: 'https://github.com/EMN90909/Charlotte/releases',
 
   authorSite: 'https://samuelabolo.dev',
   authorName: 'Samuel Abolo',
