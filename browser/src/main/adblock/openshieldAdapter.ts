@@ -103,10 +103,19 @@ async function download(id: ListId): Promise<string> {
     if (!response.body) throw new Error('missing response body');
     const chunks: Uint8Array[] = [];
     let size = 0;
-    for await (const chunk of response.body) {
-      size += chunk.byteLength;
-      if (size > MAX_BYTES) throw new Error('list too large');
-      chunks.push(chunk);
+    // Use getReader instead of DOM.AsyncIterable so the browser root
+    // tsconfig (ESNext + DOM) type-checks without additional lib flags.
+    const reader = response.body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > MAX_BYTES) throw new Error('list too large');
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
     }
     const text = Buffer.concat(chunks).toString('utf8');
     if (!text.includes('\n') || !text.includes('!')) throw new Error('invalid list');
