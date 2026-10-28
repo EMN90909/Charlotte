@@ -9,8 +9,8 @@ export function McpSection() {
   const [editingServer, setEditingServer] = useState<McpServerConfig | null>(null);
 
   useEffect(() => {
-    const unsub = window.paperkite.onMcpServersUpdated(setServers);
-    window.paperkite.requestMcpServers();
+    const unsub = window.charlotte.onMcpServersUpdated(setServers);
+    window.charlotte.requestMcpServers();
     return unsub;
   }, []);
 
@@ -53,7 +53,7 @@ export function McpSection() {
                   aria-label={`Remove ${server.name}`}
                   onClick={() => {
                     if (editingServer?.id === server.id) setEditingServer(null);
-                    window.paperkite.deleteMcpServer(server.id);
+                    window.charlotte.deleteMcpServer(server.id);
                   }}
                 >
                   <TrashIcon />
@@ -126,7 +126,7 @@ export function McpServerForm({ editingServer, onDoneEditing }: McpServerFormPro
     setTestResult(null);
   }, [editingServer]);
 
-  useEffect(() => window.paperkite.onMcpServerTestResult(setTestResult), []);
+  useEffect(() => window.charlotte.onMcpServerTestResult(setTestResult), []);
 
   const isStdio = fields.transport === 'stdio';
   const canSave = fields.name.trim().length > 0 && (isStdio ? fields.command.trim().length > 0 : fields.url.trim().length > 0);
@@ -144,15 +144,15 @@ export function McpServerForm({ editingServer, onDoneEditing }: McpServerFormPro
   const test = () => {
     if (!canSave) return;
     setTestResult('testing');
-    window.paperkite.testMcpServer(buildDraft());
+    window.charlotte.testMcpServer(buildDraft());
   };
 
   const submit = () => {
     if (!canSave) return;
     if (editingServer) {
-      window.paperkite.updateMcpServer({ id: editingServer.id, ...buildDraft() });
+      window.charlotte.updateMcpServer({ id: editingServer.id, ...buildDraft() });
     } else {
-      window.paperkite.createMcpServer(buildDraft());
+      window.charlotte.createMcpServer(buildDraft());
     }
     setFields(blankFields());
     setTestResult(null);
