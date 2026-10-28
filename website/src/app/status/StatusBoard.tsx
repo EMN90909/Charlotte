@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { LiveStatus } from '@/lib/status';
+import { getLiveStatus, type LiveStatus } from '@/lib/status';
 import { DotIcon } from '@/components/icons';
 import styles from './StatusBoard.module.css';
 
@@ -21,9 +21,8 @@ export function StatusBoard({ initial }: { initial: LiveStatus }) {
     let cancelled = false;
     const tick = async () => {
       try {
-        const res = await fetch('/api/status', { cache: 'no-store' });
-        if (!res.ok || cancelled) return;
-        const next: LiveStatus = await res.json();
+        const next: LiveStatus = await getLiveStatus();
+        if (cancelled) return;
         setStatus(next);
         setPulse(true);
         setTimeout(() => setPulse(false), 400);
@@ -31,6 +30,7 @@ export function StatusBoard({ initial }: { initial: LiveStatus }) {
         // keep showing the last known status
       }
     };
+    void tick();
     const id = setInterval(tick, POLL_MS);
     return () => {
       cancelled = true;
@@ -44,8 +44,7 @@ export function StatusBoard({ initial }: { initial: LiveStatus }) {
     <div className={styles.board}>
       {status.demo && (
         <div className={styles.demoBanner}>
-          Demo data. chat-service does not push real metrics yet. This board will poll a live
-          endpoint once it does (Prometheus, Redis, or an event broker, still being decided).
+          Status data is not verified. The server may be offline or may disallow browser-origin requests. Counts are unavailable rather than simulated.
         </div>
       )}
 
@@ -76,12 +75,12 @@ export function StatusBoard({ initial }: { initial: LiveStatus }) {
 
         <div className={styles.tile}>
           <span className={styles.label}>Unique rooms</span>
-          <span className={`${styles.value} ${pulse ? styles.pulse : ''}`}>{status.uniqueRooms.toLocaleString()}</span>
+          <span className={`${styles.value} ${pulse ? styles.pulse : ''}`}>{status.liveness === 'offline' ? 'N/A' : status.uniqueRooms.toLocaleString()}</span>
         </div>
 
         <div className={styles.tile}>
           <span className={styles.label}>Total users</span>
-          <span className={`${styles.value} ${pulse ? styles.pulse : ''}`}>{status.totalUsers.toLocaleString()}</span>
+          <span className={`${styles.value} ${pulse ? styles.pulse : ''}`}>{status.liveness === 'offline' ? 'N/A' : status.totalUsers.toLocaleString()}</span>
         </div>
       </div>
 

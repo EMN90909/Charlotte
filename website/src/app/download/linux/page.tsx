@@ -1,8 +1,6 @@
 import type { Metadata } from 'next';
-import { headers } from 'next/headers';
 import Link from 'next/link';
 import { getLatestBrowserRelease, type LinuxAssets } from '@/lib/releases';
-import { detectArch } from '@/lib/platform';
 import { site } from '@/lib/site';
 import { LinuxIcon, ChipIcon, ArrowRightIcon, GithubIcon } from '@/components/icons';
 import { AssetButton } from '../AssetButton';
@@ -13,8 +11,6 @@ export const metadata: Metadata = {
   title: 'Download Charlotte for Linux',
   description: 'Get the Charlotte browser for Linux: .deb, .rpm, and portable .zip builds for x64 and ARM64.',
 };
-
-export const revalidate = 600;
 
 function FormatButtons({ assets }: { assets: LinuxAssets }) {
   return (
@@ -44,8 +40,7 @@ function FormatButtons({ assets }: { assets: LinuxAssets }) {
 }
 
 export default async function LinuxDownloadPage() {
-  const [release, ua] = await Promise.all([getLatestBrowserRelease(), headers().then((h) => h.get('user-agent'))]);
-  const arch = detectArch(ua);
+  const release = await getLatestBrowserRelease();
 
   return (
     <main className={headerStyles.page}>
@@ -74,7 +69,7 @@ export default async function LinuxDownloadPage() {
           <div className={styles.archHead}>
             <ChipIcon size={16} />
             <h2>x64</h2>
-            {arch === 'x64' && <span className={styles.badge}>Recommended for your device</span>}
+            
           </div>
           <p className={styles.archNote}>Intel and AMD processors, used in most desktops and laptops.</p>
           {release ? <FormatButtons assets={release.linux.x64} /> : <p className={styles.unavailable}>Release data unavailable.</p>}
@@ -84,7 +79,7 @@ export default async function LinuxDownloadPage() {
           <div className={styles.archHead}>
             <ChipIcon size={16} />
             <h2>ARM64</h2>
-            {arch === 'arm64' && <span className={styles.badge}>Recommended for your device</span>}
+            
           </div>
           <p className={styles.archNote}>ARM-based devices, including Raspberry Pi 4/5, ARM laptops, and some SBCs.</p>
           {release ? <FormatButtons assets={release.linux.arm64} /> : <p className={styles.unavailable}>Release data unavailable.</p>}

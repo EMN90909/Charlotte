@@ -81,7 +81,7 @@ export async function getLatestBrowserRelease(): Promise<BrowserRelease | null> 
     // across ALL of them, not just this component's.
     const res = await fetch(`https://api.github.com/repos/EMN90909/Charlotte/releases`, {
       headers: { Accept: 'application/vnd.github+json' },
-      next: { revalidate: 600 }, // release cadence is nowhere near this fast
+      cache: 'force-cache', // static export resolves available releases at build time
     });
     // A private repository is not publicly queryable; the caller displays
     // an unavailable/download fallback rather than inventing a build.

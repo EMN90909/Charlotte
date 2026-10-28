@@ -1,5 +1,8 @@
 import { site } from '@/lib/site';
 
+// Static export: runtime health checks are initiated by the user's browser.
+// Cross-origin requests require the chat server to permit this website origin.
+
 export type LiveStatus = {
   /** HyperLogLog estimate of unique chat rooms ever opened - see
    *  chat-service's GET /custom-metrics. Approximate (~0.2% margin), not
@@ -25,29 +28,22 @@ type CustomMetrics = {
   unique_users: number;
 };
 
-// Deterministic-looking but slowly-drifting mock series, seeded off the
-// current minute so a poll loop sees gentle movement instead of either a
-// frozen number or distracting per-request jitter. Used only while
-// site.publicServer.deployed is false.
+// Always show truthful unavailable state rather than manufactured traffic.
+export const unavailableStatus: LiveStatus = {
+  uniqueRooms: 0,
+  totalUsers: 0,
+  liveness: 'offline',
+  latencyMs: null,
+  checkedAt: '1970-01-01T00:00:00.000Z',
+  demo: true,
+};
+
+// Legacy mock status is disabled for static hosting.
 export async function getLiveStatus(): Promise<LiveStatus> {
   if (site.publicServer.deployed) {
     return getRealStatus();
   }
-  return getMockStatus();
-}
-
-async function getMockStatus(): Promise<LiveStatus> {
-  const minute = Math.floor(Date.now() / 60_000);
-  const wobble = (seed: number, span: number) => Math.floor(((Math.sin(minute / 7 + seed) + 1) / 2) * span);
-
-  return {
-    uniqueRooms: 40 + wobble(1, 55),
-    totalUsers: 1284 + wobble(3, 60),
-    liveness: 'online',
-    latencyMs: 38 + wobble(2, 40),
-    checkedAt: new Date().toISOString(),
-    demo: true,
-  };
+  return { ...unavailableStatus, checkedAt: new Date().toISOString() };
 }
 
 // Liveness and latency come from /healthz; unique room/user counts come

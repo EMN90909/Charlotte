@@ -21,3 +21,7 @@ The legacy chat backend remains configured to preserve protocol compatibility.
 ## Rights
 
 The original project and its source files remain under the MIT licence, copyright (c) 2026 Samuel Abolo. The Charlotte commercial distribution may additionally include Noethric-owned proprietary material, which is subject to separate rights. See [root README](../README.md), [original MIT licence](LICENSE), and [commercial rights notice](../browser/COMMERCIAL-LICENSE.md). These notices do not reassign the original author's copyright.
+
+## Render static hosting
+
+The website uses Next.js `output: 'export'`. Render Static Site build command (from repository root): `cd website && npm ci && npm run build`, with publish path `website/out`. There is no Node runtime, request-based User-Agent platform detection, or `/api/status`; platform choice is explicit, and status checks run in the browser. The status endpoint requires cross-origin access from the public server. Release data may be absent when the GitHub repository is private.

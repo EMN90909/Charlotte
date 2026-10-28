@@ -1,8 +1,6 @@
 import type { Metadata } from 'next';
-import { headers } from 'next/headers';
 import Link from 'next/link';
 import { getLatestBrowserRelease } from '@/lib/releases';
-import { detectArch } from '@/lib/platform';
 import { site } from '@/lib/site';
 import { WindowsIcon, ChipIcon, InfoIcon, ArrowRightIcon, GithubIcon } from '@/components/icons';
 import { AssetButton } from '../AssetButton';
@@ -14,11 +12,8 @@ export const metadata: Metadata = {
   description: 'Get the Charlotte browser for Windows: x64 and ARM64 builds.',
 };
 
-export const revalidate = 600;
-
 export default async function WindowsDownloadPage() {
-  const [release, ua] = await Promise.all([getLatestBrowserRelease(), headers().then((h) => h.get('user-agent'))]);
-  const arch = detectArch(ua);
+  const release = await getLatestBrowserRelease();
 
   return (
     <main className={headerStyles.page}>
@@ -47,7 +42,7 @@ export default async function WindowsDownloadPage() {
           <div className={styles.archHead}>
             <ChipIcon size={16} />
             <h2>x64</h2>
-            {arch === 'x64' && <span className={styles.badge}>Recommended for your device</span>}
+            
           </div>
           <p className={styles.archNote}>Intel and AMD processors, used in almost every Windows PC today.</p>
 
@@ -72,7 +67,7 @@ export default async function WindowsDownloadPage() {
           <div className={styles.archHead}>
             <ChipIcon size={16} />
             <h2>ARM64</h2>
-            {arch === 'arm64' && <span className={styles.badge}>Recommended for your device</span>}
+            
           </div>
           <p className={styles.archNote}>Windows on ARM devices, including Surface Pro X and similar ARM-based laptops.</p>
 
