@@ -32,7 +32,7 @@ const linguistRules = read('.gitattributes');
 assert.match(languageGuide, /TypeScript/);
 assert.match(languageGuide, /Go/);
 assert.match(languageGuide, /Protocol Buffers/);
-assert.match(linguistRules, /chat-service\/gen\/\*\* linguist-generated=true/);
+assert.match(linguistRules, /server\/gen\/\*\* linguist-generated=true/);
 assert.match(linguistRules, /\*\.tsx linguist-language=TypeScript/);
 assert.match(read('README.md'), /\[LANGUAGES\.md\]/);
 
