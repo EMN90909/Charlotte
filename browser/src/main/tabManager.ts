@@ -25,6 +25,7 @@ import { buildErrorPageUrl, buildCrashPageUrl } from './errorPage';
 import type { NavState, TabsUpdatedPayload, SubtitleSettings, PageTranslateSettings } from '../shared/types';
 import { DEFAULT_SUBTITLE_SETTINGS, DEFAULT_PAGE_TRANSLATE_SETTINGS } from '../shared/types';
 import { IPC } from '../shared/ipcChannels';
+import { applyAdBlockCosmetics, detachAdBlockCosmetics } from './adblock/adblocker';
 
 /** Navigations that don't represent a real failure - a new load
  * superseding this one, the user hitting stop, a download starting, etc.
@@ -205,6 +206,7 @@ export class TabManager {
     this.order = this.order.filter((tabId) => tabId !== id);
     this.tabs.delete(id);
     this.browsingWebContentsIds.delete(tab.view.webContents.id);
+    detachAdBlockCosmetics(tab.view.webContents);
     tab.view.webContents.close();
 
     if (wasActive) {
@@ -312,6 +314,11 @@ export class TabManager {
   captureActivePage(): Promise<NativeImage> | null {
     const wc = this.activeTab()?.view.webContents;
     return wc ? wc.capturePage() : null;
+  }
+
+  /** Browsing tab contents only, never chrome or chat; used on list updates. */
+  getBrowsingWebContents(): WebContents[] {
+    return [...this.tabs.values()].map((tab) => tab.view.webContents);
   }
 
   /** O(1) lookup for the ad blocker request hot path. */
@@ -463,7 +470,10 @@ export class TabManager {
     // The room (chat) only switches once a navigation actually commits -
     // did-start-navigation above already covers the address-bar update.
     wc.on('did-navigate', (_event: Event, url: string) => this.handleUrlChange(tab, url));
-    wc.on('did-navigate-in-page', (_event: Event, url: string) => this.handleUrlChange(tab, url));
+    wc.on('did-navigate-in-page', (_event: Event, url: string) => {
+      this.handleUrlChange(tab, url);
+      void applyAdBlockCosmetics(wc);
+    });
 
     // Fires once per real cross-document navigation (not hash changes/
     // pushState - those don't reload the preload, so there's no fresh
@@ -472,6 +482,7 @@ export class TabManager {
     // if this tab still has translate on, so a new document doesn't just
     // sit there untranslated until the user re-toggles it by hand.
     wc.on('dom-ready', () => {
+      void applyAdBlockCosmetics(wc);
       if (tab.pageTranslate.enabled && tab.pageTranslate.agentId) {
         wc.send(IPC.PAGE_TRANSLATE_ENABLE);
       }

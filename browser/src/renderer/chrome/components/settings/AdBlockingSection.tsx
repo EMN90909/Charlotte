@@ -24,7 +24,7 @@ export function AdBlockingSection({ status, onSave }: AdBlockingSectionProps) {
     <section className="settings-section">
       <h2>Ad &amp; tracker blocking</h2>
       <p className="settings-hint">
-        Block known ad networks before they load. Lightweight filtering runs locally in the browser, without an extension.
+        OpenShield blocks advertising and tracking requests locally, with cosmetic hiding for ad placeholders. No extra extension or service.
       </p>
       <div className="segmented" role="radiogroup" aria-label="Ad blocking level">
         {MODES.map(({ value, label }) => (
@@ -52,6 +52,12 @@ export function AdBlockingSection({ status, onSave }: AdBlockingSectionProps) {
         <span>requests blocked this session</span>
       </div>
 
+      <h2>Filter engine</h2>
+      <p className="settings-hint">
+        {status.engine ? `${status.engine.networkRules.toLocaleString()} network rules, ${status.engine.cosmeticRules.toLocaleString()} cosmetic rules. ${status.engine.cachedLists} community lists cached.` : 'Loading local protection.'}
+        {status.engine?.lastUpdated ? ` Updated ${new Date(status.engine.lastUpdated).toLocaleDateString()}.` : ''}
+      </p>
+      {status.engine?.lastError && <p className="settings-hint" role="status">Community filters could not update. Existing offline protection remains enabled.</p>}
       <h2>Site exceptions</h2>
       <p className="settings-hint">
         Allow ads and trackers on sites that need them to work. The exception covers the domain and its subdomains.
@@ -94,7 +100,7 @@ export function AdBlockingSection({ status, onSave }: AdBlockingSectionProps) {
       )}
       <p className="settings-hint">
         Changes apply immediately to new requests. Reload an already open page to replace blocked resources.
-        This filters network requests, not empty ad placeholders.
+        The built-in rules work offline. EasyList and EasyPrivacy refresh from their official feeds when connected.
       </p>
     </section>
   );

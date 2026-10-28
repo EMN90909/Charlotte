@@ -14,7 +14,7 @@ import { installPermissionHandlers } from './permissions';
 import { disconnectAll } from './mcp/client';
 import { startBuiltinMcpServer, stopBuiltinMcpServer, loadBuiltinMcpEnabledPreference } from './mcp/builtinServer';
 import { loadSession, scheduleSessionSave, flushSessionSave } from './sessionRestore';
-import { installAdBlocker, getAdBlockStatus } from './adblock/adblocker';
+import { installAdBlocker, getAdBlockStatus, stopAdBlocker } from './adblock/adblocker';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -122,6 +122,7 @@ async function createWindow(): Promise<void> {
   installAdBlocker(
     (webContents) => wm.tabs.isBrowsingWebContentsId(webContents.id),
     () => wm.chromeView.webContents.send(IPC.AD_BLOCK_STATUS, getAdBlockStatus()),
+    () => wm.tabs.getBrowsingWebContents(),
   );
 
   // Applies to the whole session (like proxy), not any one tab - every
@@ -237,6 +238,7 @@ app.on('before-quit', () => {
   // The debounced session save (see sessionRestore.ts) must not lose the
   // final tab state to a quit landing inside its debounce window.
   flushSessionSave();
+  stopAdBlocker();
 });
 
 app.on('window-all-closed', () => {

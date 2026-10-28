@@ -540,6 +540,13 @@ export interface AdBlockStatus {
   settings: AdBlockSettings;
   /** Requests cancelled since browser launch, not a lifetime statistic. */
   blockedCount: number;
+  engine?: {
+    networkRules: number;
+    cosmeticRules: number;
+    cachedLists: number;
+    lastUpdated: string | null;
+    lastError: string | null;
+  };
 }
 
 export const DEFAULT_AD_BLOCK_SETTINGS: AdBlockSettings = {
