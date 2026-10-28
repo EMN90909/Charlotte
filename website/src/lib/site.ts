@@ -14,7 +14,7 @@ export const site = {
 
   // chat-service terminates its own TLS now (golang.org/x/crypto/acme/
   // autocert, no reverse proxy in front of it) - see
-  // chat-service/deploy/README.md's "Domain and TLS" section. Confirmed
+  // server/deploy/README.md's "Domain and TLS" section. Confirmed
   // live: `curl https://paperkite-chat-service.samuelabolo.dev/healthz`.
   //
   // grpcHost is left as a placeholder on purpose: chat-service-server
@@ -30,7 +30,7 @@ export const site = {
     grpcHost: 'TODO-not-yet-exposed:50051',
     healthPath: '/healthz',
     // Unauthenticated HyperLogLog cardinality estimates (unique_rooms,
-    // unique_users) - see chat-service/internal/api's MetricsHandler doc
+    // unique_users) - see server/internal/api's MetricsHandler doc
     // comment and internal/hll's package doc comment for the ~0.2%
     // margin of error. Consumed by src/lib/status.ts.
     metricsPath: '/custom-metrics',

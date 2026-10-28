@@ -11,7 +11,7 @@ export function ConnectionPanel() {
           <DotIcon size={7} className={publicServer.deployed ? styles.dotLive : styles.dotPending} />
           {publicServer.deployed ? 'Live' : 'Not deployed yet'}
         </span>
-        <span className={styles.title}>Public chat-service</span>
+        <span className={styles.title}>Public chat server</span>
       </div>
 
       <dl className={styles.rows}>

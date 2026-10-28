@@ -26,7 +26,7 @@ env:
 
 defaults:
   run:
-    working-directory: chat-service
+    working-directory: server
 
 jobs:
   binaries:
@@ -42,12 +42,12 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.23'
-          cache-dependency-path: chat-service/go.sum
+          cache-dependency-path: server/go.sum
 
       # Go cross-compiles without needing OS-specific runners, so one
       # Linux runner covers every target platform, unlike the browser's
       # Electron build. Builds cmd/ops too, not just cmd/server - a
-      # droplet running the ops daemon (see chat-service/deploy/) should
+      # droplet running the ops daemon (see server/deploy/) should
       # be able to just download it, not need a Go toolchain installed.
       - name: Cross-compile
         run: |
@@ -73,7 +73,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
-          files: chat-service/dist/*
+          files: server/dist/*
 
   # Optional: notify a running ops daemon (see cmd/ops) to pull this build
   # and swap it in. Skipped entirely unless OPS_WEBHOOK_URL is configured
@@ -95,7 +95,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.23'
-          cache-dependency-path: chat-service/go.sum
+          cache-dependency-path: server/go.sum
 
       - name: Mint deploy token and notify
         env:

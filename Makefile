@@ -35,13 +35,13 @@ browser-tag:
 	@$(MAKE) -C browser tag
 
 chat-service-bump-major:
-	@$(MAKE) -C chat-service bump-major
+	@$(MAKE) -C server bump-major
 chat-service-bump-minor:
-	@$(MAKE) -C chat-service bump-minor
+	@$(MAKE) -C server bump-minor
 chat-service-bump-patch:
-	@$(MAKE) -C chat-service bump-patch
+	@$(MAKE) -C server bump-patch
 chat-service-tag:
-	@$(MAKE) -C chat-service tag
+	@$(MAKE) -C server tag
 
 website-bump-major:
 	@$(MAKE) -C website bump-major

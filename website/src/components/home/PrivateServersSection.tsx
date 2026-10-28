@@ -16,7 +16,7 @@ export function PrivateServersSection() {
         <div className={styles.terminal}>
           <div className={styles.terminalHead}>
             <span /><span /><span />
-            <span className={styles.terminalTitle}>chat-service</span>
+            <span className={styles.terminalTitle}>server</span>
           </div>
           <div className={styles.terminalBody}>
             {lines.map((l, i) => (

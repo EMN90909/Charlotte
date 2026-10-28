@@ -1,6 +1,6 @@
 /**
  * Persists the user's configured external chat-service backends (see
- * ../../chat-service/PROTOCOL.md) to `userData/chatServers.json`.
+ * ../../server/PROTOCOL.md) to `userData/chatServers.json`.
  */
 import fs from 'node:fs';
 import path from 'node:path';

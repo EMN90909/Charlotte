@@ -22,7 +22,7 @@ export type LiveStatus = {
 };
 
 // The shape of chat-service's GET /custom-metrics response (see
-// chat-service/internal/metrics.Snapshot).
+// server/internal/metrics.Snapshot).
 type CustomMetrics = {
   unique_rooms: number;
   unique_users: number;

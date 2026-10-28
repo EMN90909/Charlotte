@@ -10,7 +10,7 @@ This repository holds three projects:
 | Directory | What it is | Stack |
 |-----------|------------|-------|
 | [`browser/`](browser) | The Charlotte desktop browser | Electron, TypeScript, React |
-| [`chat-service/`](chat-service) | The chat backend the browser talks to | Go |
+| [`server/`](chat-service) | The chat backend the browser talks to | Go |
 | [`website/`](website) | The marketing site, protocol docs, and live status page | Next.js, TypeScript, React |
 
 ## Source languages
@@ -37,7 +37,7 @@ Read [LANGUAGES.md](LANGUAGES.md) for the source-language inventory, major direc
   choice.
 - **Existing rights preserved.** The original browser, protocol and server carry Samuel Abolo's 2026 MIT notice; new Noethric-owned commercial additions may be proprietary.
 
-See [chat-service/PROTOCOL.md](chat-service/PROTOCOL.md) for the wire
+See [server/PROTOCOL.md](server/PROTOCOL.md) for the wire
 protocol, or the same thing rendered at [`website/`](website)'s
 `/protocol` page.
 
@@ -46,8 +46,8 @@ protocol, or the same thing rendered at [`website/`](website)'s
 Run the chat backend, then the browser, in two terminals:
 
 ```bash
-# terminal 1: chat-service
-cd chat-service
+# terminal 1: server
+cd server
 CHAT_JWT_SECRET=dev-secret make run
 
 # terminal 2: browser
@@ -62,12 +62,12 @@ Servers if you're pointing at something else.
 
 ## Building from scratch
 
-### chat-service (Go)
+### server (Go)
 
 Requires Go 1.23+.
 
 ```bash
-cd chat-service
+cd server
 make build          # go build ./...
 CHAT_JWT_SECRET=dev-secret make run   # go run ./cmd/server, HTTP :8080, gRPC :50051
 make test           # unit + integration tests
@@ -81,7 +81,7 @@ generated code is already checked into `gen/`.
 To run it in Docker instead:
 
 ```bash
-cd chat-service
+cd server
 make docker                              # builds paperkite-chat-service:local
 docker run -p 8080:8080 -p 50051:50051 -e CHAT_JWT_SECRET=dev-secret paperkite-chat-service:local
 ```
@@ -90,7 +90,7 @@ Running your own server long-term? `cmd/ops` is a small daemon that
 auto-deploys new releases for you (CI notifies it, it downloads,
 health-checks, and rolls back on failure) instead of you manually
 swapping binaries. See
-[`chat-service/packaging/README.md`](chat-service/packaging/README.md#auto-deploy-via-the-ops-daemon).
+[`server/packaging/README.md`](server/packaging/README.md#auto-deploy-via-the-ops-daemon).
 
 ### browser (Electron)
 
@@ -159,7 +159,7 @@ project, since the tag prefix is what tells CI what changed:
   `ghcr.io/<owner>/paperkite-chat-service`, and, if `OPS_WEBHOOK_URL` is
   configured, notifies a running `cmd/ops` daemon to deploy it (download,
   health-checked swap, automatic rollback on failure). See
-  [`chat-service/packaging/README.md`](chat-service/packaging/README.md).
+  [`server/packaging/README.md`](server/packaging/README.md).
 - `website-v*` isn't wired to a workflow, the site deploys however you've
   set up hosting (Vercel, etc.); the tag just keeps its version/changelog
   consistent with the other two.
@@ -171,3 +171,11 @@ project, since the tag prefix is what tells CI what changed:
 **Charlotte commercial distribution:** Noethric is the commercial product brand/distributor. Only separately owned or authorized Noethric material is subject to proprietary terms. Read [browser/COMMERCIAL-LICENSE.md](browser/COMMERCIAL-LICENSE.md). Renaming a product, making this repository private or adding a proprietary notice does **not** transfer the original author's copyright or terminate the original MIT grant. A separate signed copyright assignment or exclusive licence would be needed to change ownership of the original work.
 
 Third-party dependencies retain their individual licences; preserve all applicable notices in binary distributions.
+
+## Charlotte account authentication
+
+The Electron browser includes Supabase email/password sign-in and sign-up in **Settings → Account**. Credentials and refresh tokens are handled by the privileged Electron main process, not an untrusted webpage. Configure `CHARLOTTE_SUPABASE_URL` and `CHARLOTTE_SUPABASE_PUBLISHABLE_KEY` with a Charlotte-approved Supabase project. The Go server provides a verification-only `GET /auth/me` endpoint using matching `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`. See [server/README.md](server/README.md). The legacy chat username protocol is independent.
+
+## Render static site
+
+The `website/` Next.js application exports to `website/out` for Render Static Sites. Build from repository root with `cd website && npm ci && npm run build`, publish `website/out`. No Node.js server runs on the static host. The status page does its network checks client-side, and private GitHub releases might not appear in download listings. See [website/README.md](website/README.md).
