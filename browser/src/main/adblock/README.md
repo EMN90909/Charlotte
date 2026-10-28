@@ -560,3 +560,41 @@ example.com#@#.ad-banner    → Exception: don't hide on example.com
 ## License
 
 MIT
+
+
+## Embedded in Charlotte's executable
+
+OpenShield is now imported from `browser/src/main/adblock/src/index.ts` by
+`openshieldAdapter.ts` and then by the main-process `adblocker.ts`.
+The top-level `browser/forge.config.ts` and Vite main entry
+(`browser/src/main/index.ts`) build **one Charlotte application** with its
+ad blocker in the same packaged `app.asar`. The nested `package.json`,
+`tsup.config.ts`, and `package-lock.json` are for developing OpenShield as
+a standalone library; **none is installed, built, spawned, or required by
+Charlotte's own npm/build/release scripts**. No separate adblock process,
+server, DLL or executable is needed.
+
+The Windows release is a Charlotte installer `.exe` plus the usual installed
+Electron executable and runtime files. Electron is not a single standalone
+portable `.exe` file; the adblocker itself nonetheless has no separate binary.
+
+Network filtering runs through one `webRequest.onBeforeRequest` hook for
+browsing tabs only, with Off/Balanced/Strict and persisted per-site exceptions.
+The built-in hostname rules work offline. EasyList (Balanced + Strict) and
+EasyPrivacy (Strict) download as *data* in the background, are capped at 5MB
+per list, cached under `userData/adblock-lists`, and refreshed on startup
+when older than seven days. Failures leave built-in/cached protection active.
+Cosmetic filtering injects **selector-only hiding CSS** into browsing pages;
+filter-list scriptlets and arbitrary styles are never executed. The engine
+currently implements a useful subset of ABP rules, not full uBlock Origin
+compatibility.
+
+Run from `browser/`:
+
+```bash
+npm ci
+npm run test:openshield
+npm run test:adblock
+npx tsc --noEmit
+npm run make
+```

@@ -104,6 +104,9 @@ jobs:
       # --arch is a no-op for the natively-matching entries (electron-forge
       # already defaults to the host's own arch) and is what actually
       # makes the win32/arm64 cross-compile happen on an x64 runner.
+      - name: Test embedded OpenShield engine
+        run: npm run test:openshield && npm run test:adblock
+
       - name: Build binaries
         run: npx electron-forge make --arch=${{ matrix.arch }}
 

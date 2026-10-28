@@ -22,6 +22,7 @@ let trackers = makeShield(trackerRules);
 let listCount = 0;
 let lastUpdated: string | null = null;
 let lastError: string | null = null;
+let statsCache: { networkRules: number; cosmeticRules: number } | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 function makeShield(rules: string, extra?: string): OpenShield {
@@ -32,11 +33,17 @@ function makeShield(rules: string, extra?: string): OpenShield {
 }
 
 export function openShieldStats() {
-  const a = ads.getStats();
-  const b = trackers.getStats();
+  // Avoid scanning filter index buckets for every 250ms status counter push.
+  if (!statsCache) {
+    const a = ads.getStats();
+    const b = trackers.getStats();
+    statsCache = {
+      networkRules: a.networkFilterCount + b.networkFilterCount,
+      cosmeticRules: a.cosmeticFilterCount + b.cosmeticFilterCount,
+    };
+  }
   return {
-    networkRules: a.networkFilterCount + b.networkFilterCount,
-    cosmeticRules: a.cosmeticFilterCount + b.cosmeticFilterCount,
+    ...statsCache,
     cachedLists: listCount,
     lastUpdated,
     lastError,
@@ -115,6 +122,7 @@ function loadPair(a?: string, b?: string): void {
   const nextTrackers = makeShield(trackerRules, b);
   ads = nextAds;
   trackers = nextTrackers;
+  statsCache = null;
   listCount = Number(Boolean(a)) + Number(Boolean(b));
 }
 

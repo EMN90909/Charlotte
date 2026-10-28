@@ -8,7 +8,7 @@
  */
 import type { AdBlockSettings } from '../../shared/types';
 
-const ADS = new Set(`
+export const ADS = new Set(`
 2mdn.net
 ad-delivery.net
 ad-maven.com
@@ -100,7 +100,7 @@ yieldmanager.com
 zemanta.com
 `.trim().split(/\s+/));
 
-const TRACKERS = new Set(`
+export const TRACKERS = new Set(`
 addthis.com
 ads-twitter.com
 analytics.tiktok.com
@@ -188,6 +188,9 @@ function httpHostname(value: string): string | null {
 }
 
 /**
+ * Legacy matcher retained for existing unit tests; the application now uses
+ * OpenShield from src/index.ts for network filtering and cosmetics.
+ *
  * Pure, deterministic matching for ordinary tab subresources. Main-frame
  * navigations are excluded by the Electron adapter, so visiting a site never
  * yields an ad-block error page. No costly rule compilation per request.

@@ -54,7 +54,7 @@ export function AdBlockingSection({ status, onSave }: AdBlockingSectionProps) {
 
       <h2>Filter engine</h2>
       <p className="settings-hint">
-        {status.engine ? `${status.engine.networkRules.toLocaleString()} network rules, ${status.engine.cosmeticRules.toLocaleString()} cosmetic rules. ${status.engine.cachedLists} community lists cached.` : 'Loading local protection.'}
+        {status.engine ? `${status.engine.networkRules.toLocaleString()} network rules, ${status.engine.cosmeticRules.toLocaleString()} cosmetic rules. ${status.engine.cachedLists} community lists active.` : 'Loading local protection.'}
         {status.engine?.lastUpdated ? ` Updated ${new Date(status.engine.lastUpdated).toLocaleDateString()}.` : ''}
       </p>
       {status.engine?.lastError && <p className="settings-hint" role="status">Community filters could not update. Existing offline protection remains enabled.</p>}
