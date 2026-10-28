@@ -1,8 +1,8 @@
 {
-  "name": "paperkite-browser",
-  "productName": "paperkite-browser",
+  "name": "charlotte-browser",
+  "productName": "Charlotte",
   "version": "0.3.0",
-  "description": "An open-source browser shell with a per-page mock chat panel.",
+  "description": "Charlotte, a Noethric-branded desktop browser with per-page chat and AI agents.",
   "main": ".vite/build/index.js",
   "private": true,
   "scripts": {
@@ -17,7 +17,7 @@
     "name": "Samuel Abolo",
     "email": "ikabolo59@gmail.com"
   },
-  "license": "MIT",
+  "license": "SEE COMMERCIAL-LICENSE.md",
   "devDependencies": {
     "@electron-forge/cli": "^7.11.2",
     "@electron-forge/maker-deb": "^7.11.2",
