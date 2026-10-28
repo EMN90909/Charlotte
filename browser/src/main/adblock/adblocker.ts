@@ -15,6 +15,7 @@ let blockedCount = 0;
 let statusListener: (() => void) | null = null;
 let listTabs: (() => WebContents[]) | null = null;
 let notificationTimer: ReturnType<typeof setTimeout> | null = null;
+let hydrateTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Track inserted CSS per tab, so changing mode / exceptions removes it.
 // CSS is injected as Chromium USER stylesheet; no JS/scriptlet is executed.
@@ -107,7 +108,12 @@ export function installAdBlocker(
   listTabs = getTabs;
   // Bundled host rules are active immediately; cached community filters
   // hydrate next and refresh in the background without external services.
-  startOpenShield(() => { refreshCosmetics(); notify(); });
+  // Do not parse multi-megabyte cached filter lists before Charlotte can
+  // paint its first window. Built-in ad/tracker rules already run now.
+  hydrateTimer = setTimeout(() => {
+    hydrateTimer = null;
+    startOpenShield(() => { refreshCosmetics(); notify(); });
+  }, 1500);
 
   // Electron supports a single onBeforeRequest hook per session.
   session.defaultSession.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, callback) => {
@@ -131,6 +137,8 @@ export function installAdBlocker(
 }
 
 export function stopAdBlocker(): void {
+  if (hydrateTimer) clearTimeout(hydrateTimer);
+  hydrateTimer = null;
   stopOpenShield();
   if (notificationTimer) clearTimeout(notificationTimer);
   notificationTimer = null;
