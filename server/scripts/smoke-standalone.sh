@@ -15,6 +15,7 @@ cleanup() {
 trap cleanup EXIT
 port="${SMOKE_HTTP_PORT:-18180}"
 env CHAT_JWT_SECRET="smoke-only-not-for-production" PORT="$port" \
+  SUPABASE_URL="" SUPABASE_PUBLISHABLE_KEY="" \
   CHAT_USERNAMES_FILE="$scratch/usernames.log" \
   CHAT_ROOMS_HLL_FILE="$scratch/rooms.hll" \
   CHAT_USERS_HLL_FILE="$scratch/users.hll" \

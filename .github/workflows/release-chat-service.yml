@@ -44,30 +44,10 @@ jobs:
           go-version: '1.23'
           cache-dependency-path: server/go.sum
 
-      # Go cross-compiles without needing OS-specific runners, so one
-      # Linux runner covers every target platform, unlike the browser's
-      # Electron build. Builds cmd/ops too, not just cmd/server - a
-      # droplet running the ops daemon (see server/deploy/) should
-      # be able to just download it, not need a Go toolchain installed.
-      - name: Cross-compile
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          targets=("linux/amd64" "linux/arm64" "darwin/amd64" "darwin/arm64" "windows/amd64")
-          for target in "${targets[@]}"; do
-            goos="${target%/*}"
-            goarch="${target#*/}"
-            ext=""
-            [ "$goos" = "windows" ] && ext=".exe"
-            for cmd in server ops; do
-              out="dist/chat-service-${cmd}-${goos}-${goarch}${ext}"
-              echo "building $out"
-              GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 go build -trimpath -o "$out" "./cmd/$cmd"
-            done
-          done
-
-      - name: Checksums
-        run: cd dist && sha256sum * > checksums.txt
+      # Builds from the self-contained server module and scripts.
+      # Keep historical artifact names so existing ops deployment URLs work.
+      - name: Cross-compile standalone server and ops
+        run: bash scripts/build-all.sh
 
       - name: Attach artifacts to the release
         uses: softprops/action-gh-release@v2
