@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { site } from '@/lib/site';
 import { ArrowRightIcon, KiteMark } from '@/components/icons';
 import { BrowserMock } from './BrowserMock';
 import styles from './Hero.module.css';

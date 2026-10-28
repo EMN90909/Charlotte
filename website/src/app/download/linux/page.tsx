@@ -10,8 +10,8 @@ import headerStyles from '../download.module.css';
 import styles from '../platform.module.css';
 
 export const metadata: Metadata = {
-  title: 'Download Paperkite for Linux',
-  description: 'Get the Paperkite browser for Linux: .deb, .rpm, and portable .zip builds for x64 and ARM64.',
+  title: 'Download Charlotte for Linux',
+  description: 'Get the Charlotte browser for Linux: .deb, .rpm, and portable .zip builds for x64 and ARM64.',
 };
 
 export const revalidate = 600;
@@ -56,7 +56,7 @@ export default async function LinuxDownloadPage() {
         <span className="eyebrow">
           <LinuxIcon size={13} /> Linux
         </span>
-        <h1 className={headerStyles.h1}>Download Paperkite for Linux.</h1>
+        <h1 className={headerStyles.h1}>Download Charlotte for Linux.</h1>
         <p className={headerStyles.lede}>
           {release ? (
             <>

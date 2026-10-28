@@ -1,36 +1,23 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Charlotte website
 
-## Getting Started
+This is the Next.js marketing website for **Charlotte**, the Noethric-branded desktop browser. It provides product information, protocol documentation, the chat-server status display, and browser download links.
 
-First, run the development server:
+## Local development
 
-```bash
+Requires Node.js 20 or later.
+
+```sh
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Release/download availability
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The website looks for browser release tags named `browser-v*` in `EMN90909/Charlotte`. The repository is currently private, so public requests to the GitHub releases API may return 404. In that case, download pages must display the unavailable fallback; do not claim downloadable public builds unless they are accessible.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The legacy chat backend remains configured to preserve protocol compatibility.
 
-## Learn More
+## Rights
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The original project and its source files remain under the MIT licence, copyright (c) 2026 Samuel Abolo. The Charlotte commercial distribution may additionally include Noethric-owned proprietary material, which is subject to separate rights. See [root README](../README.md), [original MIT licence](LICENSE), and [commercial rights notice](../browser/COMMERCIAL-LICENSE.md). These notices do not reassign the original author's copyright.

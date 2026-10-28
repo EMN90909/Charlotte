@@ -10,7 +10,7 @@ export function CTASection() {
         <KiteMark size={44} className={styles.kite} />
         <h2 className={styles.title}>Download Charlotte.</h2>
         <p className={styles.body}>
-          Charlotte is a Noethric-branded commercial distribution. Original code remains subject to Samuel Abolo's MIT licence.
+          Charlotte is a Noethric-branded commercial distribution. Original code remains subject to Samuel Abolo&apos;s MIT licence.
         </p>
         <div className={styles.ctas}>
           <Link href="/download" className="btn btn--primary">

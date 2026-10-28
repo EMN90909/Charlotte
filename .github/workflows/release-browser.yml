@@ -1,4 +1,4 @@
-name: Release browser binaries
+name: Release Charlotte browser binaries
 
 # This is a monorepo with three independently-versioned projects, so a
 # generic "release published" trigger isn't safe here: it can't tell

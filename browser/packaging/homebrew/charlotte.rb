@@ -2,7 +2,7 @@
 ##
 ## This file is NOT wired into any tap yet. Homebrew resolves casks by
 ## looking in a repo literally named `homebrew-<tapname>` (e.g.
-## `tecnosam/homebrew-charlotte`), so this only becomes `brew install
+## `EMN90909/homebrew-charlotte`), so this only becomes `brew install
 ## --cask charlotte` once that tap repo exists and this file (with the
 ## placeholders below filled in) is copied into its `Casks/` folder.
 ## See ../README.md for the full setup note.
@@ -12,8 +12,8 @@
 ## GitHub Release it creates, which has the sha256 you need for the
 ## `sha256` line below.
 ##
-## Only Apple Silicon (arm64) is built right now, see ../README.md for
-## what it'd take to add an Intel build too.
+## This is a template, not a published cask. macOS release packaging is
+## not enabled in the repository CI until signing credentials are configured.
 
 cask "charlotte" do
   version "1.0.0"

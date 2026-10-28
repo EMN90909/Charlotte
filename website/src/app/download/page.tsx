@@ -8,8 +8,8 @@ import { WindowsIcon, LinuxIcon, ArrowRightIcon } from '@/components/icons';
 import styles from './download.module.css';
 
 export const metadata: Metadata = {
-  title: 'Download Paperkite',
-  description: 'Get the Paperkite browser for Windows or Linux, x64 or ARM64.',
+  title: 'Download Charlotte',
+  description: 'Get the Charlotte browser for Windows or Linux, x64 or ARM64.',
 };
 
 // Redirects straight to the matching platform page when the request's
@@ -55,7 +55,7 @@ export default async function DownloadPage() {
 
       <div className={`shell ${styles.macNote}`}>
         <p>
-          Looking for macOS? Signed builds aren&apos;t published yet. Paperkite is open source.
+          Looking for macOS? Signed builds aren&apos;t published yet. Original MIT-licensed code remains available under its existing licence; proprietary Noethric-owned additions have separate terms.
           Build it{' '}
           <a href={site.githubRepo} target="_blank" rel="noreferrer">
             from source
