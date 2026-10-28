@@ -210,7 +210,7 @@ const file_chat_chat_proto_rawDesc = "" +
 	"\x13SendMessageResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id2J\n" +
 	"\x04Chat\x12B\n" +
-	"\vSendMessage\x12\x18.chat.SendMessageRequest\x1a\x19.chat.SendMessageResponseB,Z*github.com/paperkite/chat-service/gen/chatb\x06proto3"
+	"\vSendMessage\x12\x18.chat.SendMessageRequest\x1a\x19.chat.SendMessageResponseB,Z*github.com/EMN90909/Charlotte/server/gen/chatb\x06proto3"
 
 var (
 	file_chat_chat_proto_rawDescOnce sync.Once

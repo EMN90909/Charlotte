@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/paperkite/chat-service/internal/username"
+	"github.com/EMN90909/Charlotte/server/internal/username"
 )
 
 func TestTryClaim_FirstClaimSucceeds(t *testing.T) {

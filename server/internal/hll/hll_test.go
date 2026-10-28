@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/paperkite/chat-service/internal/hll"
+	"github.com/EMN90909/Charlotte/server/internal/hll"
 )
 
 func TestEstimate_EmptyIsZero(t *testing.T) {

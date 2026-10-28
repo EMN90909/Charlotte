@@ -3,7 +3,7 @@ package token_test
 import (
 	"testing"
 
-	"github.com/paperkite/chat-service/internal/token"
+	"github.com/EMN90909/Charlotte/server/internal/token"
 )
 
 const testSecret = "unit-test-secret-32-bytes-minimum"

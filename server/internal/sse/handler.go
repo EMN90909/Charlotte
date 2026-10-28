@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/paperkite/chat-service/internal/hub"
-	"github.com/paperkite/chat-service/internal/token"
+	"github.com/EMN90909/Charlotte/server/internal/hub"
+	"github.com/EMN90909/Charlotte/server/internal/token"
 )
 
 // heartbeatInterval is how often a comment line is sent to keep the

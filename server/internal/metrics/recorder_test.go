@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paperkite/chat-service/internal/metrics"
+	"github.com/EMN90909/Charlotte/server/internal/metrics"
 )
 
 func TestSnapshot_ReflectsAddsIndependently(t *testing.T) {
