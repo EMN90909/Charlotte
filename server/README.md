@@ -110,6 +110,11 @@ Artifacts and SHA-256 checksums are placed in `dist/`. Historical
 and `chat-service-v*` Git release tags are preserved for the existing ops
 deployment automation. Local native builds are named `charlotte-server`.
 
+If this folder becomes the root of its own GitHub repository, its bundled
+`.github/workflows/build.yml` will compile/test it and upload release-format
+binaries on each push; that nested workflow is intentionally not used by the
+Charlotte monorepo, which has its own root workflows.
+
 Version bumping, changelog stamping and tagging also work in an independent
 Git checkout: `make bump-patch`, commit the change, then `make tag`. All
 required scripts are included under `server/scripts/`.
