@@ -151,7 +151,7 @@ export const TRANSLATE_LANGUAGES = [
 ] as const;
 
 /** User-set overrides for locating whisper.cpp - `null` means "auto-detect"
- * (binaryPath) or "not set" (modelPath). Paperkite doesn't install or
+ * (binaryPath) or "not set" (modelPath). Charlotte doesn't install or
  * bundle whisper.cpp itself; the user is responsible for getting it onto
  * their machine however they like (see main/whisperStore.ts). */
 export interface WhisperConfig {
@@ -272,7 +272,7 @@ export interface MessagesPayload {
 }
 
 /** A configured external chat-service backend (see ../../chat-service in
- * this workspace, and its PROTOCOL.md) - Paperkite is a CLIENT of these,
+ * this workspace, and its PROTOCOL.md) - Charlotte is a CLIENT of these,
  * never the service itself. No secret/credential field: the protocol's own
  * /connect issues a JWT per-session, there's nothing to pre-configure
  * beyond where the service lives. */
@@ -823,7 +823,7 @@ export interface UpdateMcpServerPayload {
  * attempt against a draft (possibly not-yet-saved) server config. */
 export type McpTestResult = { ok: true; toolCount: number } | { ok: false; error: string };
 
-/** ---------- Paperkite's own MCP server ---------- */
+/** ---------- Charlotte's own MCP server ---------- */
 
 /** Every capability the built-in server exposes is gated behind one of
  * these - a token only works for the tools whose scope it was granted.
@@ -849,7 +849,7 @@ export interface BuiltinMcpServerStatus {
 
 /** Renderer-facing token metadata - the signed JWT itself is never sent
  * over IPC except once, at creation time (see CreateMcpTokenResult). The
- * synthetic `jti: 'internal'` entry (Paperkite's own agent chat's access)
+ * synthetic `jti: 'internal'` entry (Charlotte's own agent chat's access)
  * is included here too, so Settings can show it without a separate
  * code path - `internal: true` marks it as non-revocable. */
 export interface McpTokenInfo {
