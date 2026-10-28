@@ -1,6 +1,6 @@
 # Charlotte's Go server is a complete module. All paths are relative to
 # server/ and work when this directory is copied to its own repository.
-.PHONY: help proto build build-ops build-client build-all check run run-client run-ops update-ops clean test test-unit test-integration verify-standalone bump-major bump-minor bump-patch _bump tag docker
+.PHONY: help proto build build-ops build-client build-all check smoke run run-client run-ops update-ops clean test test-unit test-integration verify-standalone bump-major bump-minor bump-patch _bump tag docker
 
 GO ?= go
 BIN_DIR ?= bin
@@ -11,7 +11,7 @@ GEN_DIR := gen
 PROTO_FILE := $(PROTO_DIR)/chat/chat.proto
 
 help:
-	@printf '%s\n' 'Charlotte server targets:' '  make build              native server -> bin/charlotte-server' '  make run                start server (CHAT_JWT_SECRET required)' '  make test               unit and integration tests' '  make verify-standalone  build/test an isolated copy of server/' '  make build-all          cross-platform release binaries -> dist/' '  make docker             build charlotte-server:local container' '  make proto              regenerate protobuf code (protoc + plugins)' '  make build-ops          build the deployment supervisor' '  make build-client       build the interactive chat CLI'
+	@printf '%s\n' 'Charlotte server targets:' '  make build              native server -> bin/charlotte-server' '  make run                start server (CHAT_JWT_SECRET required)' '  make test               unit and integration tests' '  make verify-standalone  build/test an isolated copy of server/' '  make build-all          cross-platform release binaries -> dist/' '  make smoke              start binary and check HTTP health' '  make docker             build charlotte-server:local container' '  make proto              regenerate protobuf code (protoc + plugins)' '  make build-ops          build the deployment supervisor' '  make build-client       build the interactive chat CLI'
 
 proto:
 	@echo "Generating protobuf and gRPC bindings..."
@@ -63,6 +63,9 @@ test-integration:
 test: test-unit test-integration
 
 # Copies ONLY server/ into a temporary directory before building/testing.
+smoke:
+	@bash "$(SCRIPTS)/smoke-standalone.sh"
+
 verify-standalone:
 	@bash "$(SCRIPTS)/verify-standalone.sh"
 

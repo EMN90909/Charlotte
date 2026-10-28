@@ -98,7 +98,12 @@ func main() {
 
 	grpcSrv := buildGRPC(h, log)
 	mux := buildHTTP(h, reg, rec)
-	httpSrv := &http.Server{Addr: httpAddr, Handler: mux}
+	httpAddress, err := configuredHTTPAddress()
+	if err != nil {
+		log.Error("invalid HTTP listen configuration", "err", err)
+		os.Exit(1)
+	}
+	httpSrv := &http.Server{Addr: httpAddress, Handler: mux}
 
 	// PUBLIC_HOSTNAME is optional - unset (the default, e.g. local dev via
 	// `make run`) means only plain :8080 runs, exactly as before this
