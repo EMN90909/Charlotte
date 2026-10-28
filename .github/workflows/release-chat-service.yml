@@ -78,7 +78,7 @@ jobs:
   # Optional: notify a running ops daemon (see cmd/ops) to pull this build
   # and swap it in. Skipped entirely unless OPS_WEBHOOK_URL is configured
   # (Settings -> Secrets and variables -> Actions -> Variables) - nothing
-  # here requires it to exist. See chat-service/packaging/README.md for
+  # here requires it to exist. See server/packaging/README.md for
   # the full setup, including the OPS_JWT_SECRET this needs.
   notify-ops:
     name: Notify ops daemon

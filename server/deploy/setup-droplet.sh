@@ -45,7 +45,7 @@
 # ../packaging/README.md.
 set -euo pipefail
 
-GITHUB_REPO="${GITHUB_REPO:-tecnosam/paperkite}"
+GITHUB_REPO="${GITHUB_REPO:-EMN90909/Charlotte}"
 ENV_FILE=/etc/paperkite/ops.env
 
 # Prints the current value of key in ENV_FILE, if it exists - used below

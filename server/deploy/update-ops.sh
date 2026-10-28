@@ -13,10 +13,10 @@
 #   ./update-ops.sh chat-service-v0.1.1   # a specific tag
 #
 # Or without a repo checkout at all:
-#   curl -fsSL https://raw.githubusercontent.com/tecnosam/paperkite/main/chat-service/deploy/update-ops.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/EMN90909/Charlotte/main/server/deploy/update-ops.sh | sudo bash
 set -euo pipefail
 
-GITHUB_REPO="${GITHUB_REPO:-tecnosam/paperkite}"
+GITHUB_REPO="${GITHUB_REPO:-EMN90909/Charlotte}"
 TAG="${1:-}"
 
 case "$(uname -m)" in

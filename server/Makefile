@@ -1,6 +1,6 @@
 .PHONY: proto build run run-client run-ops update-ops clean test test-unit test-integration bump-major bump-minor bump-patch tag docker
 
-GITHUB_REPO ?= tecnosam/paperkite
+GITHUB_REPO ?= EMN90909/Charlotte
 
 PROTO_DIR  := proto
 GEN_DIR    := gen
