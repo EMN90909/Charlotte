@@ -1,23 +1,23 @@
 # syntax=docker/dockerfile:1
-
+# Build from inside server/: docker build -t charlotte-server:local .
 FROM golang:1.23-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -o /out/chat-service-server ./cmd/server
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/charlotte-server ./cmd/server \
+    && mkdir -p /out/data
 
-# distroless: no shell, no package manager, just the binary and CA certs.
-# The server itself creates its data directory on first run (see
-# internal/username/registry.go), so nothing else needs to exist here.
-FROM gcr.io/distroless/static-debian12
+# No Go toolchain, shell or package manager in the final image. Non-root,
+# with CA certificates for Supabase and other outbound HTTPS.
+FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
-COPY --from=build /out/chat-service-server /usr/local/bin/chat-service-server
-
-# Override with a mounted volume path if you want the username claims
-# log to survive container recreation, e.g.
-# `-v paperkite-data:/app/data -e CHAT_USERNAMES_FILE=/app/data/usernames.log`.
-ENV CHAT_USERNAMES_FILE=/app/data/usernames.log
-
+COPY --from=build --chown=65532:65532 /out/charlotte-server /usr/local/bin/charlotte-server
+COPY --from=build --chown=65532:65532 /out/data /app/data
+ENV CHAT_USERNAMES_FILE=/app/data/usernames.log \
+    CHAT_ROOMS_HLL_FILE=/app/data/rooms.hll \
+    CHAT_USERS_HLL_FILE=/app/data/users.hll \
+    AUTOCERT_CACHE_DIR=/app/data/autocert-cache
 EXPOSE 8080 50051
-ENTRYPOINT ["/usr/local/bin/chat-service-server"]
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/charlotte-server"]

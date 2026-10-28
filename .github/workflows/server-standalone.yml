@@ -1,0 +1,37 @@
+name: Standalone Charlotte Go server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-standalone.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-standalone.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Confirm server builds without parent files
+        working-directory: server
+        run: bash scripts/verify-standalone.sh
+      - name: Start and smoke-test the native server
+        working-directory: server
+        run: bash scripts/smoke-standalone.sh
+      - name: Cross-compile Linux and Windows artifacts
+        working-directory: server
+        run: TARGETS="linux/amd64 windows/amd64" bash scripts/build-all.sh
+      - name: Build self-contained Docker image
+        run: docker build -t charlotte-server:ci server

@@ -64,6 +64,9 @@ Servers if you're pointing at something else.
 
 ### server (Go)
 
+**Standalone build:** `server/` can be copied to a separate directory and built without the browser, website or parent scripts. From inside it, `make build` creates `bin/charlotte-server`, `make verify-standalone` validates an isolated copy, and `make docker` builds a non-root image. See [server/README.md](server/README.md) for cross-platform binaries and deployment settings.
+
+
 Requires Go 1.23+.
 
 ```bash

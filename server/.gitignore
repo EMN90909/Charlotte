@@ -1,2 +1,7 @@
 .claude
 /data/
+/autocert-cache/
+/bin/
+/dist/
+.env
+.env.local

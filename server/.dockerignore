@@ -1,7 +1,12 @@
 .git
-data
-test
+.github
+/bin/
+/dist/
+/data/
+/autocert-cache/
+.env
+.env.*
+!.env.example
+test/
 TODO.md
 CHANGELOG.md
-VERSION
-LICENSE
