@@ -157,7 +157,7 @@ what's persisted to disk, all under the app's `userData` directory.
 
 Charlotte is a Noethric-branded commercial distribution. Original source code remains subject to the MIT licence, copyright (c) 2026 Samuel Abolo, as preserved in [LICENSE](LICENSE). The [commercial rights notice](COMMERCIAL-LICENSE.md) covers only material Noethric actually owns or has authority to license on proprietary terms; it does not take away the original author's rights or existing MIT permissions.
 
-The Electron renderer/preload bridge keeps its internal `window.paperkite` and `window.paperkiteChat` API identifiers for compatibility. The app also continues using the previous user-data directory when one exists, to preserve existing profiles across the rename.
+The Electron renderer/preload bridge keeps its internal `window.charlotte` and `window.charlotteChat` API identifiers for compatibility. The app also continues using the previous user-data directory when one exists, to preserve existing profiles across the rename.
 
 ## Charlotte account sign-in (Supabase)
 
