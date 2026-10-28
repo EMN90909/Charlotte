@@ -1,7 +1,7 @@
 ## Homebrew Cask template for Charlotte.
 ##
 ## This file is NOT wired into any tap yet. Homebrew resolves casks by
-## looking in a repo literally named `homebrew-<tapname>` (e.g.
+## looking in a repo named `homebrew-<tapname>` (for example,
 ## `EMN90909/homebrew-charlotte`), so this only becomes `brew install
 ## --cask charlotte` once that tap repo exists and this file (with the
 ## placeholders below filled in) is copied into its `Casks/` folder.
@@ -16,7 +16,7 @@
 ## not enabled in the repository CI until signing credentials are configured.
 
 cask "charlotte" do
-  version "1.0.0"
+  version "0.3.0"
   sha256 "REPLACE_WITH_SHA256_FROM_RELEASE_CHECKSUMS_TXT"
 
   url "https://github.com/EMN90909/Charlotte/releases/download/browser-v#{version}/Charlotte-darwin-arm64-#{version}.zip"

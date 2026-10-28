@@ -55,7 +55,7 @@ export default async function DownloadPage() {
 
       <div className={`shell ${styles.macNote}`}>
         <p>
-          Looking for macOS? Signed builds aren&apos;t published yet. Original MIT-licensed code remains available under its existing licence; proprietary Noethric-owned additions have separate terms.
+          Looking for macOS? Signed builds aren&apos;t published yet. Original code retains its existing MIT licence; proprietary Noethric-owned additions have separate terms.
           Build it{' '}
           <a href={site.githubRepo} target="_blank" rel="noreferrer">
             from source
