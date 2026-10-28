@@ -30,8 +30,8 @@ export function PageTranslatePopover({ settings, status, onClose, onChange }: Pa
   const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const unsub = window.paperkite.onAgentsUpdated(setAgents);
-    window.paperkite.requestAgents();
+    const unsub = window.charlotte.onAgentsUpdated(setAgents);
+    window.charlotte.requestAgents();
     return unsub;
   }, []);
 

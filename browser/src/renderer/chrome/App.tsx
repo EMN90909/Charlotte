@@ -80,49 +80,49 @@ export function App() {
 
   useEffect(() => {
     const unsubs = [
-      window.paperkite.onTabsUpdated(({ tabs, activeId }) => {
+      window.charlotte.onTabsUpdated(({ tabs, activeId }) => {
         setTabs(tabs);
         setActiveId(activeId);
       }),
-      window.paperkite.onNavState(setNavState),
-      window.paperkite.onSafetySettings(setSafety),
-      window.paperkite.onTheme(setTheme),
-      window.paperkite.onBookmarksUpdated(setBookmarks),
-      window.paperkite.onBookmarkFoldersUpdated(setBookmarkFolders),
-      window.paperkite.onSubtitleSettings(setSubtitleSettings),
-      window.paperkite.onPageTranslateSettings(setPageTranslateSettings),
-      window.paperkite.onPageTranslateStatus(setPageTranslateStatus),
-      window.paperkite.onWhisperStatus(setWhisperStatus),
-      window.paperkite.onDomainTrust(setDomainTrust),
-      window.paperkite.onProxySettings(setProxySettings),
-      window.paperkite.onAdBlockStatus(setAdBlockStatus),
-      window.paperkite.onFindBarOpen(() => {
+      window.charlotte.onNavState(setNavState),
+      window.charlotte.onSafetySettings(setSafety),
+      window.charlotte.onTheme(setTheme),
+      window.charlotte.onBookmarksUpdated(setBookmarks),
+      window.charlotte.onBookmarkFoldersUpdated(setBookmarkFolders),
+      window.charlotte.onSubtitleSettings(setSubtitleSettings),
+      window.charlotte.onPageTranslateSettings(setPageTranslateSettings),
+      window.charlotte.onPageTranslateStatus(setPageTranslateStatus),
+      window.charlotte.onWhisperStatus(setWhisperStatus),
+      window.charlotte.onDomainTrust(setDomainTrust),
+      window.charlotte.onProxySettings(setProxySettings),
+      window.charlotte.onAdBlockStatus(setAdBlockStatus),
+      window.charlotte.onFindBarOpen(() => {
         setFindResult(null);
         setFindBarOpen(true);
       }),
-      window.paperkite.onFindResult(setFindResult),
-      window.paperkite.onDownloadsUpdated(setDownloads),
-      window.paperkite.onPermissionRequested((request) => setPermissionQueue((q) => [...q, request])),
-      window.paperkite.onOnboardingState(({ completed }) => setOnboardingOpen(!completed)),
-      window.paperkite.onOpenChatServerSettings((serverId) => {
+      window.charlotte.onFindResult(setFindResult),
+      window.charlotte.onDownloadsUpdated(setDownloads),
+      window.charlotte.onPermissionRequested((request) => setPermissionQueue((q) => [...q, request])),
+      window.charlotte.onOnboardingState(({ completed }) => setOnboardingOpen(!completed)),
+      window.charlotte.onOpenChatServerSettings((serverId) => {
         setSettingsOpen(true);
         setPendingChatServerFocus((current) => ({ serverId, token: (current?.token ?? 0) + 1 }));
       }),
     ];
     // Ask main for the current state now that listeners are attached.
-    window.paperkite.ready();
+    window.charlotte.ready();
     return () => unsubs.forEach((unsub) => unsub());
   }, []);
 
   const closeFindBar = () => {
     setFindBarOpen(false);
     setFindResult(null);
-    window.paperkite.closeFindBar();
+    window.charlotte.closeFindBar();
   };
 
   const bookmarkEntry = navState?.url ? (bookmarks.find((b) => b.url === navState.url) ?? null) : null;
   const hasActiveDownload = downloads.some((d) => d.state === 'progressing');
-  const openInNewTab = (url: string) => window.paperkite.newTab(url);
+  const openInNewTab = (url: string) => window.charlotte.newTab(url);
 
   // Navigating away closes any open toolbar popover, same as Chrome - it's
   // about the page you were just on, not a persistent panel.
@@ -136,7 +136,7 @@ export function App() {
     if (!navState?.url) return;
     setSubtitlePopoverOpen(false);
     if (!bookmarkEntry) {
-      window.paperkite.toggleBookmark({ url: navState.url, title: navState.title });
+      window.charlotte.toggleBookmark({ url: navState.url, title: navState.title });
       setBookmarkPopoverOpen(true);
     } else {
       setBookmarkPopoverOpen((open) => !open);
@@ -168,7 +168,7 @@ export function App() {
   // PageTranslatePopover's canEnable), so there's nothing to intercept
   // here beyond just relaying the change.
   const onChangePageTranslateSettings = (settings: PageTranslateSettings) => {
-    window.paperkite.setPageTranslateSettings(settings);
+    window.charlotte.setPageTranslateSettings(settings);
   };
 
   // Blocks the actual enable (rather than letting main turn it on and then
@@ -186,7 +186,7 @@ export function App() {
       setWhisperModalOpen(true);
       return;
     }
-    window.paperkite.setSubtitleSettings(settings);
+    window.charlotte.setSubtitleSettings(settings);
   };
 
   // Starts/stops the actual tab-audio capture (see audioCapture.ts) to
@@ -199,14 +199,14 @@ export function App() {
     if (subtitleSettings.enabled && !captureRef.current) {
       let cancelled = false;
       void startAudioCapture(
-        (chunk) => window.paperkite.sendAudioChunk(chunk),
+        (chunk) => window.charlotte.sendAudioChunk(chunk),
         // Real digital silence for several chunks running, not just a
         // quiet moment (see audioCapture.ts). Turn translate back off too -
         // leaving capture running against silence just burns CPU on
         // whisper hallucinating captions from nothing.
         () => {
           setNoAudioModalOpen(true);
-          window.paperkite.setSubtitleSettings({ ...subtitleSettings, enabled: false });
+          window.charlotte.setSubtitleSettings({ ...subtitleSettings, enabled: false });
         },
       )
         .then((handle) => {
@@ -219,7 +219,7 @@ export function App() {
         .catch((err) => {
           console.error('Failed to start tab audio capture:', err);
           setCaptureErrorOpen(true);
-          window.paperkite.setSubtitleSettings({ ...subtitleSettings, enabled: false });
+          window.charlotte.setSubtitleSettings({ ...subtitleSettings, enabled: false });
         });
       return () => {
         cancelled = true;
@@ -243,7 +243,7 @@ export function App() {
   // not the whole app window, unless this is set. Keep it grown as long as
   // any of them is open, only shrink back once all are closed.
   useEffect(() => {
-    window.paperkite.setOverlayOpen(
+    window.charlotte.setOverlayOpen(
       settingsOpen ||
         onboardingOpen ||
         tourOpen ||
@@ -262,14 +262,14 @@ export function App() {
   // the other two is open), but main only needs to know "is something
   // open", not which one.
   useEffect(() => {
-    window.paperkite.setToolbarPopoverOpen(
+    window.charlotte.setToolbarPopoverOpen(
       bookmarkPopoverOpen || subtitlePopoverOpen || pageTranslatePopoverOpen || addressSuggestionsOpen,
     );
   }, [bookmarkPopoverOpen, subtitlePopoverOpen, pageTranslatePopoverOpen, addressSuggestionsOpen]);
 
   const toggleChat = () => {
     setChatOpen((open) => !open);
-    window.paperkite.toggleChat();
+    window.charlotte.toggleChat();
   };
 
   const openSettings = () => setSettingsOpen(true);
@@ -284,7 +284,7 @@ export function App() {
     setOnboardingOpen(false);
     // Marked done now, not after the tour - the tour is just a pointer
     // walk, so quitting halfway through it shouldn't replay onboarding.
-    window.paperkite.completeOnboarding();
+    window.charlotte.completeOnboarding();
     setTourOpen(true);
   };
   const closeTour = useCallback(() => setTourOpen(false), []);
@@ -294,7 +294,7 @@ export function App() {
   const respondToPermission = (allow: boolean, remember: boolean) => {
     const request = permissionQueue[0];
     if (!request) return;
-    window.paperkite.respondToPermission({ requestId: request.requestId, allow, remember });
+    window.charlotte.respondToPermission({ requestId: request.requestId, allow, remember });
     setPermissionQueue((q) => q.slice(1));
   };
 
@@ -316,9 +316,9 @@ export function App() {
         <TabStrip
           tabs={tabs}
           activeId={activeId}
-          onSwitch={(id) => window.paperkite.switchTab(id)}
-          onClose={(id) => window.paperkite.closeTab(id)}
-          onNewTab={() => window.paperkite.newTab()}
+          onSwitch={(id) => window.charlotte.switchTab(id)}
+          onClose={(id) => window.charlotte.closeTab(id)}
+          onNewTab={() => window.charlotte.newTab()}
         />
         <Toolbar
           navState={navState}
@@ -333,18 +333,18 @@ export function App() {
           pageTranslatePopoverOpen={pageTranslatePopoverOpen}
           pageTranslateStatus={pageTranslateStatus}
           hasActiveDownload={hasActiveDownload}
-          onBack={() => window.paperkite.goBack()}
-          onForward={() => window.paperkite.goForward()}
-          onReload={() => window.paperkite.reload()}
-          onNavigate={(input) => window.paperkite.navigate(input)}
+          onBack={() => window.charlotte.goBack()}
+          onForward={() => window.charlotte.goForward()}
+          onReload={() => window.charlotte.reload()}
+          onNavigate={(input) => window.charlotte.navigate(input)}
           onToggleChat={toggleChat}
           onOpenSettings={openSettings}
           onStarClick={onStarClick}
           onCloseBookmarkPopover={() => setBookmarkPopoverOpen(false)}
-          onRenameBookmark={(id, title) => window.paperkite.renameBookmark({ id, title })}
-          onMoveBookmark={(id, folderId) => window.paperkite.moveBookmark({ id, folderId })}
-          onRemoveBookmark={(id) => window.paperkite.deleteBookmark(id)}
-          onCreateBookmarkFolder={(name, parentId) => window.paperkite.createBookmarkFolder({ name, parentId })}
+          onRenameBookmark={(id, title) => window.charlotte.renameBookmark({ id, title })}
+          onMoveBookmark={(id, folderId) => window.charlotte.moveBookmark({ id, folderId })}
+          onRemoveBookmark={(id) => window.charlotte.deleteBookmark(id)}
+          onCreateBookmarkFolder={(name, parentId) => window.charlotte.createBookmarkFolder({ name, parentId })}
           onSubtitlesClick={onSubtitlesClick}
           onCloseSubtitlePopover={() => setSubtitlePopoverOpen(false)}
           onChangeSubtitleSettings={onChangeSubtitleSettings}
@@ -357,7 +357,7 @@ export function App() {
         {findBarOpen && (
           <FindBar
             result={findResult}
-            onSearch={(text, forward, findNext) => window.paperkite.findInPage({ text, forward, findNext })}
+            onSearch={(text, forward, findNext) => window.charlotte.findInPage({ text, forward, findNext })}
             onClose={closeFindBar}
           />
         )}
@@ -374,28 +374,28 @@ export function App() {
           focusChatServerId={pendingChatServerFocus?.serverId ?? null}
           focusToken={pendingChatServerFocus?.token ?? 0}
           onClose={closeSettings}
-          onSaveSafety={(settings) => window.paperkite.setSafetySettings(settings)}
-          onSaveTheme={(source) => window.paperkite.setTheme(source)}
-          onDeleteBookmark={(id) => window.paperkite.deleteBookmark(id)}
-          onRenameBookmark={(id, title) => window.paperkite.renameBookmark({ id, title })}
-          onMoveBookmark={(id, folderId) => window.paperkite.moveBookmark({ id, folderId })}
-          onCreateBookmarkFolder={(name, parentId) => window.paperkite.createBookmarkFolder({ name, parentId })}
-          onRenameBookmarkFolder={(id, name) => window.paperkite.renameBookmarkFolder({ id, name })}
-          onDeleteBookmarkFolder={(id) => window.paperkite.deleteBookmarkFolder(id)}
+          onSaveSafety={(settings) => window.charlotte.setSafetySettings(settings)}
+          onSaveTheme={(source) => window.charlotte.setTheme(source)}
+          onDeleteBookmark={(id) => window.charlotte.deleteBookmark(id)}
+          onRenameBookmark={(id, title) => window.charlotte.renameBookmark({ id, title })}
+          onMoveBookmark={(id, folderId) => window.charlotte.moveBookmark({ id, folderId })}
+          onCreateBookmarkFolder={(name, parentId) => window.charlotte.createBookmarkFolder({ name, parentId })}
+          onRenameBookmarkFolder={(id, name) => window.charlotte.renameBookmarkFolder({ id, name })}
+          onDeleteBookmarkFolder={(id) => window.charlotte.deleteBookmarkFolder(id)}
           onOpenInNewTab={openInNewTab}
-          onSaveDomainTrust={(lists) => window.paperkite.setDomainTrust(lists)}
-          onSaveProxySettings={(settings) => window.paperkite.setProxySettings(settings)}
-          onSaveAdBlockSettings={(settings) => window.paperkite.setAdBlockSettings(settings)}
+          onSaveDomainTrust={(lists) => window.charlotte.setDomainTrust(lists)}
+          onSaveProxySettings={(settings) => window.charlotte.setProxySettings(settings)}
+          onSaveAdBlockSettings={(settings) => window.charlotte.setAdBlockSettings(settings)}
         />
       )}
       {downloadsOpen && (
         <DownloadsPanel
           downloads={downloads}
           onClose={closeDownloads}
-          onCancel={(id) => window.paperkite.cancelDownload(id)}
-          onOpen={(id) => window.paperkite.openDownload(id)}
-          onShowInFolder={(id) => window.paperkite.showDownloadInFolder(id)}
-          onClearFinished={() => window.paperkite.clearDownloads()}
+          onCancel={(id) => window.charlotte.cancelDownload(id)}
+          onOpen={(id) => window.charlotte.openDownload(id)}
+          onShowInFolder={(id) => window.charlotte.showDownloadInFolder(id)}
+          onClearFinished={() => window.charlotte.clearDownloads()}
         />
       )}
       {permissionQueue.length > 0 && <PermissionPrompt request={permissionQueue[0]} onRespond={respondToPermission} />}
