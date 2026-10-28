@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { SafetySettings, ThemeSource, BookmarkEntry, BookmarkFolder, DomainTrustLists, ProxySettings } from '../../../../shared/types';
+import type { SafetySettings, ThemeSource, BookmarkEntry, BookmarkFolder, DomainTrustLists, ProxySettings, AdBlockStatus, AdBlockSettings } from '../../../../shared/types';
 import { CloseIcon } from '../../icons';
 import { GeneralSection } from './GeneralSection';
 import { AccountSection } from './AccountSection';
@@ -14,6 +14,7 @@ import { McpSection } from './McpSection';
 import { LiveTranslateSection } from './LiveTranslateSection';
 import { ChatServersSection } from './ChatServersSection';
 import { PrivacyDataSection } from './PrivacyDataSection';
+import { AdBlockingSection } from './AdBlockingSection';
 
 interface SettingsModalProps {
   safety: SafetySettings;
@@ -22,6 +23,7 @@ interface SettingsModalProps {
   bookmarkFolders: BookmarkFolder[];
   domainTrust: DomainTrustLists;
   proxySettings: ProxySettings;
+  adBlockStatus: AdBlockStatus;
   /** Set together with `focusToken` when Settings was opened via the chat
    * panel's "fix this server's username" CTA (see App.tsx's
    * pendingChatServerFocus) - jumps straight to Chat Servers with this
@@ -44,6 +46,7 @@ interface SettingsModalProps {
   onOpenInNewTab: (url: string) => void;
   onSaveDomainTrust: (lists: DomainTrustLists) => void;
   onSaveProxySettings: (settings: ProxySettings) => void;
+  onSaveAdBlockSettings: (settings: AdBlockSettings) => void;
 }
 
 type SectionId =
@@ -51,6 +54,7 @@ type SectionId =
   | 'account'
   | 'safety'
   | 'privacy'
+  | 'adBlocking'
   | 'history'
   | 'bookmarks'
   | 'domains'
@@ -66,6 +70,7 @@ const SECTIONS: Array<{ id: SectionId; label: string }> = [
   { id: 'account', label: 'Account' },
   { id: 'safety', label: 'Safety' },
   { id: 'privacy', label: 'Privacy & Data' },
+  { id: 'adBlocking', label: 'Ad blocking' },
   { id: 'history', label: 'History' },
   { id: 'bookmarks', label: 'Bookmarks' },
   { id: 'domains', label: 'Domains' },
@@ -117,6 +122,7 @@ export function SettingsModal(props: SettingsModalProps) {
             {section === 'general' && <GeneralSection themeSource={props.themeSource} onSaveTheme={props.onSaveTheme} />}
             {section === 'safety' && <SafetySection safety={props.safety} onSaveSafety={props.onSaveSafety} />}
             {section === 'privacy' && <PrivacyDataSection />}
+            {section === 'adBlocking' && <AdBlockingSection status={props.adBlockStatus} onSave={props.onSaveAdBlockSettings} />}
             {section === 'history' && <HistorySection onOpenInNewTab={props.onOpenInNewTab} />}
             {section === 'bookmarks' && (
               <BookmarksSection

@@ -8,6 +8,7 @@ import type {
   BookmarkFolder,
   DomainTrustLists,
   ProxySettings,
+  AdBlockStatus,
   DownloadRecord,
   PermissionRequestPayload,
   SubtitleSettings,
@@ -19,6 +20,7 @@ import {
   DEFAULT_SAFETY_SETTINGS,
   DEFAULT_DOMAIN_TRUST_LISTS,
   DEFAULT_PROXY_SETTINGS,
+  DEFAULT_AD_BLOCK_SETTINGS,
   DEFAULT_SUBTITLE_SETTINGS,
   DEFAULT_PAGE_TRANSLATE_SETTINGS,
 } from '../../shared/types';
@@ -69,6 +71,7 @@ export function App() {
   const captureRef = useRef<AudioCaptureHandle | null>(null);
   const [domainTrust, setDomainTrust] = useState<DomainTrustLists>(DEFAULT_DOMAIN_TRUST_LISTS);
   const [proxySettings, setProxySettings] = useState<ProxySettings>(DEFAULT_PROXY_SETTINGS);
+  const [adBlockStatus, setAdBlockStatus] = useState<AdBlockStatus>({ settings: DEFAULT_AD_BLOCK_SETTINGS, blockedCount: 0 });
   const [findBarOpen, setFindBarOpen] = useState(false);
   const [findResult, setFindResult] = useState<{ activeMatchOrdinal: number; matches: number } | null>(null);
   const [downloads, setDownloads] = useState<DownloadRecord[]>([]);
@@ -92,6 +95,7 @@ export function App() {
       window.paperkite.onWhisperStatus(setWhisperStatus),
       window.paperkite.onDomainTrust(setDomainTrust),
       window.paperkite.onProxySettings(setProxySettings),
+      window.paperkite.onAdBlockStatus(setAdBlockStatus),
       window.paperkite.onFindBarOpen(() => {
         setFindResult(null);
         setFindBarOpen(true);
@@ -366,6 +370,7 @@ export function App() {
           bookmarkFolders={bookmarkFolders}
           domainTrust={domainTrust}
           proxySettings={proxySettings}
+          adBlockStatus={adBlockStatus}
           focusChatServerId={pendingChatServerFocus?.serverId ?? null}
           focusToken={pendingChatServerFocus?.token ?? 0}
           onClose={closeSettings}
@@ -380,6 +385,7 @@ export function App() {
           onOpenInNewTab={openInNewTab}
           onSaveDomainTrust={(lists) => window.paperkite.setDomainTrust(lists)}
           onSaveProxySettings={(settings) => window.paperkite.setProxySettings(settings)}
+          onSaveAdBlockSettings={(settings) => window.paperkite.setAdBlockSettings(settings)}
         />
       )}
       {downloadsOpen && (

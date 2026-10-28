@@ -14,6 +14,7 @@ import { installPermissionHandlers } from './permissions';
 import { disconnectAll } from './mcp/client';
 import { startBuiltinMcpServer, stopBuiltinMcpServer, loadBuiltinMcpEnabledPreference } from './mcp/builtinServer';
 import { loadSession, scheduleSessionSave, flushSessionSave } from './sessionRestore';
+import { installAdBlocker, getAdBlockStatus } from './adblock/adblocker';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -115,6 +116,13 @@ async function createWindow(): Promise<void> {
     // may have changed, so resync.
     onActiveChatServerChanged: () => resyncChatSession(wm),
   });
+
+  // Install before the first browsing tab loads. Only page WebContents
+  // participate; browser chrome, chat and internal requests are untouched.
+  installAdBlocker(
+    (webContents) => wm.tabs.getTabByWebContents(webContents) !== null,
+    () => wm.chromeView.webContents.send(IPC.AD_BLOCK_STATUS, getAdBlockStatus()),
+  );
 
   // Applies to the whole session (like proxy), not any one tab - every
   // page's downloads land here regardless of which tab triggered them.

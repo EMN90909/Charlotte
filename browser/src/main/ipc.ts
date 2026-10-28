@@ -82,6 +82,7 @@ import {
 import { importBookmarksFromHtml } from './bookmarkImport';
 import { getDomainTrustLists, setDomainTrustLists } from './domainTrustStore';
 import { loadProxySettings, saveProxySettings, applyProxySettings } from './proxyStore';
+import { getAdBlockStatus, updateAdBlockSettings } from './adblock/adblocker';
 import { getDownloads, cancelDownload, clearFinished, saveImageToDownloads } from './downloadStore';
 import { captureCompressedScreenshot } from './screenshot';
 import { resolvePermissionRequest } from './permissions';
@@ -261,6 +262,11 @@ export function registerIpcHandlers(wm: WindowManager): void {
     wm.chatView.webContents.send(IPC.DOMAIN_TRUST, lists);
   });
 
+  ipcMain.on(IPC.SET_AD_BLOCK_SETTINGS, (event, settings: unknown) => {
+    allowChrome(event);
+    wm.chromeView.webContents.send(IPC.AD_BLOCK_STATUS, updateAdBlockSettings(settings));
+  });
+
   ipcMain.on(IPC.SET_PROXY_SETTINGS, (_event, settings: ProxySettings) => {
     saveProxySettings(settings);
     void applyProxySettings(settings);
@@ -290,6 +296,7 @@ export function registerIpcHandlers(wm: WindowManager): void {
     wm.chromeView.webContents.send(IPC.THEME, currentThemePayload());
     wm.chromeView.webContents.send(IPC.DOMAIN_TRUST, getDomainTrustLists());
     wm.chromeView.webContents.send(IPC.PROXY_SETTINGS, loadProxySettings());
+    wm.chromeView.webContents.send(IPC.AD_BLOCK_STATUS, getAdBlockStatus());
     wm.chromeView.webContents.send(IPC.TABS_UPDATED, wm.tabs.getTabsPayload());
     wm.chromeView.webContents.send(IPC.BOOKMARKS_UPDATED, getBookmarks());
     wm.chromeView.webContents.send(IPC.BOOKMARK_FOLDERS_UPDATED, getFolders());

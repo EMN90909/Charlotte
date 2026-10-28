@@ -530,6 +530,23 @@ export const DEFAULT_DOMAIN_TRUST_LISTS: DomainTrustLists = {
   untrusted: [],
 };
 
+/** Local, device-wide network ad-blocking level and website exceptions. */
+export interface AdBlockSettings {
+  mode: 'off' | 'balanced' | 'strict';
+  allowedSites: string[];
+}
+
+export interface AdBlockStatus {
+  settings: AdBlockSettings;
+  /** Requests cancelled since browser launch, not a lifetime statistic. */
+  blockedCount: number;
+}
+
+export const DEFAULT_AD_BLOCK_SETTINGS: AdBlockSettings = {
+  mode: 'balanced',
+  allowedSites: [],
+};
+
 /** Manual proxy configuration, applied via session.setProxy(). 'direct'
  * means no proxy (the default) - the protocol/host/port/bypassList fields
  * are only meaningful when mode is 'manual'. */
