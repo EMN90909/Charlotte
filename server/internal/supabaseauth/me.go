@@ -31,7 +31,7 @@ func MeHandler(base, publishable string) http.Handler {
     (u.Scheme == "https" || (u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1")))
   return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Cache-Control", "no-store")
-    if !valid || publishable == "" || strings.Contains(publishable, "service_role") {
+    if !valid || !strings.HasPrefix(publishable, "sb_publishable_") {
       http.Error(w, "Supabase Auth is not configured", http.StatusServiceUnavailable)
       return
     }

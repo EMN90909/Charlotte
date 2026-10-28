@@ -43,7 +43,7 @@ const validUrl = (() => {
     return u.protocol === 'https:' || (u.protocol === 'http:' && (u.hostname === 'localhost' || u.hostname === '127.0.0.1'));
   } catch { return false; }
 })();
-const configured = Boolean(validUrl && key && !key.includes('service_role'));
+const configured = Boolean(validUrl && key.startsWith('sb_publishable_'));
 let session: AuthSession | null = null;
 let loaded = false;
 
