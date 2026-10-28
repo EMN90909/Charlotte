@@ -56,6 +56,7 @@ const legacyAllowList = new Set([
   'server/deploy/setup-droplet.sh', // guard for old installation
   'server/deploy/MIGRATION.md', // explicit safe migration guide
   'CHARLOTTE_NAMING.md', // explains the compatibility exceptions
+  'scripts/check-charlotte-branding.mjs', // names legacy tokens solely to reject them
 ]);
 const legacyTokens = /paperkite/i;
 const skipDirectories = new Set(['.git', 'node_modules', '.next', 'out', 'dist', 'bin', '.venv']);
