@@ -87,7 +87,7 @@ export function StatusBoard({ initial }: { initial: LiveStatus }) {
       <p className={styles.footnote}>
         Last checked{' '}
         <time dateTime={status.checkedAt} suppressHydrationWarning>
-          {checkedAt.toLocaleTimeString()}
+          {status.checkedAt === '1970-01-01T00:00:00.000Z' ? 'Not yet' : checkedAt.toLocaleTimeString()}
         </time>{' '}
         · refreshes every {POLL_MS / 1000}s
       </p>

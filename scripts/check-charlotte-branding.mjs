@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 
 const read = (p) => readFileSync(p, 'utf8');
 const original = read('LICENSE');
@@ -36,4 +36,9 @@ assert.match(linguistRules, /chat-service\/gen\/\*\* linguist-generated=true/);
 assert.match(linguistRules, /\*\.tsx linguist-language=TypeScript/);
 assert.match(read('README.md'), /\[LANGUAGES\.md\]/);
 
-console.log('Charlotte branding and rights regression checks passed.');
+assert.ok(existsSync('server/go.mod'), 'renamed Go server exists');
+assert.ok(!existsSync('chat-service'), 'old chat-service directory removed');
+assert.match(read('server/go.mod'), /module github.com\/EMN90909\/Charlotte\/server/);
+assert.match(read('website/next.config.ts'), /output: 'export'/);
+assert.ok(!existsSync('website/src/app/api/status/route.ts'), 'no request-time API in the static site');
+console.log('Charlotte branding, static export and server-layout checks passed.');
