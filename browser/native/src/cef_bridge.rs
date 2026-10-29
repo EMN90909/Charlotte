@@ -21,6 +21,9 @@ wrap_client! {
         fn display_handler(&self) -> Option<DisplayHandler> {
             Some(CharlotteDisplayHandler::new())
         }
+        fn load_handler(&self) -> Option<LoadHandler> {
+            Some(CharlotteLoadHandler::new(self.filter.clone()))
+        }
     }
 }
 
@@ -135,6 +138,55 @@ wrap_display_handler! {
                     eprintln!("Unable to record history: {error}");
                 }
             }
+        }
+    }
+}
+
+wrap_load_handler! {
+    struct CharlotteLoadHandler { filter: Filter, }
+    impl LoadHandler {
+        fn on_load_end(
+            &self, _browser: Option<&mut Browser>,
+            frame: Option<&mut Frame>, _http_status_code: i32,
+        ) {
+            let Some(frame) = frame else { return };
+            if frame.is_main() == 0 { return }
+            let url = frame.url().to_string();
+            if !(url.starts_with("https://") || url.starts_with("http://")) { return }
+            let selectors = match self.filter.lock() {
+                Ok(shield) => shield.cosmetics(&url).hide_selectors.into_iter().collect::<Vec<_>>(),
+                Err(_) => return,
+            };
+            if selectors.is_empty() { return }
+            // JSON-encode CSS selectors as data, never interpolate them as JS code.
+            let Ok(values) = serde_json::to_string(&selectors) else { return };
+            // DOM style changes avoid evaluating any scripts from third-party lists.
+            let script = format!(r#"
+                (() => {{
+                    const selectors = {values};
+                    const hide = () => {{
+                        for (const selector of selectors) {{
+                            try {{
+                                document.querySelectorAll(selector).forEach(el => {{
+                                    el.style.setProperty('display', 'none', 'important');
+                                }});
+                            }} catch (_) {{}}
+                        }}
+                    }};
+                    hide();
+                    let queued = false;
+                    new MutationObserver(() => {{
+                        if (!queued) {{
+                            queued = true;
+                            requestAnimationFrame(() => {{ queued = false; hide(); }});
+                        }}
+                    }}).observe(document.documentElement, {{childList: true, subtree: true}});
+                }})();
+            "#);
+            frame.execute_java_script(
+                Some(&CefString::from(script.as_str())),
+                Some(&CefString::from(url.as_str())), 0,
+            );
         }
     }
 }

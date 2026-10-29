@@ -6,7 +6,7 @@ compilation, application smoke tests and feature-parity verification.
 
 ## Native features implemented in this branch
 - CEF Chrome-style window, browser UI, popup lifecycle and browser-process callbacks
-- Network request filtering via the Rust OpenShield-compatible ABP engine
+- Network request filtering and preliminary CSS selector hiding via the Rust ABP engine
 - Rust SQLite storage for settings, bookmarks, folders, history and messages
 - OS credential-store integration for AI service keys
 - AI provider adapters (OpenAI, Claude, Gemini, Ollama)
@@ -38,7 +38,7 @@ Passwords, cookies and API credentials must be re-authorized in the new app.
 ## Outstanding before complete Electron replacement
 - Charlotte custom toolbar, chat sidebar and AI UI wired to typed CEF process messages
 - Full provider streaming, multimodal chat, voice and MCP workflows
-- Cosmetic ad blocking and dynamic filter subscriptions
+- Complete cosmetic/scriptlet compatibility and dynamic filter subscriptions
 - Downloads, browser permissions, translations, screenshots and settings parity
 - Platform-specific macOS menu/event loop, Windows installer/sandbox, Linux lifecycle
 - Reproducible release builds, security regression tests, visual/browser E2E tests

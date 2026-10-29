@@ -6,7 +6,8 @@
 | Browser UI, navigation and tabs | CEF Chrome-style UI, Charlotte custom chrome pending |
 | Popup/browser lifecycle | Rust window delegates connected |
 | OpenShield network rules | CEF resource handler connected |
-| Cosmetic filters and scriptlets | Not wired |
+| Cosmetic filters | CEF load handler applies selector-based hiding (preliminary) |
+| Scriptlets | Not wired |
 | Bookmarks, folders, history | SQLite storage, legacy JSON import |
 | Chat transport | Rust connect/send/poll/SSE client modules; UI pending |
 | AI providers | Rust HTTP adapters; UI and streaming pending |
