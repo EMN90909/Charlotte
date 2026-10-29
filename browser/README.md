@@ -1,3 +1,37 @@
+# Charlotte Browser — Rust + CEF
+
+Charlotte's browser source, desktop host and build system are written in **Rust**.
+The desktop application uses Chromium Embedded Framework (CEF) as its renderer.
+Electron, React, Node.js, TypeScript, Vite and npm are not required by this
+browser crate.
+
+## Charlotte Auto — one task, the right capability
+
+**Auto is the default option** in Charlotte's Rust sidebar. The chosen AI
+provider first decides whether the request can be answered directly, read
+locally with a deterministic Chromium skill, needs an AI explanation of the
+active page, requires the bounded Chromium interaction agent, uses a
+configured MCP service, or should hand off browser data to an MCP tool.
+The Rust host checks the selected route against the actual active tab and
+the user's enabled app list; the AI cannot invent capabilities.
+
+A user can configure OpenAI, Claude, Gemini or local Ollama via a signed
+**AI provider connection** form. API keys remain in the OS credential store
+rather than a webpage or SQLite. Users can set model IDs and explicitly
+test a saved model (potential API charges apply).
+
+Auto only gives the model the active tab **origin** for initial routing.
+Before it reads and sends current webpage content, the user must approve
+a separate page-sharing consent. Every website modification and MCP tool
+call retains its own per-step approval. A Chromium-first task can pause
+and request fresh permission to transfer the resulting page to a connected
+app, then show the actual proposed MCP operation for approval. Local
+read-only browser skills keep page content on device.
+
+For workflows, permission boundaries and non-claims see
+[AUTO_ORCHESTRATION.md](AUTO_ORCHESTRATION.md). This is source code under a
+draft PR, not a verified production build or hosted multi-tenant system.
+
 ## Charlotte MCP integration directory
 
 Charlotte now includes **43 opt-in MCP connection profiles** from the supplied
@@ -16,18 +50,11 @@ installation and remote API pricing vary. See the
 [MCP catalog and setup guide](MCP_CATALOG.md) for the 43 individual profiles,
 setup commands and release caveats.
 
-# Charlotte Browser — Rust + CEF
-
-Charlotte's browser source, desktop host and build system are written in **Rust**.
-The desktop application uses Chromium Embedded Framework (CEF) as its renderer.
-Electron, React, Node.js, TypeScript, Vite and npm are not required by this
-browser crate.
-
 ## Source layout
 
 - `Cargo.toml`, `Makefile`: native Rust build targets at browser root
 - `src/app.rs`, `src/cef_bridge.rs`: CEF host, browser and event lifecycle
-- `src/ui_server.rs`: Rust-rendered toolbar, tabstrip, AI and page-chat sidebar
+- `src/ui_server.rs`, `src/orchestrator.rs`: AI routing, permissions, and Rust-rendered tab/agent UI
 - `src/storage.rs`, `src/session.rs`, `src/tabs.rs`: SQLite state and sessions
 - `src/shield.rs`: ad blocking; `src/permissions.rs`: origin permissions
 - `src/auth.rs`: Supabase account transport, keychain session storage
