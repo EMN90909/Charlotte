@@ -146,6 +146,18 @@ fn sidebar(ui:&Ui)->Html<String>{
         let names=configured.iter().map(|c|escape(&c.id)).collect::<Vec<_>>().join(", ");
         html.push_str(&format!("<p class=\"muted\">MCP servers configured: {names}. Charlotte asks before using any tool.</p>"));
     }
+    if inner.pending_browser.is_none() && !inner.working {
+        let paused=crate::storage::Storage::open(
+            &crate::profile::profile_root().join("charlotte.sqlite"))
+            .ok().and_then(|db|db.latest_paused_automation_run().ok().flatten());
+        if let Some(run)=paused {
+            html.push_str("<div class=\"bubble\"><strong>Saved Charlotte automation</strong>");
+            html.push_str(&format!("<p class=\"muted\">{} | Step {} | {}</p><p>{}</p>",
+                escape(&run.origin),run.step,escape(&run.status),escape(&run.summary)));
+            html.push_str(&format!(r#"<form action="/browser/resume" method="post">{token}<button class="primary" name="command" value="resume">Inspect and re-plan saved task</button><button name="command" value="discard">Discard saved task</button></form>"#));
+            html.push_str("<small class=\"muted\">Replanning never replays a previously approved action. The page must still be on the same authorised origin. If an earlier step was interrupted, inspect its effect before approving anything.</small></div>");
+        }
+    }
     if let Some(pending)=&inner.pending_browser {
         html.push_str("<div class=\"bubble\"><strong>Charlotte wants to interact with this page</strong>");
         html.push_str(&format!("<p class=\"muted\">Site: {} | Step {}/{}</p><p>{}</p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
@@ -447,6 +459,59 @@ async fn browser_approve(
 }
 /// User-directed handling for Chromium JS alert/confirm/prompt. Does not
 /// bypass native OS file pickers, login, permission or payment dialogs.
+/// Never resume a mutation itself. Resume only the read-only planning
+/// phase after rechecking the current top-level origin and step limit.
+async fn browser_resume(
+    State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
+)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let db=match crate::storage::Storage::open(
+        &crate::profile::profile_root().join("charlotte.sqlite")){
+        Ok(db)=>db,Err(_)=>return (StatusCode::INTERNAL_SERVER_ERROR,"Storage unavailable").into_response()
+    };
+    let run=match db.latest_paused_automation_run(){
+        Ok(Some(run))=>run,
+        _=>return (StatusCode::NOT_FOUND,"No saved automation task").into_response(),
+    };
+    if form.command.as_deref()==Some("discard"){
+        let _=db.set_automation_status(&run.id,"stopped","Discarded by user",run.step);
+        return reply("/sidebar")
+    }
+    if form.command.as_deref()!=Some("resume"){
+        return (StatusCode::BAD_REQUEST,"Unknown checkpoint action").into_response()
+    }
+    let current=ui.tabs.lock().ok().and_then(|tabs|
+        tabs.active().map(|tab|(tab.id,tab.url.clone())));
+    let Some((browser_id,url))=current else{
+        return (StatusCode::BAD_REQUEST,"No active Chromium tab").into_response()
+    };
+    let Ok(context)=BrowserContext::new(browser_id,&url) else{
+        return (StatusCode::BAD_REQUEST,"Open the original HTTPS page first").into_response()
+    };
+    if context.origin!=run.origin{
+        return (StatusCode::CONFLICT,"Saved task belongs to a different site; open its original origin first").into_response()
+    }
+    if run.step>=browser_automation::MAX_STEPS {
+        return (StatusCode::CONFLICT,"Saved task reached the step limit").into_response()
+    }
+    if ui.inner.lock().is_ok_and(|inner|
+        inner.pending_browser.is_some()||inner.pending_tool.is_some()){
+        return (StatusCode::CONFLICT,"Resolve current pending action first").into_response()
+    }
+    if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is already working").into_response()}
+    let state=ui.clone();
+    tokio::task::spawn_blocking(move||{
+        let run_id=run.id.clone();
+        let result=plan_browser_next(&state,context,run.goal,run.provider,
+            run.step,"Resuming after restart: inspect what earlier actions actually changed before making any new proposal.",
+            run.visual,run_id.clone());
+        if let Err(error)=result{
+            checkpoint_status(&run_id,"interrupted",&error,run.step);
+            finish(&state,Some(error));
+        }
+    });
+    reply("/sidebar")
+}
 async fn browser_dialog(
     State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
 )->Response{
@@ -764,6 +829,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/ai",post(ai))
                 .route("/agent/approve",post(agent_approve))
                 .route("/browser/approve",post(browser_approve))
+                .route("/browser/resume",post(browser_resume))
                 .route("/browser/dialog",post(browser_dialog))
                 .route("/notifications",post(notification_permission))
                 .route("/connect",post(connect))
