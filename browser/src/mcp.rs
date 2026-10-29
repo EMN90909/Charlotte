@@ -20,6 +20,66 @@ pub struct Connection {
     alias:String,
     server_id:String,
 }
+#[derive(Clone,Debug,serde::Serialize,serde::Deserialize,PartialEq,Eq)]
+pub struct ServerConfig { pub id:String, pub url:String }
+const CONFIG_KEY:&str="charlotte:mcp:servers:v1";
+pub fn saved_servers(db:&crate::storage::Storage)->Result<Vec<ServerConfig>,String>{
+    let raw=db.setting(CONFIG_KEY).map_err(|e|e.to_string())?;
+    let servers:Vec<ServerConfig>=match raw {
+        None=>Vec::new(),
+        Some(text)=>serde_json::from_str(&text).map_err(|e|e.to_string())?,
+    };
+    if servers.len()>8 {return Err("Too many MCP servers".into())}
+    for server in &servers {validate_server(&server.id,&server.url)?}
+    Ok(servers)
+}
+pub fn validate_server(id:&str,raw:&str)->Result<(),String>{
+    if id.is_empty()||id.len()>40||
+        !id.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'-'||c==b'_'){
+        return Err("MCP server ID must be 1-40 letters, digits, hyphens or underscores".into())
+    }
+    if raw.len()>1024 {return Err("MCP URL too long".into())}
+    let endpoint=Url::parse(raw).map_err(|e|e.to_string())?;
+    if !endpoint.username().is_empty()||endpoint.password().is_some()||
+       endpoint.query().is_some()||endpoint.fragment().is_some() {
+        return Err("MCP endpoint cannot contain credentials, query or fragment".into())
+    }
+    let host=endpoint.host_str().ok_or("MCP endpoint requires host")?;
+    if endpoint.scheme()!="https" &&
+       !(endpoint.scheme()=="http"&&matches!(host,"localhost"|"127.0.0.1"|"::1")){
+        return Err("MCP requires HTTPS except local loopback".into())
+    }
+    Ok(())
+}
+pub fn save_server(db:&crate::storage::Storage,id:&str,url:&str)->Result<(),String>{
+    validate_server(id,url)?;
+    let mut servers=saved_servers(db)?;
+    if let Some(existing)=servers.iter_mut().find(|s|s.id==id){
+        existing.url=url.to_owned();
+    } else {
+        if servers.len()>=8{return Err("Maximum eight MCP servers".into())}
+        servers.push(ServerConfig{id:id.to_owned(),url:url.to_owned()});
+    }
+    db.set_setting(CONFIG_KEY,&serde_json::to_string(&servers).map_err(|e|e.to_string())?)
+        .map_err(|e|e.to_string())
+}
+pub fn remove_server(db:&crate::storage::Storage,id:&str)->Result<(),String>{
+    let mut servers=saved_servers(db)?;
+    servers.retain(|s|s.id!=id);
+    db.set_setting(CONFIG_KEY,&serde_json::to_string(&servers).map_err(|e|e.to_string())?)
+        .map_err(|e|e.to_string())
+}
+/// Call on background workers only. Secrets remain in the OS credential store.
+pub fn connect_saved(db:&crate::storage::Storage)->Result<Registry,String>{
+    let mut registry=Registry::new();
+    for server in saved_servers(db)?{
+        let token=crate::credentials::retrieve(&format!("mcp:{}",server.id)).ok();
+        if let Err(e)=registry.connect(&server.id,&server.url,token){
+            eprintln!("Charlotte MCP server {} not reachable: {}",server.id,e);
+        }
+    }
+    Ok(registry)
+}
 pub struct Registry {connections:HashMap<String,Connection>,next_alias:usize}
 impl Registry {
     pub fn new()->Self{Self{connections:HashMap::new(),next_alias:0}}
@@ -142,4 +202,18 @@ mod tests{
     use super::*;
     #[test]fn namespaced_tools(){assert_eq!(parse_name("mcp__s2__search_files"),Some(("s2","search_files")));assert!(parse_name("mcp__bad__hi").is_none());}
     #[test]fn registry_starts_empty(){assert!(Registry::new().tools().is_empty());}
+    #[test]fn mcp_config_validates_remote_endpoints(){
+        assert!(validate_server("search","https://example.org/mcp").is_ok());
+        assert!(validate_server("local","http://127.0.0.1:8080/mcp").is_ok());
+        assert!(validate_server("oops","http://evil.example/mcp").is_err());
+        assert!(validate_server("oops","https://username:password@host/mcp").is_err());
+        assert!(validate_server("../oops","https://host/mcp").is_err());
+    }
+    #[test]fn persisted_server_ids_are_bounded(){
+        let db=crate::storage::Storage::open(std::path::Path::new(":memory:")).unwrap();
+        save_server(&db,"documents","https://docs.example/mcp").unwrap();
+        assert_eq!(saved_servers(&db).unwrap()[0].id,"documents");
+        remove_server(&db,"documents").unwrap();
+        assert!(saved_servers(&db).unwrap().is_empty());
+    }
 }
