@@ -7,6 +7,7 @@ use crate::{services::{self,Provider,Turn},mcp_catalog};
 pub enum Route {
     Reply(String),
     PageAnswer,
+    LocalSkill{name:String},
     BrowserTask,
     McpTask{server_id:String},
     PageToMcp{server_id:String},
@@ -17,6 +18,7 @@ pub enum Route {
 enum Proposal {
     Reply{text:String},
     PageAnswer,
+    LocalSkill{name:String},
     BrowserTask,
     McpTask{server_id:String},
     PageToMcp{server_id:String},
@@ -36,10 +38,12 @@ impl Capabilities{
         match &route{
             Route::Reply(text)|Route::Clarify(text) if text.len()>6000=>
                 Err("Charlotte's proposed response exceeded the safety limit".into()),
-            Route::PageAnswer|Route::BrowserTask if !self.has_page()=>
+            Route::PageAnswer|Route::LocalSkill{..}|Route::BrowserTask if !self.has_page()=>
                 Err("Charlotte needs an open HTTPS or local Chromium page for that task".into()),
             Route::PageToMcp{..} if !self.has_page()=>
                 Err("Charlotte needs an active Chromium page to combine it with an MCP service".into()),
+            Route::LocalSkill{name} if crate::browser_skills::Skill::parse(name).is_err()=>
+                Err("Unknown local read-only browser skill".into()),
             Route::McpTask{server_id}|Route::PageToMcp{server_id}
                 if !self.server_enabled(server_id)=>
                 Err("Charlotte selected a service that has not been explicitly enabled".into()),
@@ -55,6 +59,7 @@ pub fn parse(raw:&str,capabilities:&Capabilities)->Result<Route,String>{
     let route=match proposal{
         Proposal::Reply{text}=>Route::Reply(text),
         Proposal::PageAnswer=>Route::PageAnswer,
+        Proposal::LocalSkill{name}=>Route::LocalSkill{name},
         Proposal::BrowserTask=>Route::BrowserTask,
         Proposal::McpTask{server_id}=>Route::McpTask{server_id},
         Proposal::PageToMcp{server_id}=>Route::PageToMcp{server_id},
@@ -74,13 +79,15 @@ You receive the user's request and available capabilities. Choose ONE route.
 Return ONLY a strict JSON object in one of these shapes:
 {"kind":"reply","text":"answer"}
 {"kind":"page_answer"}
+{"kind":"local_skill","name":"summary|links|controls|frames"}
 {"kind":"browser_task"}
 {"kind":"mcp_task","server_id":"enabled-id"}
 {"kind":"page_to_mcp","server_id":"enabled-id"}
 {"kind":"clarify","text":"concrete missing prerequisite or question"}
 ROUTING:
 - Ordinary questions/conversation: reply with the answer; do not use a tool unnecessarily.
-- Questions requiring the currently open page's real contents: page_answer.
+- For simple read-only extraction of the active page's text, links, controls or frames, use local_skill. Only the initial routing question goes to AI; the extracted page data stays on the user's machine and isn't sent to the AI.
+- Questions requiring AI interpretation of the current page's real contents: page_answer.
 - Navigation or interactions in active Chromium: browser_task; each mutation requires explicit approval.
 - An enabled external app: mcp_task with its exact enabled ID; calls require approval.
 - Explicitly moving information from the open webpage to an enabled app: page_to_mcp with exact ID. Read the page first; MCP tool still needs approval.
@@ -131,6 +138,9 @@ mod tests{
         assert_eq!(parse(r#"{"kind":"reply","text":"Hello"}"#,&access()).unwrap(),
             Route::Reply("Hello".into()));
         assert_eq!(parse(r#"{"kind":"page_answer"}"#,&access()).unwrap(),Route::PageAnswer);
+        assert_eq!(parse(r#"{"kind":"local_skill","name":"links"}"#,&access()).unwrap(),
+            Route::LocalSkill{name:"links".into()});
+        assert!(parse(r#"{"kind":"local_skill","name":"execute"}"#,&access()).is_err());
         assert_eq!(parse(r#"{"kind":"page_to_mcp","server_id":"github"}"#,&access()).unwrap(),
             Route::PageToMcp{server_id:"github".into()});
     }
