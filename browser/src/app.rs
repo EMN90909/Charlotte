@@ -96,7 +96,7 @@ impl Controller {
                         return;
                     }
                 }else{return}
-                if let Ok(mut shield)=self.filter.lock(){shield.set_enabled(enabled)}
+                if let Ok(mut shield)=self.filter.write(){shield.set_enabled(enabled)}
                 self.refresh_chrome();
             },
             Command::New(url)=>self.add(url),
