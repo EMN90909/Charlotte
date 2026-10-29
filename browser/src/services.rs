@@ -1,5 +1,5 @@
 //! Network services used by Charlotte. Credentials stay in the host process.
-//! Media attachments and model streaming are not yet implemented here.
+//! Opt-in browser screenshot vision requests are supported; general media uploads and streaming are not.
 //! User-approved MCP execution lives in the native agent.rs and mcp.rs modules.
 use reqwest::blocking::{Client, Response};
 use reqwest::{redirect::Policy, StatusCode};
