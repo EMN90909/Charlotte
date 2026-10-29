@@ -1,23 +1,19 @@
-# syntax=docker/dockerfile:1
-# Build from inside server/: docker build -t charlotte-server:local .
-FROM golang:1.23-alpine AS build
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
+FROM rust:1-bookworm AS builder
+WORKDIR /build
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/charlotte-server ./cmd/server \
-    && mkdir -p /out/data
+RUN cargo build --release --bins
 
-# No Go toolchain, shell or package manager in the final image. Non-root,
-# with CA certificates for Supabase and other outbound HTTPS.
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 65532 --create-home charlotte
 WORKDIR /app
-COPY --from=build --chown=65532:65532 /out/charlotte-server /usr/local/bin/charlotte-server
-COPY --from=build --chown=65532:65532 /out/data /app/data
+COPY --from=builder /build/target/release/charlotte-server /usr/local/bin/charlotte-server
+COPY --from=builder /build/target/release/charlotte-ops /usr/local/bin/charlotte-ops
 ENV CHAT_USERNAMES_FILE=/app/data/usernames.log \
     CHAT_ROOMS_HLL_FILE=/app/data/rooms.hll \
-    CHAT_USERS_HLL_FILE=/app/data/users.hll \
-    AUTOCERT_CACHE_DIR=/app/data/autocert-cache
+    CHAT_USERS_HLL_FILE=/app/data/users.hll
+RUN mkdir -p /app/data && chown 65532:65532 /app/data
 EXPOSE 8080 50051
 USER 65532:65532
-ENTRYPOINT ["/usr/local/bin/charlotte-server"]
+CMD ["/usr/local/bin/charlotte-server"]
