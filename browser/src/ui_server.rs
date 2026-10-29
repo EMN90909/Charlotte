@@ -270,6 +270,9 @@ fn plan_browser_next(
     let model=if visual&&provider_name=="ollama"{"llava"}else{default_model};
     let mut snapshot=context.observe_settled()?;
     let screenshot=if visual {Some(context.screenshot()?)}else{None};
+    if let Some((_,(width,height)))=&screenshot {
+        snapshot["imagePixels"]=serde_json::json!({"width":width,"height":height});
+    }
     if visual {
         if let Ok(frames)=context.frame_inventory(){
             snapshot["isolatedFrames"]=serde_json::json!(frames);
@@ -278,7 +281,7 @@ fn plan_browser_next(
     let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
     let history=state.inner.lock().ok().map(|inner|inner.ai.clone()).unwrap_or_default();
     match browser_agent::decide(provider,key.as_deref(),model,&history,
-        &goal,step,&snapshot,previous,screenshot.as_deref())?{
+        &goal,step,&snapshot,previous,screenshot.as_ref().map(|(jpeg,_)|jpeg.as_str()))?{
         BrowserDecision::Answer(text)=>{
             browser_answer(state,&goal,text);
         },
