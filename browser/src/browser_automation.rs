@@ -432,6 +432,25 @@ mod tests {
         assert_eq!(jpeg_dimensions(&jpeg),Some((1440,720)));
         assert!(jpeg_dimensions(&[1,2,3]).is_none());
     }
+    #[test]fn visual_click_bounds_are_checked_against_css_viewport(){
+        let page=json!({"viewport":{"width":800,"height":600}});
+        assert!(ensure_observed_target(&Action::ClickAt{x:400,y:300},&page).is_ok());
+        assert!(ensure_observed_target(&Action::ClickAt{x:900,y:300},&page).is_err());
+    }
+    #[test]fn native_drag_requires_both_real_controls_and_draggable_source(){
+        let page=json!({"controls":[
+            {"selector":"x-card >>> div:nth-of-type(1)","draggable":true},
+            {"selector":"iframe:nth-of-type(1) ::frame button:nth-of-type(1)","draggable":false}
+        ]});
+        assert!(ensure_observed_target(&Action::Drag{
+            from:"x-card >>> div:nth-of-type(1)".into(),
+            to:"iframe:nth-of-type(1) ::frame button:nth-of-type(1)".into()
+        },&page).is_ok());
+        assert!(ensure_observed_target(&Action::Drag{
+            from:"iframe:nth-of-type(1) ::frame button:nth-of-type(1)".into(),
+            to:"x-card >>> div:nth-of-type(1)".into()
+        },&page).is_err());
+    }
     #[test]fn mouse_down_and_up_both_keep_left_button(){
         for event in ["mousePressed","mouseReleased"] {
             let (method,args)=input_mouse_command(event,21,34);
