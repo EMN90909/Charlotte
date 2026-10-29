@@ -58,6 +58,7 @@ struct UiInner {
     skill_source:Option<(i32,String)>,
     provider_status:Option<String>,
     route_status:Option<String>,
+    update_status:Option<String>,
     chat: Vec<(String,String)>,
     chat_base: String,
     chat_token: String,
@@ -82,6 +83,7 @@ struct ActionForm {
     catalog: Option<String>,
     custom_id: Option<String>,
     endpoint: Option<String>,
+    channel: Option<String>,
     api_key: Option<String>,
     model: Option<String>,
 }
@@ -189,6 +191,10 @@ fn sidebar(ui:&Ui)->Html<String>{
     }
     if let Some(status)=&inner.route_status{
         html.push_str(&format!("<p class=\"muted\"><strong>Auto selected:</strong> {}</p>",escape(status)));
+    }
+    html.push_str(&format!(r#"<section><h2>Browser updates</h2><p class="muted">Charlotte checks signed releases from your configured Cloud service. Nothing installs or runs automatically. Only releases signed by the public key embedded in the official browser build can be downloaded.</p><form action="/updates" method="post">{token}<select name="channel" aria-label="Release channel"><option value="stable">Stable</option><option value="beta">Beta</option></select><button name="command" value="check">Check signed updates</button><button name="command" value="stage">Download and verify update (do not install)</button></form></section>"#));
+    if let Some(status)=&inner.update_status{
+        html.push_str(&format!("<p class=\"muted\">Update status: {}</p>",escape(status)));
     }
     // Listing a catalog never opens a vendor session, fetches tools, or
     // installs local executables. Connecting is a separate explicit action.
@@ -915,6 +921,48 @@ async fn browser_dialog(
 /// Neither provider API keys nor models are exposed to Chromium websites.
 /// Only a service URL is saved in local SQLite; provider credentials
 /// remain in the cloud secret manager and Charlotte account session in OS keychain.
+/// User-triggered signed update checks and download-to-staging only.
+/// Never executes/installs a payload or trusts a key from the update server.
+async fn browser_updates(
+    State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
+)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let channel=match form.channel.as_deref().unwrap_or("stable"){
+        "stable"=>"stable","beta"=>"beta",
+        _=>return (StatusCode::BAD_REQUEST,"Unknown update channel").into_response(),
+    };
+    let stage=match form.command.as_deref(){
+        Some("check")=>false,Some("stage")=>true,
+        _=>return (StatusCode::BAD_REQUEST,"Unknown update command").into_response(),
+    };
+    if ui.inner.lock().is_ok_and(|i|i.pending_tool.is_some()||
+        i.pending_browser.is_some()||i.pending_auto.is_some()){
+        return (StatusCode::CONFLICT,"Resolve the pending task before checking updates").into_response()
+    }
+    if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is working").into_response()}
+    let state=ui.clone();
+    tokio::task::spawn_blocking(move||{
+        let result=crate::updates::check(channel).and_then(|available|{
+            match available{
+                Some(manifest) if stage=>{
+                    let path=crate::updates::stage(&manifest,channel)?;
+                    Ok(format!("Verified update staged at {}. Not installed.",
+                        path.display()))
+                },
+                Some(manifest)=>Ok(format!("Signed release {} is available.",
+                    manifest.version.unwrap_or_default())),
+                None=>Ok("No newer signed release available.".into()),
+            }
+        });
+        if let Ok(mut i)=state.inner.lock(){
+            i.update_status=Some(match result{
+                Ok(msg)=>msg,Err(error)=>format!("Update check unavailable: {error}"),
+            });
+        }
+        finish(&state,None);
+    });
+    reply("/sidebar")
+}
 async fn ai_cloud_config(
     State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
 )->Response{
@@ -1605,7 +1653,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
         port,token,tabs,filter,inner:Arc::new(Mutex::new(UiInner{
-            pending_browser:None,pending_auto:None,auto_handoff:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,provider_status:None,route_status:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
+            pending_browser:None,pending_auto:None,auto_handoff:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,provider_status:None,route_status:None,update_status:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
         }))
@@ -1624,6 +1672,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/ai",post(ai))
                 .route("/ai/provider",post(ai_provider_config))
                 .route("/ai/cloud",post(ai_cloud_config))
+                .route("/updates",post(browser_updates))
                 .route("/ai/route-approve",post(auto_route_approve))
                 .route("/agent/approve",post(agent_approve))
                 .route("/browser/approve",post(browser_approve))
@@ -1891,6 +1940,16 @@ mod tests{
         ui.inner.lock().unwrap().pending_auto=Some(pending);
         ui.page_changed("https://example.org/other");
         assert!(ui.inner.lock().unwrap().pending_auto.is_none());
+    }
+    #[test]
+    fn cloud_and_updates_ui_requires_signed_user_interaction(){
+        let ui=start(Arc::new(Mutex::new(crate::tabs::Tabs::default())),
+            Arc::new(std::sync::RwLock::new(
+                crate::shield::Shield::new(&[crate::shield::STARTER_RULES],true)))).unwrap();
+        let html=sidebar(&ui).0;
+        assert!(html.contains(r#"action="/ai/cloud""#));
+        assert!(html.contains(r#"action="/updates""#));
+        assert!(html.contains("do not install"));
     }
     #[test]
     fn provider_directory_exposes_cloud_but_never_cloud_secrets(){
