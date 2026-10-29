@@ -2,12 +2,12 @@ name: Charlotte native Rust + CEF
 on:
   pull_request:
     paths:
-      - "browser/native/**"
+      - "browser/**"
       - ".github/workflows/browser-native.yml"
   push:
     branches: [main, rust-conversion]
     paths:
-      - "browser/native/**"
+      - "browser/**"
       - ".github/workflows/browser-native.yml"
   workflow_dispatch:
 permissions:
@@ -21,7 +21,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: browser/native
+        working-directory: browser
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

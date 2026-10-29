@@ -28,7 +28,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
-        working-directory: browser/native
+        working-directory: browser
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,7 +42,7 @@ jobs:
       - name: Install matching CEF packager
         run: cargo install cef --version '156.2.0+156.0.14' --features build-util --bin bundle-cef-app
       - name: Install CEF export utility
-        run: cargo install --git https://github.com/tauri-apps/cef-rs --package export-cef-dir --bin export-cef-dir
+        run: cargo install export-cef-dir --version '156.2.0+156.0.14'
       - name: Export CEF runtime (POSIX)
         if: runner.os != 'Windows'
         shell: bash
@@ -90,8 +90,8 @@ jobs:
         with:
           name: Charlotte-${{ matrix.label }}
           path: |
-            browser/native/target/Charlotte-*.tar.gz
-            browser/native/target/Charlotte-*.zip
+            browser/target/Charlotte-*.tar.gz
+            browser/target/Charlotte-*.zip
           if-no-files-found: error
   publish:
     needs: native

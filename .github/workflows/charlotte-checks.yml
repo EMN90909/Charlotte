@@ -45,28 +45,30 @@ jobs:
       - run: cargo test --all-targets
       - run: cargo build --release --bins
 
-  typecheck:
+  browser-rust:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        component: [browser, website]
     defaults:
       run:
-        working-directory: ${{ matrix.component }}
+        working-directory: browser
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --all-targets
+      - run: cargo build --release --bins
+
+  website-typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+          cache-dependency-path: website/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit
-      - name: Test network ad blocker
-        if: matrix.component == 'browser'
-        run: npm run test:adblock && npm run test:openshield
-      - name: Verify static website output
-        if: matrix.component == 'website'
-        run: npm run build
+      - run: npm run build
 

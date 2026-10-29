@@ -1,6 +1,9 @@
-node_modules/
-out/
-.vite/
-dist/
+/target/
+/dist/
+/out/
+/.vite/
+/node_modules/
+/data/
+/ops-data/
+*.log
 .DS_Store
-npm-debug.log*
