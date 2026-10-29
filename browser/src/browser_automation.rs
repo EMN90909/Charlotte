@@ -167,6 +167,31 @@ pub fn extract_result(raw:&Value)->Result<Value,String>{
     if let Some(message)=value.get("error").and_then(Value::as_str){return Err(message.to_owned())}
     Ok(value)
 }
+/// Read JPEG dimensions without loading an image processing runtime.
+pub fn jpeg_dimensions(bytes:&[u8])->Option<(u32,u32)>{
+    if !bytes.starts_with(&[0xff,0xd8]){return None}
+    let mut i=2usize;
+    while i+4<bytes.len() {
+        if bytes[i]!=0xff {i+=1;continue}
+        while i<bytes.len()&&bytes[i]==0xff{i+=1}
+        if i>=bytes.len(){break}
+        let marker=bytes[i];i+=1;
+        if marker==0xd9||marker==0xda{break}
+        if (0xd0..=0xd7).contains(&marker)||marker==0x01{continue}
+        if i+2>bytes.len(){break}
+        let length=u16::from_be_bytes([bytes[i],bytes[i+1]]) as usize;
+        if length<2||i+length>bytes.len(){break}
+        if matches!(marker,0xc0..=0xc3|0xc5..=0xc7|0xc9..=0xcb|0xcd..=0xcf)&&length>=7{
+            let h=u16::from_be_bytes([bytes[i+3],bytes[i+4]]) as u32;
+            let w=u16::from_be_bytes([bytes[i+5],bytes[i+6]]) as u32;
+            return if (1..=10000).contains(&w)&&(1..=10000).contains(&h){
+                Some((w,h))
+            }else{None}
+        }
+        i+=length;
+    }
+    None
+}
 pub fn click_coordinates(value:&Value)->Result<(i32,i32),String>{
     let x=value.get("x").and_then(Value::as_i64).ok_or("Element has no x position")?;
     let y=value.get("y").and_then(Value::as_i64).ok_or("Element has no y position")?;
@@ -278,7 +303,7 @@ impl Context {
         }
         Ok(result)
     }
-    pub fn screenshot(&self)->Result<String,String>{
+    pub fn screenshot(&self)->Result<(String,(u32,u32)),String>{
         let (method,params)=crate::advanced_automation::screenshot_command();
         let reply=self.cdp(&method,params)?;
         let text=reply.get("data").and_then(Value::as_str)
@@ -290,7 +315,9 @@ impl Context {
         if data.len()<4||data.len()>1_200_000||!data.starts_with(&[0xff,0xd8,0xff]){
             return Err("Invalid or oversized JPEG screenshot".into())
         }
-        Ok(text.to_owned())
+        let dimensions=jpeg_dimensions(&data)
+            .ok_or("Screenshot JPEG dimensions are missing or too large")?;
+        Ok((text.to_owned(),dimensions))
     }
     fn mouse_click(&self,x:i32,y:i32)->Result<(),String>{
         for kind in ["mouseMoved","mousePressed","mouseReleased"]{
@@ -392,6 +419,11 @@ mod tests {
             selector:"html > body > a".into()},&external).is_err());
         assert!(ensure_observed_target(&Action::Type{
             selector:"html > body > button".into(),text:"x".into()},&snap).is_err());
+    }
+    #[test]fn jpeg_reader_finds_scaled_capture_dimensions(){
+        let jpeg=[0xff,0xd8,0xff,0xc0,0,11,8,0x02,0xd0,0x05,0xa0,3,1,0x11,0];
+        assert_eq!(jpeg_dimensions(&jpeg),Some((1440,720)));
+        assert!(jpeg_dimensions(&[1,2,3]).is_none());
     }
     #[test]fn mouse_down_and_up_both_keep_left_button(){
         for event in ["mousePressed","mouseReleased"] {
