@@ -331,7 +331,7 @@ async fn browser_approve(
             // Check the actual live Chromium URL before executing a selector
             // generated from an earlier DOM snapshot.
             let current=pending.context.observe_settled()?;
-            if current.get("url").and_then(serde_json::Value::as_str)!=Some(&pending.observed_url){
+            if current.get("url").and_then(serde_json::Value::as_str)!=Some(pending.observed_url.as_str()){
                 return Err("Page changed since Charlotte proposed this action. Nothing was clicked or typed; start a new task.".into())
             }
             browser_automation::ensure_observed_target(&pending.action,&current)?;
