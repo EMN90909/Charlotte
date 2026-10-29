@@ -215,12 +215,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !line.trim().is_empty() { names.insert(line.trim().to_lowercase()); }
         }
     }
-    let metrics = hll::Metrics::load(env::var("CHAT_ROOMS_HLL_FILE").unwrap_or_else(|_| "data/rooms.hll".into()), env::var("CHAT_USERS_HLL_FILE").unwrap_or_else(|_| "data/users.hll".into()))?;
+    let metrics_store = hll::Metrics::load(env::var("CHAT_ROOMS_HLL_FILE").unwrap_or_else(|_| "data/rooms.hll".into()), env::var("CHAT_USERS_HLL_FILE").unwrap_or_else(|_| "data/users.hll".into()))?;
     let state = AppState {
         secret: Arc::new(secret.into_bytes()),
         registry: Arc::new(Mutex::new(Registry { names, path })),
         hub: Arc::new(Mutex::new(HashMap::new())),
-        metrics: Arc::new(Mutex::new(metrics)),
+        metrics: Arc::new(Mutex::new(metrics_store)),
         allowed_origin: env::var("CHARLOTTE_WEB_ORIGIN").ok(),
         streams:Arc::new(Mutex::new(HashMap::new())),
         subscribers:Arc::new(std::sync::atomic::AtomicUsize::new(0)),
