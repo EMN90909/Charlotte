@@ -963,26 +963,25 @@ fn plan_mcp_goal(
 /// Auto mode uses one AI routing decision, then a type-checked, bounded
 /// executor: answer / inspect Chromium / approved browser action / MCP /
 /// read-page-to-MCP. No screenshot, password or arbitrary JS authority.
-fn run_auto_task(
-    state:&Ui,question:String,provider_name:String
+fn route_needs_page(route:&AutoRoute)->bool{
+    matches!(route,AutoRoute::PageAnswer|AutoRoute::BrowserTask|AutoRoute::PageToMcp{..})
+}
+/// Called only after routing and, for browser-capability routes, after
+/// explicit approval of page inspection. The browser tab/URL is rechecked.
+fn execute_auto_route(
+    state:&Ui,question:String,provider_name:String,
+    route:AutoRoute,pinned:Option<(i32,String)>
 )->Result<(),String>{
     let (provider,model)=provider_model(&provider_name).ok_or("Unknown AI provider")?;
-    let configured=crate::storage::Storage::open(
-        &crate::profile::profile_root().join("charlotte.sqlite"))
-        .ok().and_then(|db|mcp::saved_servers(&db).ok()).unwrap_or_default();
     let source=state.tabs.lock().ok().and_then(|tabs|
         tabs.active().map(|tab|(tab.id,tab.url.clone())));
+    if let Some(original)=&pinned{
+        if source.as_ref()!=Some(original){
+            return Err("Page changed after route approval; Charlotte did not inspect or act".into())
+        }
+    }
     let context=source.as_ref().and_then(|(id,url)|BrowserContext::new(*id,url).ok());
-    let capabilities=Capabilities{
-        page_origin:context.as_ref().map(|c|c.origin.clone()),
-        enabled_servers:configured.iter().map(|s|s.id.clone()).collect(),
-    };
-    let history:Vec<Turn>=state.inner.lock().ok().map(|i|i.ai.iter().rev()
-        .take(4).cloned().collect::<Vec<_>>().into_iter().rev().collect())
-        .unwrap_or_default();
     let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
-    let route=orchestrator::decide(provider,key.as_deref(),&model,
-        &history,&question,&capabilities)?;
     match route{
         AutoRoute::Reply(answer)|AutoRoute::Clarify(answer)=>{
             browser_answer(state,&question,answer,None,0);
@@ -1043,6 +1042,46 @@ fn run_auto_task(
     }
     Ok(())
 }
+/// Planning does not access page DOM and does not connect any MCP servers.
+/// AI selects a bounded capability, while the host asks for page-data consent.
+fn run_auto_task(
+    state:&Ui,question:String,provider_name:String
+)->Result<(),String>{
+    let (provider,model)=provider_model(&provider_name).ok_or("Unknown AI provider")?;
+    let configured=crate::storage::Storage::open(
+        &crate::profile::profile_root().join("charlotte.sqlite"))
+        .ok().and_then(|db|mcp::saved_servers(&db).ok()).unwrap_or_default();
+    let source=state.tabs.lock().ok().and_then(|tabs|
+        tabs.active().map(|tab|(tab.id,tab.url.clone())));
+    let context=source.as_ref().and_then(|(id,url)|BrowserContext::new(*id,url).ok());
+    let capabilities=Capabilities{
+        page_origin:context.as_ref().map(|c|c.origin.clone()),
+        enabled_servers:configured.iter().map(|s|s.id.clone()).collect(),
+    };
+    let history:Vec<Turn>=state.inner.lock().ok().map(|i|i.ai.iter().rev()
+        .take(4).cloned().collect::<Vec<_>>().into_iter().rev().collect())
+        .unwrap_or_default();
+    let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
+    let route=orchestrator::decide(provider,key.as_deref(),&model,
+        &history,&question,&capabilities)?;
+    if route_needs_page(&route){
+        let source=source.ok_or("No available Chromium tab for approval")?;
+        if !source_page_still_active(state,&source){
+            return Err("Chromium tab changed during capability selection".into())
+        }
+        if let Ok(mut inner)=state.inner.lock(){
+            if inner.pending_auto.is_some()||inner.pending_tool.is_some()||
+                inner.pending_browser.is_some(){
+                return Err("Resolve current pending approval before routing".into())
+            }
+            inner.pending_auto=Some(PendingAuto{route,question,provider_name,source});
+        }else{return Err("Charlotte approval state unavailable".into())}
+        finish(state,None);
+        return Ok(())
+    }
+    execute_auto_route(state,question,provider_name,route,None)
+}
+
 async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response{
     if !check(&ui,&headers,&form.token){return forbidden()}
     let Some(text)=form.value.map(|s|s.trim().to_string()).filter(|s|!s.is_empty()&&s.len()<=4000)
