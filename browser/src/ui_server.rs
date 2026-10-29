@@ -34,6 +34,11 @@ struct PendingTool {
     source_page:Option<(i32,String)>,
 }
 #[derive(Clone)]
+struct PendingAuto {
+    route:AutoRoute, question:String, provider_name:String,
+    source:(i32,String),
+}
+#[derive(Clone)]
 struct PendingBrowser {
     context:BrowserContext, action:BrowserAction, goal:String,
     provider:String, step:u8, observed_url:String, target_label:String, visual:bool,
@@ -41,6 +46,7 @@ struct PendingBrowser {
 }
 struct UiInner {
     pending_browser:Option<PendingBrowser>,
+    pending_auto:Option<PendingAuto>,
     active_run_id:Option<String>,
     automation_browser_id:Option<i32>,
     automation_origin:Option<String>,
@@ -195,6 +201,23 @@ fn sidebar(ui:&Ui)->Html<String>{
             html.push_str(&format!(r#"<form action="/browser/resume" method="post">{token}<button class="primary" name="command" value="resume">Inspect and re-plan saved task</button><button name="command" value="discard">Discard saved task</button></form>"#));
             html.push_str("<small class=\"muted\">Replanning never replays a previously approved action. The page must still be on the same authorised origin. If an earlier step was interrupted, inspect its effect before approving anything.</small></div>");
         }
+    }
+    if let Some(pending)=&inner.pending_auto {
+        let activity=match &pending.route{
+            AutoRoute::PageAnswer=>"Read and explain this page",
+            AutoRoute::BrowserTask=>"Use Chromium to complete the task with approval at each action",
+            AutoRoute::PageToMcp{..}=>"Read this page and prepare a cross-app MCP request",
+            _=>"Inspect the selected page",
+        };
+        let destination=match &pending.route{
+            AutoRoute::PageToMcp{server_id}=>format!("; destination: {server_id}"),
+            _=>String::new(),
+        };
+        let location=url::Url::parse(&pending.source.1).ok()
+            .map(|page|format!("{}{}",page.origin().ascii_serialization(),page.path()))
+            .unwrap_or_else(||"[current authorized page]".into());
+        html.push_str(&format!("<div class=\"bubble\"><strong>Charlotte selected a browser capability</strong><p>{}</p><p class=\"muted\">Source: {}{}</p><p>Charlotte will share bounded visible page text with your selected AI provider. No screenshot is sent. Website changes and MCP tool calls still need their own explicit approval.</p><form action=\"/ai/route-approve\" method=\"post\">{token}<button name=\"command\" value=\"approve\" class=\"primary\">Allow this page for the task</button><button name=\"command\" value=\"reject\">Don't share page</button></form></div>",
+            escape(activity),escape(&location),escape(&destination)));
     }
     if let Some(pending)=&inner.pending_browser {
         html.push_str("<div class=\"bubble\"><strong>Charlotte wants to interact with this page</strong>");
@@ -819,7 +842,7 @@ async fn ai_provider_config(
     if provider_model(name).is_none(){
         return (StatusCode::BAD_REQUEST,"Unknown AI provider").into_response()
     }
-    if ui.inner.lock().is_ok_and(|i|i.working||i.pending_tool.is_some()||i.pending_browser.is_some()){
+    if ui.inner.lock().is_ok_and(|i|i.working||i.pending_tool.is_some()||i.pending_browser.is_some()||i.pending_auto.is_some()){
         return (StatusCode::CONFLICT,"Finish the active task before changing the AI provider").into_response()
     }
     let result=(||->Result<(),String>{
@@ -1027,7 +1050,7 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
     let provider_name=form.provider.unwrap_or_else(||"openai".into());
     let Some((provider,model))=provider_model(&provider_name)
         else{return (StatusCode::BAD_REQUEST,"Unknown provider").into_response()};
-    if ui.inner.lock().is_ok_and(|g|g.pending_tool.is_some()||g.pending_browser.is_some()){
+    if ui.inner.lock().is_ok_and(|g|g.pending_tool.is_some()||g.pending_browser.is_some()||g.pending_auto.is_some()){
         return (StatusCode::CONFLICT,"Resolve Charlotte's pending MCP or Chromium browser action first").into_response()
     }
     let mode=form.mode.as_deref().unwrap_or("auto");
@@ -1315,7 +1338,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
         port,token,tabs,filter,inner:Arc::new(Mutex::new(UiInner{
-            pending_browser:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
+            pending_browser:None,pending_auto:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
         }))
