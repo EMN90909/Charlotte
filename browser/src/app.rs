@@ -58,6 +58,7 @@ impl Controller {
             }
         }
         self.page_panel.layout();
+        self._ui.tab_selected(selected);
         if let Ok(tabs)=self.tabs.lock(){
             if let Some(active)=tabs.active(){self._ui.page_changed(&active.url);}
         }
@@ -152,6 +153,10 @@ impl Controller {
             Command::Automation{request_id,browser_id,expected_origin,method,params,reply}=>
                 self.automation_request(request_id,browser_id,expected_origin,method,params,reply),
             Command::AutomationFinished(id)=>{self.devtools_observers.remove(&id);},
+            Command::BrowserClosed(id)=>{
+                self._ui.tab_closed(id);
+                self.devtools_observers.clear();
+            },
             Command::Shields(enabled)=>{
                 let was_enabled=self.filter.read().map(|s|s.is_enabled()).unwrap_or(false);
                 if let Ok(db)=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
@@ -181,6 +186,7 @@ impl Controller {
             Command::Reload=>{if let Some(b)=self.active_browser(){b.reload()}},
             Command::HardReload=>{if let Some(b)=self.active_browser(){b.reload_ignore_cache()}},
             Command::Close(id)=>{
+                self._ui.tab_closed(id);
                 self.pending_restore.remove(&id);
                 if self.views.len()==1{
                     self.add(String::new());
