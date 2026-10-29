@@ -29,7 +29,7 @@ pub fn saved_servers(db:&crate::storage::Storage)->Result<Vec<ServerConfig>,Stri
         None=>Vec::new(),
         Some(text)=>serde_json::from_str(&text).map_err(|e|e.to_string())?,
     };
-    if servers.len()>8 {return Err("Too many MCP servers".into())}
+    if servers.len()>48 {return Err("Too many MCP servers (maximum 48)".into())}
     for server in &servers {validate_server(&server.id,&server.url)?}
     Ok(servers)
 }
@@ -39,9 +39,18 @@ pub fn validate_server(id:&str,raw:&str)->Result<(),String>{
         return Err("MCP server ID must be 1-40 letters, digits, hyphens or underscores".into())
     }
     if raw.len()>1024 {return Err("MCP URL too long".into())}
+    if let Some(local)=raw.strip_prefix("local:"){
+        if local!=id || crate::mcp_catalog::local_command(local).is_none(){
+            return Err("Unapproved local MCP executable; choose a catalog preset".into())
+        }
+        return Ok(())
+    }
     let endpoint=Url::parse(raw).map_err(|e|e.to_string())?;
+    let permitted_query=endpoint.host_str()==Some("mcp.supabase.com") &&
+        endpoint.path()=="/mcp" &&
+        endpoint.query_pairs().collect::<Vec<_>>()==vec![("read_only".into(),"true".into())];
     if !endpoint.username().is_empty()||endpoint.password().is_some()||
-       endpoint.query().is_some()||endpoint.fragment().is_some() {
+       (endpoint.query().is_some()&&!permitted_query)||endpoint.fragment().is_some() {
         return Err("MCP endpoint cannot contain credentials, query or fragment".into())
     }
     let host=endpoint.host_str().ok_or("MCP endpoint requires host")?;
@@ -57,11 +66,17 @@ pub fn save_server(db:&crate::storage::Storage,id:&str,url:&str)->Result<(),Stri
     if let Some(existing)=servers.iter_mut().find(|s|s.id==id){
         existing.url=url.to_owned();
     } else {
-        if servers.len()>=8{return Err("Maximum eight MCP servers".into())}
+        if servers.len()>=48{return Err("Maximum 48 configured MCP servers".into())}
         servers.push(ServerConfig{id:id.to_owned(),url:url.to_owned()});
     }
     db.set_setting(CONFIG_KEY,&serde_json::to_string(&servers).map_err(|e|e.to_string())?)
         .map_err(|e|e.to_string())
+}
+/// Register a catalog entry without connecting, authorizing OAuth, downloading
+/// local packages, or opening any third-party account.
+pub fn save_preset(db:&crate::storage::Storage,id:&str)->Result<(),String>{
+    let endpoint=crate::mcp_catalog::selected_url(id)?;
+    save_server(db,id,endpoint)
 }
 pub fn remove_server(db:&crate::storage::Storage,id:&str)->Result<(),String>{
     let mut servers=saved_servers(db)?;
