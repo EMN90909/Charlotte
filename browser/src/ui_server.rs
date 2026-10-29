@@ -299,7 +299,7 @@ fn finish_if_current(ui:&Ui,id:&str,error:Option<String>){
         inner.active_run_id.as_deref()==Some(id));
     if belongs{finish(ui,error)}
 }
-fn browser_answer(state:&Ui,goal:&str,answer:String,run_id:Option<&str>){
+fn browser_answer(state:&Ui,goal:&str,answer:String,run_id:Option<&str>,step:u8){
     if let Ok(mut inner)=state.inner.lock(){
         inner.pending_browser=None;
         inner.active_run_id=None;
@@ -313,7 +313,7 @@ fn browser_answer(state:&Ui,goal:&str,answer:String,run_id:Option<&str>){
         let _=db.add_message("ai","user",goal,time);
         let _=db.add_message("ai","assistant",&answer,time+1);
     }
-    if let Some(run_id)=run_id{checkpoint_status(run_id,"done","Task completed",0);}
+    if let Some(run_id)=run_id{checkpoint_status(run_id,"done","Task completed",step);}
     finish(state,None);
 }
 /// Fingerprint only: screenshots are never stored in persistent browser state.
@@ -361,13 +361,13 @@ fn plan_browser_next(
     }
     match proposed{
         BrowserDecision::Answer(text)=>{
-            browser_answer(state,&goal,text,Some(&run_id));
+            browser_answer(state,&goal,text,Some(&run_id),step);
         },
         BrowserDecision::Action(BrowserAction::Observe)=>{
             // Observation is performed before every planning step; letting
             // the model repeatedly request it would create an infinite loop.
             browser_answer(state,&goal,
-                "Charlotte has inspected this page but needs a more specific next action. You can refine your task.".into(),Some(&run_id));
+                "Charlotte has inspected this page but needs a more specific next action. You can refine your task.".into(),Some(&run_id),step);
         },
         BrowserDecision::Action(proposed)=>{
             let action=automation_semantics::resolve_index(proposed,&snapshot)?;
@@ -437,7 +437,7 @@ async fn browser_approve(
     if !approve {
         checkpoint_status(&pending.run_id,"stopped","User denied action",pending.step);
         browser_answer(&ui,&pending.goal,
-            "Charlotte stopped browser automation at your request. No further actions were executed.".into(),None);
+            "Charlotte stopped browser automation at your request. No further actions were executed.".into(),None,pending.step);
         return reply("/sidebar")
     }
     let state=ui.clone();
