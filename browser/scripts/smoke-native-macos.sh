@@ -38,6 +38,10 @@ curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q 'Visual automati
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q 'Accept open dialog'
 automation_code="$(curl --silent --output /dev/null --write-out '%{http_code}'   -X POST "http://127.0.0.1:$port/browser/approve" -d 'command=approve')"
 [[ "$automation_code" == 403 ]] || { echo "Unsafe browser automation approval endpoint: $automation_code" >&2; exit 1; }
+for protected_path in /browser/control /browser/resume; do
+  unsigned="$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST "http://127.0.0.1:$port$protected_path" -d 'command=pause')"
+  [[ "$unsigned" == 403 ]] || { echo "Unsafe automation checkpoint/control endpoint: $protected_path returned $unsigned" >&2; exit 1; }
+done
 for _ in $(seq 1 100); do
   if curl --silent --fail --max-time 2 "http://127.0.0.1:$port/health" | grep -Eq '"cef_main_frame_loads":[1-9][0-9]*'; then break; fi
   sleep 0.3
