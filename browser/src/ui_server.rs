@@ -552,6 +552,10 @@ async fn browser_resume(
         return (StatusCode::CONFLICT,"Resolve current pending action first").into_response()
     }
     if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is already working").into_response()}
+    if let Ok(mut inner)=ui.inner.lock(){
+        inner.active_run_id=Some(run.id.clone());
+        inner.cancel_automation.store(false,Ordering::SeqCst);
+    }
     let state=ui.clone();
     tokio::task::spawn_blocking(move||{
         let run_id=run.id.clone();
@@ -632,6 +636,10 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
             Ok(id)=>id,
             Err(e)=>{finish(&ui,Some(e));return reply("/sidebar")}
         };
+        if let Ok(mut inner)=ui.inner.lock(){
+            inner.active_run_id=Some(run_id.clone());
+            inner.cancel_automation.store(false,Ordering::SeqCst);
+        }
         let state=ui.clone();
         tokio::task::spawn_blocking(move||{
             if let Err(error)=plan_browser_next(&state,context,text,provider_name,0,"Started task",visual,run_id.clone()){
