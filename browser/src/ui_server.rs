@@ -58,6 +58,7 @@ struct UiInner {
     skill_source:Option<(i32,String)>,
     provider_status:Option<String>,
     route_status:Option<String>,
+    update_status:Option<String>,
     chat: Vec<(String,String)>,
     chat_base: String,
     chat_token: String,
@@ -82,6 +83,7 @@ struct ActionForm {
     catalog: Option<String>,
     custom_id: Option<String>,
     endpoint: Option<String>,
+    channel: Option<String>,
     api_key: Option<String>,
     model: Option<String>,
 }
@@ -161,15 +163,38 @@ fn sidebar(ui:&Ui)->Html<String>{
     let Ok(inner)=ui.inner.lock() else {return Html("Sidebar unavailable".into())};
     html.push_str(r#"<section><h2>Ask Charlotte</h2><div class="stack"><form action="/ai" method="post" style="display:flex;flex-direction:column;align-items:stretch">"#);
     html.push_str(&token);
-    html.push_str(r#"<label for="provider">Provider</label><select name="provider" id="provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Ollama</option></select><label for="mode">Charlotte mode</label><select id="mode" name="mode"><option value="auto">Auto — Charlotte chooses AI / Chromium / MCP</option><option value="chat">Chat + MCP tools (manual mode)</option><option value="browser">Automate this Chromium tab</option><option value="visual">Visual automation (shares a screenshot)</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask Charlotte a question or give Charlotte a task…"></textarea><button class="primary">Send</button></form>"#);
+    html.push_str(r#"<label for="provider">AI source</label><select name="provider" id="provider">"#);
+    for p in crate::ai_providers::PROVIDERS{
+        html.push_str(&format!(r#"<option value="{}">{}</option>"#,escape(p.id),escape(p.name)));
+    }
+    html.push_str(r#"</select><label for="mode">Charlotte mode</label><select id="mode" name="mode"><option value="auto">Auto — Charlotte chooses AI / Chromium / MCP</option><option value="chat">Chat + MCP tools (manual mode)</option><option value="browser">Automate this Chromium tab</option><option value="visual">Visual automation (shares a screenshot)</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask Charlotte a question or give Charlotte a task…"></textarea><button class="primary">Send</button></form>"#);
     html.push_str("<section><h2>AI provider connection</h2><p class=\"muted\">Use your own API key (or a local Ollama installation) and choose a compatible model. Keys stay in the operating-system credential store, never in Charlotte's browser pages or database.</p>");
-    html.push_str(&format!(r#"<form action="/ai/provider" method="post" style="display:flex;flex-wrap:wrap;gap:6px">{token}<select name="provider" aria-label="Configure AI provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Local Ollama</option></select><input type="password" name="api_key" maxlength="4096" autocomplete="new-password" placeholder="API key (optional when changing model)"><input name="model" maxlength="100" placeholder="Model ID (optional)"><button class="primary" name="command" value="save">Save configuration</button><button name="command" value="test">Test saved model</button><button name="command" value="remove">Remove provider key</button></form>"#));
+    html.push_str(&format!(r#"<form action="/ai/provider" method="post" style="display:flex;flex-wrap:wrap;gap:6px">{token}<select name="provider" aria-label="Configure AI provider">"#));
+    for p in crate::ai_providers::PROVIDERS{
+        html.push_str(&format!(r#"<option value="{}">{}</option>"#,escape(p.id),escape(p.name)));
+    }
+    html.push_str(r#"</select><input type="password" name="api_key" maxlength="4096" autocomplete="new-password" placeholder="BYOK API key (not for Cloud)"><input name="model" list="ai-model-hints" maxlength="120" placeholder="Model ID or auto"><button class="primary" name="command" value="save">Save configuration</button><button name="command" value="test">Test saved model</button><button name="command" value="remove">Remove provider key</button></form>"#);
+    html.push_str(r#"<datalist id="ai-model-hints">"#);
+    for p in crate::ai_providers::PROVIDERS{
+        for model in p.models{
+            let suggested=if p.id=="cloud"{"auto".to_owned()}else{model.to_string()};
+            html.push_str(&format!(r#"<option value="{}">{}</option>"#,
+                escape(&suggested),escape(p.name)));
+        }
+    }
+    html.push_str("</datalist>");
+    html.push_str(&format!(r#"<form action="/ai/cloud" method="post" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">{token}<input name="endpoint" maxlength="500" aria-label="Charlotte cloud gateway HTTPS URL" placeholder="https://ai.your-charlotte-domain.example"><button class="primary" name="command" value="save">Save Cloud gateway</button><button name="command" value="remove">Disconnect Cloud URL</button></form>"#));
+    html.push_str("<p class=\"muted\">BYOK sends requests directly using your own provider account and a key protected by the OS keychain. Charlotte Cloud uses your signed-in Charlotte account, the selected HTTPS gateway and the service's server-owned provider credentials. Cloud requests and optional visual screenshots leave your device; cloud usage may be metered.</p>");
     html.push_str("<small class=\"muted\">Saving doesn't verify billing, model availability or API access. Testing uses a small, user-requested model call that may incur provider charges. Ollama needs a separately running local server.</small></section>");
     if let Some(status)=&inner.provider_status{
         html.push_str(&format!("<p class=\"muted\">AI provider check: {}</p>",escape(status)));
     }
     if let Some(status)=&inner.route_status{
         html.push_str(&format!("<p class=\"muted\"><strong>Auto selected:</strong> {}</p>",escape(status)));
+    }
+    html.push_str(&format!(r#"<section><h2>Browser updates</h2><p class="muted">Charlotte checks signed releases from your configured Cloud service. Nothing installs or runs automatically. Only releases signed by the public key embedded in the official browser build can be downloaded.</p><form action="/updates" method="post">{token}<select name="channel" aria-label="Release channel"><option value="stable">Stable</option><option value="beta">Beta</option></select><button name="command" value="check">Check signed updates</button><button name="command" value="stage">Download and verify update (do not install)</button></form></section>"#));
+    if let Some(status)=&inner.update_status{
+        html.push_str(&format!("<p class=\"muted\">Update status: {}</p>",escape(status)));
     }
     // Listing a catalog never opens a vendor session, fetches tools, or
     // installs local executables. Connecting is a separate explicit action.
@@ -329,21 +354,23 @@ fn finish(ui:&Ui,error:Option<String>){
     crate::app::post_ui_command(Command::Sync);
 }
 fn valid_model(value:&str)->bool{
-    !value.is_empty()&&value.len()<=100&&value.bytes().all(|c|
+    !value.is_empty()&&value.len()<=120&&value.bytes().all(|c|
         c.is_ascii_alphanumeric()||matches!(c,b'.'|b'/'|b':'|b'-'|b'_'))
 }
 fn provider_model(name:&str)->Option<(Provider,String)>{
-    let (provider,default)=match name {
-        "openai"=>(Provider::OpenAi,"gpt-4o-mini"),
-        "claude"=>(Provider::Claude,"claude-sonnet-4-5"),
-        "gemini"=>(Provider::Gemini,"gemini-2.5-flash"),
-        "ollama"=>(Provider::Ollama,"llama3.2"),
+    let config=crate::ai_providers::get(name)?;
+    let provider=match config.kind{
+        "openai"=>Provider::OpenAi,"anthropic"=>Provider::Claude,
+        "gemini"=>Provider::Gemini,"ollama"=>Provider::Ollama,
+        "cloud"=>Provider::Cloud,"cohere"=>Provider::Cohere,
+        "compatible"=>Provider::Compatible(config.api_base),
         _=>return None,
     };
     let configured=crate::storage::Storage::open(
         &crate::profile::profile_root().join("charlotte.sqlite"))
         .ok().and_then(|db|db.setting(&format!("ai:model:{name}")).ok().flatten());
-    let model=configured.filter(|m|valid_model(m)).unwrap_or_else(||default.into());
+    let model=configured.filter(|m|valid_model(m))
+        .unwrap_or_else(||config.default_model.into());
     Some((provider,model))
 }
 fn checkpoint_status(id:&str,status:&str,summary:&str,step:u8){
@@ -892,6 +919,76 @@ async fn browser_dialog(
 }
 /// First-party provider setup: explicit user action and local OS keychain.
 /// Neither provider API keys nor models are exposed to Chromium websites.
+/// Only a service URL is saved in local SQLite; provider credentials
+/// remain in the cloud secret manager and Charlotte account session in OS keychain.
+/// User-triggered signed update checks and download-to-staging only.
+/// Never executes/installs a payload or trusts a key from the update server.
+async fn browser_updates(
+    State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
+)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let channel=match form.channel.as_deref().unwrap_or("stable"){
+        "stable"=>"stable","beta"=>"beta",
+        _=>return (StatusCode::BAD_REQUEST,"Unknown update channel").into_response(),
+    };
+    let stage=match form.command.as_deref(){
+        Some("check")=>false,Some("stage")=>true,
+        _=>return (StatusCode::BAD_REQUEST,"Unknown update command").into_response(),
+    };
+    if ui.inner.lock().is_ok_and(|i|i.pending_tool.is_some()||
+        i.pending_browser.is_some()||i.pending_auto.is_some()){
+        return (StatusCode::CONFLICT,"Resolve the pending task before checking updates").into_response()
+    }
+    if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is working").into_response()}
+    let state=ui.clone();
+    tokio::task::spawn_blocking(move||{
+        let result=crate::updates::check(channel).and_then(|available|{
+            match available{
+                Some(manifest) if stage=>{
+                    let path=crate::updates::stage(&manifest,channel)?;
+                    Ok(format!("Verified update staged at {}. Not installed.",
+                        path.display()))
+                },
+                Some(manifest)=>Ok(format!("Signed release {} is available.",
+                    manifest.version.unwrap_or_default())),
+                None=>Ok("No newer signed release available.".into()),
+            }
+        });
+        if let Ok(mut i)=state.inner.lock(){
+            i.update_status=Some(match result{
+                Ok(msg)=>msg,Err(error)=>format!("Update check unavailable: {error}"),
+            });
+        }
+        finish(&state,None);
+    });
+    reply("/sidebar")
+}
+async fn ai_cloud_config(
+    State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
+)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    if ui.inner.lock().is_ok_and(|i|i.working||i.pending_tool.is_some()||
+        i.pending_browser.is_some()||i.pending_auto.is_some()){
+        return (StatusCode::CONFLICT,"Finish the active task first").into_response()
+    }
+    let result=(||->Result<(),String>{
+        let db=crate::storage::Storage::open(
+            &crate::profile::profile_root().join("charlotte.sqlite"))
+            .map_err(|e|e.to_string())?;
+        match form.command.as_deref(){
+            Some("save")=>{
+                let url=form.endpoint.as_deref().unwrap_or("").trim();
+                let validated=crate::cloud::validate_cloud_url(url)
+                    .map_err(|e|e.to_string())?;
+                db.set_setting("ai:cloud_url",validated.as_str()).map_err(|e|e.to_string())
+            },
+            Some("remove")=>db.set_setting("ai:cloud_url","").map_err(|e|e.to_string()),
+            _=>Err("Unknown cloud connection action".into()),
+        }
+    })();
+    if let Ok(mut i)=ui.inner.lock(){i.error=result.err().unwrap_or_default();}
+    reply("/sidebar")
+}
 async fn ai_provider_config(
     State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
 )->Response{
@@ -932,12 +1029,18 @@ async fn ai_provider_config(
     let result=(||->Result<(),String>{
         match form.command.as_deref(){
             Some("remove")=>{
+                if name=="cloud"{
+                    return Err("Cloud uses account sign-in, not a BYOK key. Use Disconnect Cloud URL.".into())
+                }
                 crate::credentials::remove(&format!("ai:{name}"))
                     .map_err(|e|e.to_string())?;
                 Ok(())
             },
             Some("save")=>{
                 let key=form.api_key.as_deref().unwrap_or("").trim();
+                if name=="cloud"&&!key.is_empty(){
+                    return Err("Never enter a provider API key for Charlotte Cloud".into())
+                }
                 if !key.is_empty(){
                     if key.len()>4096||key.chars().any(char::is_control){
                         return Err("Invalid AI API key".into())
@@ -947,7 +1050,7 @@ async fn ai_provider_config(
                 }
                 let model=form.model.as_deref().unwrap_or("").trim();
                 if !model.is_empty(){
-                    if !valid_model(model){return Err("Model ID must be 1–100 safe ASCII characters".into())}
+                    if !valid_model(model){return Err("Model ID must be 1–120 safe ASCII characters".into())}
                     let db=crate::storage::Storage::open(
                         &crate::profile::profile_root().join("charlotte.sqlite"))
                         .map_err(|e|e.to_string())?;
@@ -1550,7 +1653,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
         port,token,tabs,filter,inner:Arc::new(Mutex::new(UiInner{
-            pending_browser:None,pending_auto:None,auto_handoff:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,provider_status:None,route_status:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
+            pending_browser:None,pending_auto:None,auto_handoff:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,provider_status:None,route_status:None,update_status:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
         }))
@@ -1568,6 +1671,8 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/action",post(action))
                 .route("/ai",post(ai))
                 .route("/ai/provider",post(ai_provider_config))
+                .route("/ai/cloud",post(ai_cloud_config))
+                .route("/updates",post(browser_updates))
                 .route("/ai/route-approve",post(auto_route_approve))
                 .route("/agent/approve",post(agent_approve))
                 .route("/browser/approve",post(browser_approve))
@@ -1835,6 +1940,23 @@ mod tests{
         ui.inner.lock().unwrap().pending_auto=Some(pending);
         ui.page_changed("https://example.org/other");
         assert!(ui.inner.lock().unwrap().pending_auto.is_none());
+    }
+    #[test]
+    fn cloud_and_updates_ui_requires_signed_user_interaction(){
+        let ui=start(Arc::new(Mutex::new(crate::tabs::Tabs::default())),
+            Arc::new(std::sync::RwLock::new(
+                crate::shield::Shield::new(&[crate::shield::STARTER_RULES],true)))).unwrap();
+        let html=sidebar(&ui).0;
+        assert!(html.contains(r#"action="/ai/cloud""#));
+        assert!(html.contains(r#"action="/updates""#));
+        assert!(html.contains("do not install"));
+    }
+    #[test]
+    fn provider_directory_exposes_cloud_but_never_cloud_secrets(){
+        let config=crate::ai_providers::get("cloud").unwrap();
+        assert_eq!(config.default_model,"auto");
+        assert!(provider_model("cloud").is_some());
+        assert!(crate::ai_providers::PROVIDERS.len()>=14);
     }
     #[test]
     fn auto_mode_and_provider_setup_are_explicit(){

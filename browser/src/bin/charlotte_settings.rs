@@ -19,7 +19,14 @@ Usage:
   charlotte-settings history clear
   charlotte-settings downloads list [count]
   charlotte-settings downloads clear
-  charlotte-settings credential set|remove|show openai|claude|gemini
+  charlotte-settings credential set|remove|show <BYOK-provider-id>
+  charlotte-settings ai providers
+  charlotte-settings ai cloud set <https-service-url>
+  charlotte-settings ai cloud remove
+  charlotte-settings ai cloud show
+  charlotte-settings ai cloud models
+  charlotte-settings updates check [stable|beta]
+  charlotte-settings updates stage [stable|beta]
   charlotte-settings account status|signout
   charlotte-settings account signin|signup <email>
   charlotte-settings mcp servers
@@ -53,6 +60,50 @@ fn run(args: &[String]) -> Result<(), String> {
     let db = Storage::open(&profile::profile_root().join("charlotte.sqlite")).map_err(|e|e.to_string())?;
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["profile"] => println!("{}", profile::profile_root().display()),
+        ["ai","providers"]=>{
+            for p in charlotte_native::ai_providers::PROVIDERS{
+                let configured=charlotte_native::credentials::retrieve(
+                    &format!("ai:{}",p.id)).is_ok();
+                println!("{}\t{}\t{}\t{}",p.id,p.name,p.default_model,
+                    if configured{"BYOK configured"}else{"key not stored"});
+            }
+        },
+        ["ai","cloud","set",endpoint]=>{
+            let validated=charlotte_native::cloud::validate_cloud_url(endpoint)
+                .map_err(|e|e.to_string())?;
+            db.set_setting("ai:cloud_url",validated.as_str()).map_err(|e|e.to_string())?;
+            println!("Charlotte cloud service URL saved. Sign in to your Charlotte account separately.");
+        },
+        ["ai","cloud","remove"]=>{
+            db.set_setting("ai:cloud_url","").map_err(|e|e.to_string())?;
+            println!("Charlotte cloud URL cleared.");
+        },
+        ["ai","cloud","models"]=>{
+            for model in charlotte_native::cloud::models().map_err(|e|e.to_string())?{
+                println!("{model}");
+            }
+        },
+        ["ai","cloud","show"]=>{
+            println!("{}",
+                db.setting("ai:cloud_url").map_err(|e|e.to_string())?
+                    .filter(|s|!s.is_empty()).unwrap_or_else(||"not configured".into()));
+        },
+        ["updates","check"]|["updates","check","stable"]|["updates","check","beta"]=>{
+            let channel=args.get(2).map(String::as_str).unwrap_or("stable");
+            match charlotte_native::updates::check(channel)?{
+                Some(m)=>println!("Signed update available: {}",m.version.unwrap_or_default()),
+                None=>println!("No newer signed update available."),
+            }
+        },
+        ["updates","stage"]|["updates","stage","stable"]|["updates","stage","beta"]=>{
+            let channel=args.get(2).map(String::as_str).unwrap_or("stable");
+            if let Some(m)=charlotte_native::updates::check(channel)?{
+                let path=charlotte_native::updates::stage(&m,channel)?;
+                println!("Cryptographically verified package STAGED at {}. Not installed or executed.",path.display());
+            }else{
+                println!("No signed update available for staging.");
+            }
+        },
         ["mcp","sqlite","file","set",filename]=>{
             let file=std::fs::canonicalize(filename).map_err(|e|e.to_string())?;
             if !file.is_file(){return Err("SQLite MCP selection is not a file".into())}
@@ -190,8 +241,9 @@ fn run(args: &[String]) -> Result<(), String> {
             println!("{:#?}",auth.sign_out()?);
         }
         ["credential", action, provider] => {
-            if !["openai", "claude", "gemini"].contains(provider) {
-                return Err("Supported provider: openai, claude, gemini".into());
+            if charlotte_native::ai_providers::get(provider).is_none()||
+                ["cloud","ollama"].contains(provider){
+                return Err("Choose a BYOK API provider from charlotte-settings ai providers".into());
             }
             let key = format!("ai:{provider}");
             match *action {

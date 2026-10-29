@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+node_modules
+coverage
+*.pem
+*.key
+updates/private
+.git

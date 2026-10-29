@@ -64,11 +64,12 @@ fn checked(response: Response) -> Result<Response, ServiceError> {
 pub struct Turn { pub role: String, pub text: String }
 
 #[derive(Clone, Copy, Debug)]
-pub enum Provider { OpenAi, Claude, Gemini, Ollama }
+pub enum Provider { OpenAi, Claude, Gemini, Ollama, Cloud, Cohere, Compatible(&'static str) }
 
 /// Sends a plain text turn. The UI must execute this on a worker thread.
 /// API keys must be obtained from the operating system credential store.
 pub fn send_agent(provider: Provider, base: Option<&str>, key: Option<&str>, model: &str, system: &str, history: &[Turn], text: &str) -> Result<String, ServiceError> {
+    if matches!(provider,Provider::Cloud){return crate::cloud::send(model,system,history,text,None)}
     let http = client()?;
     let messages: Vec<Value> = history.iter().map(|turn| json!({"role":turn.role,"content":turn.text})).chain(std::iter::once(json!({"role":"user","content":text}))).collect();
     let key = match provider { Provider::Ollama => key.unwrap_or(""), _ => key.filter(|k| !k.is_empty()).ok_or(ServiceError::MissingCredential)? };
@@ -77,7 +78,17 @@ pub fn send_agent(provider: Provider, base: Option<&str>, key: Option<&str>, mod
             let mut all = Vec::new();
             if !system.is_empty() { all.push(json!({"role":"system","content":system})); }
             all.extend(messages);
-            (http.post(endpoint(base.unwrap_or("https://api.openai.com"), "/v1/chat/completions")?).bearer_auth(key).json(&json!({"model":model,"messages":all,"stream":false})), "/choices/0/message/content")
+            if model.starts_with("gpt-6")||model.starts_with("gpt-5.6"){
+                let input:Vec<Value>=all.iter().filter(|m|m["role"]!="system").map(|m|
+                    json!({"role":m["role"],"content":m["content"]})).collect();
+                (http.post(endpoint(base.unwrap_or("https://api.openai.com"),"/v1/responses")?)
+                    .bearer_auth(key).json(&json!({"model":model,"instructions":system,
+                        "input":input,"max_output_tokens":1800})), "/output")
+            }else{
+                (http.post(endpoint(base.unwrap_or("https://api.openai.com"), "/v1/chat/completions")?)
+                    .bearer_auth(key).json(&json!({"model":model,"messages":all,"stream":false})),
+                    "/choices/0/message/content")
+            }
         },
         Provider::Claude => (http.post(endpoint(base.unwrap_or("https://api.anthropic.com"), "/v1/messages")?).header("x-api-key", key).header("anthropic-version", "2023-06-01").json(&json!({"model":model,"max_tokens":4096,"system":system,"messages":messages,"stream":false})), "/content/0/text"),
         Provider::Gemini => {
@@ -92,8 +103,30 @@ pub fn send_agent(provider: Provider, base: Option<&str>, key: Option<&str>, mod
             all.extend(messages);
             (http.post(endpoint(base.unwrap_or("http://localhost:11434"), "/api/chat")?).json(&json!({"model":model,"messages":all,"stream":false})), "/message/content")
         },
+        Provider::Compatible(service) => {
+            let mut all=Vec::new();
+            if !system.is_empty(){all.push(json!({"role":"system","content":system}));}
+            all.extend(messages);
+            (http.post(endpoint(service,"/chat/completions")?).bearer_auth(key)
+                .json(&json!({"model":model,"messages":all,"stream":false,
+                    "max_tokens":1600})), "/choices/0/message/content")
+        },
+        Provider::Cohere => {
+            (http.post(endpoint("https://api.cohere.com","/v2/chat")?)
+                .bearer_auth(key).json(&json!({"model":model,"messages":messages,
+                    "max_tokens":1600})), "/message/content/0/text")
+        },
+        Provider::Cloud => unreachable!("cloud is handled before direct requests"),
     };
     let body: Value = checked(request.send()?)?.json()?;
+    if pointer=="/output"{
+        let text=body["output"].as_array().into_iter().flatten()
+            .flat_map(|item|item["content"].as_array().into_iter().flatten())
+            .filter(|item|item["type"]=="output_text")
+            .filter_map(|item|item["text"].as_str())
+            .collect::<Vec<_>>().join("\n");
+        return if text.is_empty(){Err(ServiceError::InvalidResponse)}else{Ok(text)}
+    }
     body.pointer(pointer).and_then(Value::as_str).map(str::to_owned).ok_or(ServiceError::InvalidResponse)
 }
 
@@ -104,6 +137,7 @@ pub fn send_visual_agent(
     provider:Provider,key:Option<&str>,model:&str,system:&str,
     history:&[Turn],text:&str,jpeg:&str
 )->Result<String,ServiceError>{
+    if matches!(provider,Provider::Cloud){return crate::cloud::send(model,system,history,text,Some(jpeg))}
     if jpeg.len()>1_600_000||jpeg.is_empty() {
         return Err(ServiceError::InvalidResponse)
     }
@@ -160,6 +194,21 @@ pub fn send_visual_agent(
                 .json(&json!({"model":model,"messages":messages,"stream":false})),
                 "/message/content")
         },
+        Provider::Compatible(service)=>{
+            let messages=vec![
+                json!({"role":"system","content":system}),
+                json!({"role":"user","content":[
+                    {"type":"text","text":text},
+                    {"type":"image_url","image_url":{"url":format!("data:image/jpeg;base64,{jpeg}"),"detail":"low"}}
+                ]})
+            ];
+            (http.post(endpoint(service,"/chat/completions")?).bearer_auth(key)
+                .json(&json!({"model":model,"messages":messages,
+                    "max_tokens":1200,"stream":false})),
+                "/choices/0/message/content")
+        },
+        Provider::Cohere=>return Err(ServiceError::InvalidResponse),
+        Provider::Cloud=>unreachable!("cloud is routed before local vision adapters"),
     };
     let response:Value=checked(request.send()?)?.json()?;
     response.pointer(pointer).and_then(Value::as_str)

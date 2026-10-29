@@ -1,0 +1,11 @@
+[
+  {
+    "version": "0.4.1",
+    "channel": "stable",
+    "platform": "windows",
+    "arch": "x64",
+    "url": "https://downloads.your-charlotte-domain.example/Charlotte-0.4.1-windows-x64.exe",
+    "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "size": 1024
+  }
+]

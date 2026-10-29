@@ -31,6 +31,54 @@ read-only browser skills keep page content on device.
 For workflows, permission boundaries and non-claims see
 [AUTO_ORCHESTRATION.md](AUTO_ORCHESTRATION.md). This is source code being integrated into the main branch, **not a verified production build** or a hosted multi-tenant system.
 
+## BYOK and Charlotte Cloud AI
+
+Charlotte now supports two user-selected AI connection modes:
+
+- **BYOK:** Choose a hosted provider (OpenAI, Anthropic Claude, Google
+  Gemini, xAI, Mistral, DeepSeek, Groq, Cohere, OpenRouter, Together,
+  Fireworks, Cerebras or Perplexity), enter your own API key and model ID,
+  and keep the key in the OS credential store. Native Rust sends AI requests
+  directly to that provider; it never injects the key into a third-party website. The secret is entered
+through Charlotte's protected local settings form and saved to the OS keychain.
+- **Charlotte Cloud:** Sign in to your Charlotte account, enter your own
+  deployed `services/` gateway's HTTPS URL in the native sidebar, and select
+  **Charlotte Cloud** as the AI source. The Rust host sends a refreshed
+  user access token; the gateway validates the account and selects its own
+  configured, server-held API key. Server-side provider keys are **never**
+  shipped with Charlotte. Use model `auto` for cloud-managed selection or
+  an exact enabled model ID from `charlotte-settings ai cloud models`.
+
+Both modes work through the existing Charlotte Auto AI/Chromium/MCP router.
+Browser-page and screenshot sharing require the same distinct user consents
+as before. The user can test an explicitly selected AI connection from the
+sidebar; usage may incur provider charges.
+
+The new **Browser updates** sidebar panel checks release metadata published
+by the configured cloud service and verifies a compile-time pinned Ed25519
+public key. Users can explicitly download and SHA-256 verify a signed
+release into their profile's staging directory; no executable is installed
+or launched automatically. Official release builds must embed
+`CHARLOTTE_RELEASE_PUBKEY_HEX`. Builds without a trusted release key disable
+update checks.
+
+Desktop CLI examples:
+
+```sh
+charlotte-settings ai providers
+charlotte-settings credential set groq
+charlotte-settings ai cloud set https://your-cloud-gateway.example
+charlotte-settings ai cloud models
+charlotte-settings updates check stable
+charlotte-settings updates stage stable
+```
+
+See [the separate cloud deployment guide](../services/README.md) for
+the 13-provider server `.env.example`, 32 model suggestions, per-request
+randomized API key pools, Supabase authentication, Docker and signed release
+manifest distribution. These commits are proposed in a new PR, not a verified
+public deployment or a tested auto-updater.
+
 ## Charlotte MCP integration directory
 
 Charlotte now includes **43 opt-in MCP connection profiles** from the supplied
