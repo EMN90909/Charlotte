@@ -21,7 +21,7 @@ pub struct Ui {
 }
 #[derive(Clone)]
 struct PendingTool {
-    name:String, args:serde_json::Value,
+    name:String, server_id:String, args:serde_json::Value,
     question:String, provider:String,
 }
 struct UiInner {
@@ -203,29 +203,37 @@ fn finish(ui:&Ui,error:Option<String>){
     if let Ok(mut i)=ui.inner.lock(){i.working=false;i.error=error.unwrap_or_default()}
     crate::app::post_ui_command(Command::Sync);
 }
+fn provider_model(name:&str)->Option<(Provider,&'static str)>{
+    match name {
+        "openai"=>Some((Provider::OpenAi,"gpt-4o-mini")),
+        "claude"=>Some((Provider::Claude,"claude-sonnet-4-5")),
+        "gemini"=>Some((Provider::Gemini,"gemini-2.5-flash")),
+        "ollama"=>Some((Provider::Ollama,"llama3.2")),
+        _=>None,
+    }
+}
 async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response{
     if !check(&ui,&headers,&form.token){return forbidden()}
-    let Some(text)=form.value.map(|s|s.trim().to_string()).filter(|s|!s.is_empty() && s.len()<=4000)
+    let Some(text)=form.value.map(|s|s.trim().to_string()).filter(|s|!s.is_empty()&&s.len()<=4000)
         else{return (StatusCode::BAD_REQUEST,"Message required").into_response()};
-    let p=form.provider.unwrap_or_else(||"openai".into());
-    let provider=match p.as_str() {
-        "openai"=>Provider::OpenAi,"claude"=>Provider::Claude,
-        "gemini"=>Provider::Gemini,"ollama"=>Provider::Ollama,
-        _=>return (StatusCode::BAD_REQUEST,"Unknown AI provider").into_response(),
-    };
-    if busy(&ui){return (StatusCode::CONFLICT,"A request is already running").into_response()}
+    let provider_name=form.provider.unwrap_or_else(||"openai".into());
+    let Some((provider,model))=provider_model(&provider_name)
+        else{return (StatusCode::BAD_REQUEST,"Unknown provider").into_response()};
+    if ui.inner.lock().is_ok_and(|g|g.pending_tool.is_some()){
+        return (StatusCode::CONFLICT,"Approve or deny Charlotte's pending MCP tool first").into_response()
+    }
+    if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is already working").into_response()}
     let state=ui.clone();
     tokio::task::spawn_blocking(move||{
         let history=state.inner.lock().ok().map(|i|i.ai.clone()).unwrap_or_default();
-        let identity=format!("ai:{}",p);
-        let key=crate::credentials::retrieve(&identity).ok();
-        let model=match p.as_str(){
-            "openai"=>"gpt-4o-mini","claude"=>"claude-sonnet-4-5","gemini"=>"gemini-2.5-flash",
-            _=>"llama3.2",
-        };
-        let answer=services::send_agent(provider,None,key.as_deref(),model,"", &history,&text);
-        match answer{
-            Ok(reply)=>{
+        let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
+        let mut registry=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
+            .ok().and_then(|db|mcp::connect_saved(&db).ok())
+            .unwrap_or_else(mcp::Registry::new);
+        let tools=registry.tools();
+        let response=agent::plan(provider,key.as_deref(),model,&history,&text,&tools);
+        match response{
+            Ok(Plan::Answer(reply))=>{
                 if let Ok(mut inner)=state.inner.lock(){
                     inner.ai.push(Turn{role:"user".into(),text:text.clone()});
                     inner.ai.push(Turn{role:"assistant".into(),text:reply.clone()});
@@ -238,9 +246,95 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
                 }
                 finish(&state,None);
             },
-            Err(e)=>finish(&state,Some(e.to_string())),
+            Ok(Plan::Tool{name,args})=>{
+                if let Some(tool)=tools.iter().find(|t|t.name==name){
+                    if let Ok(mut inner)=state.inner.lock(){
+                        inner.pending_tool=Some(PendingTool{
+                            name,server_id:tool.server_id.clone(),args,
+                            question:text,provider:provider_name,
+                        });
+                    }
+                    finish(&state,None);
+                } else {finish(&state,Some("MCP tool was not advertised".into()));}
+            },
+            Err(error)=>finish(&state,Some(error)),
         }
     });
+    reply("/sidebar")
+}
+/// Tool execution is only reachable from the explicit signed local form.
+async fn agent_approve(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let approved=match form.command.as_str(){
+        "approve"=>true,"reject"=>false,
+        _=>return (StatusCode::BAD_REQUEST,"Invalid approval action").into_response(),
+    };
+    let pending={
+        let Ok(mut inner)=ui.inner.lock() else {return (StatusCode::CONFLICT,"Busy").into_response()};
+        if inner.working {return (StatusCode::CONFLICT,"Charlotte is busy").into_response()}
+        let Some(pending)=inner.pending_tool.take() else {
+            return (StatusCode::BAD_REQUEST,"No pending MCP tool").into_response()
+        };
+        if approved {inner.working=true;}
+        pending
+    };
+    if !approved {
+        if let Ok(mut inner)=ui.inner.lock(){
+            inner.ai.push(Turn{role:"assistant".into(),
+                text:format!("Charlotte: Tool {} was denied; no action executed.",pending.name)});
+        }
+        return reply("/sidebar")
+    }
+    let state=ui.clone();
+    tokio::task::spawn_blocking(move||{
+        let result=(||->Result<String,String>{
+            let db=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
+                .map_err(|e|e.to_string())?;
+            let mut registry=mcp::connect_saved(&db)?;
+            let verified=registry.tools().iter().any(|tool|
+                tool.name==pending.name && tool.server_id==pending.server_id);
+            if !verified{return Err("MCP server or tool changed after approval".into())}
+            let output=agent::execute_approved(&mut registry,&pending.name,pending.args)?;
+            let (provider,model)=provider_model(&pending.provider).ok_or("Invalid AI provider")?;
+            let key=crate::credentials::retrieve(&format!("ai:{}",pending.provider)).ok();
+            agent::explain_result(provider,key.as_deref(),model,
+                &pending.question,&pending.name,&output)
+        })();
+        match result{
+            Ok(reply)=>{
+                if let Ok(mut inner)=state.inner.lock(){
+                    inner.ai.push(Turn{role:"user".into(),text:pending.question.clone()});
+                    inner.ai.push(Turn{role:"assistant".into(),text:reply.clone()});
+                    if inner.ai.len()>100 {let extra=inner.ai.len()-100;inner.ai.drain(0..extra);}
+                }
+                if let Ok(db)=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
+                    let time=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
+                    let _=db.add_message("ai","user",&pending.question,time);
+                    let _=db.add_message("ai","assistant",&reply,time+1);
+                }
+                finish(&state,None);
+            },
+            Err(err)=>finish(&state,Some(err)),
+        }
+    });
+    reply("/sidebar")
+}
+async fn notification_permission(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let url=ui.tabs.lock().ok().and_then(|t|t.active().map(|tab|tab.url.clone()));
+    let Some(origin)=url.as_deref().and_then(permissions::canonical_origin) else {
+        return (StatusCode::BAD_REQUEST,"Active HTTPS website required").into_response()
+    };
+    let db=match crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
+        Ok(db)=>db,Err(_)=>return (StatusCode::INTERNAL_SERVER_ERROR,"Storage error").into_response(),
+    };
+    let result=match form.command.as_str(){
+        "allow"=>permissions::set(&db,&origin,Capability::Notifications,Decision::Allow),
+        "deny"=>permissions::set(&db,&origin,Capability::Notifications,Decision::Deny),
+        "reset"=>permissions::reset(&db,&origin,Capability::Notifications),
+        _=>return (StatusCode::BAD_REQUEST,"Unknown notification setting").into_response(),
+    };
+    if result.is_err(){return (StatusCode::BAD_REQUEST,"Cannot update site permissions").into_response()}
     reply("/sidebar")
 }
 async fn connect(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response{
@@ -357,6 +451,8 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/sidebar",get(|State(ui):State<Ui>|async move{sidebar(&ui)}))
                 .route("/action",post(action))
                 .route("/ai",post(ai))
+                .route("/agent/approve",post(agent_approve))
+                .route("/notifications",post(notification_permission))
                 .route("/connect",post(connect))
                 .route("/send",post(send))
                 .with_state(state);
