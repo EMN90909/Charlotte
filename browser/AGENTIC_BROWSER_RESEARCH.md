@@ -64,6 +64,48 @@ This document maps its proposed mechanisms into the existing Charlotte Rust + CE
 - OAuth-backed multi-app workflow routing and guaranteed connector inventory; the pasted Strawberry figures describe another product and are not Charlotte functionality.
 - OS dialog/file picker automation, MFA/CAPTCHA bypass, unattended financial submissions. These should **not** be automatically delegated to a model.
 
+## Implementation pass — native skills and task watchdogs (29 October 2026)
+
+The following concrete additions have been committed:
+
+1. **Deterministic built-in browser skills** in `src/browser_skills.rs`:
+   `summary`, `links`, `controls`, and `frames`. Each reads only the
+   current authorized CEF tab and uses its bounded page observation. No
+   model calls, downloads, arbitrary scripts, automatic writes, or
+   cross-origin DOM bypass. The selected skill is exposed in the signed
+   native sidebar at `/browser/skill`.
+2. **Ephemeral local results**: a skill result is displayed in a
+   distinct sidebar area, never put into LLM chat history or the persisted
+   conversation database. Its source tab and URL are remembered only
+   in memory so it can survive a UI refresh, and it disappears when the
+   user switches tab or navigates away.
+3. **Task authority bound to browser ID and origin**: the UI now pauses
+   active automation, cancels any pending approval and records a
+   `paused` checkpoint when the target Chromium tab changes or closes,
+   or when the main page leaves its originally authorized origin.
+4. **Renderer termination signals**: CEF
+   `RequestHandler::OnRenderProcessTerminated` now forwards a
+   browser-specific crash notification to the Rust UI controller,
+   invalidating automation. Never auto-reload or replay a side effect
+   after a crash.
+5. **Browser-specific CDP observer cleanup**: each DevTools request is
+   tracked by owning browser ID, so closing a background browser does
+   not arbitrarily release unrelated tabs' observers. Request
+   registrations remain bounded and timed out.
+6. **Interrupted-run cleanup**: the original run ID must match before
+   clearing authorization on a paused or failed worker. A newer
+   task is not accidentally cancelled by a previous worker's completion.
+7. **Accessibility and field classification**: the prior integration's
+   sanitized AX states and consequential classification of sensitive
+   inputs remain in place.
+
+These are code changes, **not a passing native build claim**. Actual
+CEF 156 Rust callback signatures, task lifecycle ordering, popup
+modal behavior, renderer-crash recovery and CI packaging still require
+compiler/native verification. The built-in skills deliberately avoid
+recording arbitrary third-party workflows or granting unattended write
+permissions; those remain outside this release.
+
 ## Ordered release gates
 
 1. Repair GitHub Actions provisioning (issue #7) and get actual `cargo test` + CEF builds.
