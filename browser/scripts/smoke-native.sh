@@ -48,6 +48,9 @@ curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Ask Charlotte"
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Automate this Chromium tab"
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Visual automation (shares a screenshot)"
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Accept open dialog"
+curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Browser skills"
+skill_code="$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST "http://127.0.0.1:$port/browser/skill" -d 'skill=summary')"
+[[ "$skill_code" == 403 ]] || { echo "Unsafe unsigned browser skill endpoint: $skill_code" >&2; exit 1; }
 automation_code="$(curl --silent --output /dev/null --write-out '%{http_code}'   -X POST "http://127.0.0.1:$port/browser/approve" -d 'command=approve')"
 [[ "$automation_code" == 403 ]] || { echo "Unsafe browser automation approval endpoint: $automation_code" >&2; exit 1; }
 for protected_path in /browser/control /browser/resume; do
