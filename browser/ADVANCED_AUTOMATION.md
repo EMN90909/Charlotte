@@ -116,6 +116,46 @@ is **not supported**.
 - Stale screenshot comparisons, mismatched origin and changed URLs halt
   actions instead of guessing at coordinates.
 
+## Local fixture for native browser verification
+
+Two fixture pages are included in `browser/tests/fixtures/`:
+
+- `advanced-automation.html` — ordinary controls, open shadow-root
+  component, same-origin srcdoc iframe, HTML5 drag/drop, confirm and prompt.
+- `cross-origin.html` — visually distinct button inside a separate-origin
+  iframe.
+
+To serve them locally, run in a terminal from `browser/tests/fixtures`:
+
+```sh
+python3 -m http.server 8877 --bind 127.0.0.1
+```
+
+Then in a second terminal from the same directory run:
+
+```sh
+python3 -m http.server 8878 --bind localhost
+```
+
+Navigate **Charlotte** to
+`http://127.0.0.1:8877/advanced-automation.html`. The second iframe
+will load from `http://localhost:8878/cross-origin.html` and be isolated
+from the parent origin. Chromium may or may not allocate a separate
+renderer process for it; verify actual OOPIF identity before claiming
+out-of-process frame tests passed.
+
+Suggested tasks:
+
+- "Click the Shadow button once and report its new count."
+- "Click the button in the same-origin iframe and report its status."
+- "In visual mode click the button shown inside the cross-origin frame,
+  with my approval." (No cross-origin DOM read is permitted.)
+- "Drag the draggable card into the Drop target and verify the result."
+- "Open the confirm dialog and let me explicitly accept or dismiss it."
+
+File names are static test assets. They do **not** ship as background
+browser automation services or require Node.js at runtime.
+
 ## Native verification before release
 
 The following remain acceptance tests rather than passing test claims:
