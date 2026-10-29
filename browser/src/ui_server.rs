@@ -1488,6 +1488,11 @@ impl Ui{
     }
     pub fn tab_selected(&self,browser_id:i32){
         if let Ok(mut inner)=self.inner.lock(){
+            if inner.pending_auto.as_ref().is_some_and(|request|
+                request.source.0!=browser_id){
+                inner.pending_auto=None;
+                inner.error="Charlotte cancelled page access consent when you switched tabs".into();
+            }
             if inner.skill_source.as_ref().is_some_and(|(id,_)|*id!=browser_id){
                 inner.skill_output=None;
                 inner.skill_source=None;
@@ -1510,6 +1515,11 @@ impl Ui{
     }
     pub fn tab_closed(&self,browser_id:i32){
         if let Ok(mut inner)=self.inner.lock(){
+            if inner.pending_auto.as_ref().is_some_and(|request|
+                request.source.0==browser_id){
+                inner.pending_auto=None;
+                inner.error="Charlotte cancelled page access consent when the tab closed".into();
+            }
             if inner.skill_source.as_ref().is_some_and(|(id,_)|*id==browser_id){
                 inner.skill_output=None;
                 inner.skill_source=None;
@@ -1523,6 +1533,13 @@ impl Ui{
         }
     }
     pub fn page_changed(&self,url:&str){
+        if let Ok(mut inner)=self.inner.lock(){
+            if inner.pending_auto.as_ref().is_some_and(|request|
+                request.source.1!=url){
+                inner.pending_auto=None;
+                inner.error="Charlotte cancelled page access consent when the URL changed".into();
+            }
+        }
         let changed=self.inner.lock().ok().is_some_and(|inner|
             inner.active_run_id.is_some() && inner.automation_origin.as_deref()!=
                 crate::permissions::canonical_origin(url).as_deref());
@@ -1647,6 +1664,22 @@ mod tests{
         assert!(page.contains("Approve once"));
         assert!(page.contains(r#"name="command" value="reject""#));
         assert!(!page.contains("<script>"));
+    }
+    #[test]
+    fn auto_consent_is_invalidated_on_navigation_or_tab_change(){
+        let ui=start(Arc::new(Mutex::new(crate::tabs::Tabs::default())),
+            Arc::new(std::sync::RwLock::new(
+                crate::shield::Shield::new(&[crate::shield::STARTER_RULES],true)))).unwrap();
+        let pending=PendingAuto{route:AutoRoute::PageAnswer,
+            question:"What is this?".into(),provider_name:"ollama".into(),
+            source:(41,"https://example.org/start".into())};
+        ui.inner.lock().unwrap().pending_auto=Some(pending.clone());
+        assert!(sidebar(&ui).0.contains("Allow this page for the task"));
+        ui.tab_selected(42);
+        assert!(ui.inner.lock().unwrap().pending_auto.is_none());
+        ui.inner.lock().unwrap().pending_auto=Some(pending);
+        ui.page_changed("https://example.org/other");
+        assert!(ui.inner.lock().unwrap().pending_auto.is_none());
     }
     #[test]
     fn auto_mode_and_provider_setup_are_explicit(){
