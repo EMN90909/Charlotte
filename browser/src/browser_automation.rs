@@ -66,6 +66,24 @@ impl Action {
 /// a text-only element as a form field. Its action must match the last real
 /// Chromium DOM observation. Called again immediately before approval.
 pub fn ensure_observed_target(action:&Action,snapshot:&Value)->Result<(),String>{
+    if let Action::Drag{from,to}=action {
+        ensure_observed_target(&Action::Click{selector:from.clone()},snapshot)?;
+        ensure_observed_target(&Action::Click{selector:to.clone()},snapshot)?;
+        let drag=snapshot["controls"].as_array().and_then(|controls|controls.iter().find(|c|
+            c["selector"].as_str()==Some(from.as_str())));
+        if drag.and_then(|c|c["draggable"].as_bool())!=Some(true){
+            return Err("Drag source is not reported draggable by Chromium".into())
+        }
+        return Ok(())
+    }
+    if let Action::ClickAt{x,y}=action {
+        let bounds=&snapshot["viewport"];
+        if (*x as u64)>=bounds["width"].as_u64().unwrap_or(0)||
+           (*y as u64)>=bounds["height"].as_u64().unwrap_or(0){
+            return Err("Visual click is outside current viewport".into())
+        }
+        return Ok(())
+    }
     let (selector,needs_editable)=match action {
         Action::Click{selector}=>(selector.as_str(),false),
         Action::Type{selector,..}=>(selector.as_str(),true),
