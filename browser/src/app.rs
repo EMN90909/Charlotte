@@ -112,6 +112,7 @@ impl Controller {
         match command{
             Command::Sync=>self.sync(),
             Command::Shields(enabled)=>{
+                let was_enabled=self.filter.read().map(|s|s.is_enabled()).unwrap_or(false);
                 if let Ok(db)=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
                     if let Err(error)=db.set_setting("shields",if enabled{"on"}else{"off"}){
                         eprintln!("Unable to save Shields setting: {error}");
@@ -119,6 +120,9 @@ impl Controller {
                     }
                 }else{return}
                 if let Ok(mut shield)=self.filter.write(){shield.set_enabled(enabled)}
+                if enabled && !was_enabled {
+                    crate::cef_bridge::schedule_filter_refresh(self.filter.clone());
+                }
                 self.refresh_chrome();
             },
             Command::New(url)=>self.add(url),
