@@ -33,4 +33,12 @@ done
 curl --silent --fail "http://127.0.0.1:$port/chrome" | grep -q 'Charlotte'
 curl --silent --fail "http://127.0.0.1:$port/chrome" | grep -q 'Toggle ad blocker'
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q 'Ask AI'
-echo 'Native macOS CEF launch and Rust toolbar/sidebar smoke passed.'
+for _ in $(seq 1 100); do
+  if curl --silent --fail --max-time 2 "http://127.0.0.1:$port/health" | grep -Eq '"cef_main_frame_loads":[1-9][0-9]*'; then break; fi
+  sleep 0.3
+done
+curl --silent --fail --max-time 2 "http://127.0.0.1:$port/health" | grep -Eq '"cef_main_frame_loads":[1-9][0-9]*' || {
+  echo "CEF never completed a main-frame load" >&2; cat "$LOG" >&2; exit 1;
+}
+
+echo 'Native macOS CEF page render and Rust toolbar/sidebar smoke passed.'
