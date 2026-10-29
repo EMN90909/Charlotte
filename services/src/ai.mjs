@@ -28,6 +28,8 @@ export function buildUpstreamRequest(model,secret,input){
   const messages=cleanMessages(input.history,system,input.text);
   const jpeg=jpegInput(input.image_jpeg_base64);
   const headers={"content-type":"application/json"};
+  const maxTokens=Number.isSafeInteger(input.max_tokens)?
+    Math.max(1,Math.min(input.max_tokens,2400)):1400;
   const setImageMessage=(entry)=>jpeg?{role:"user",content:[
     {type:"text",text:input.text},
     {type:"image_url",image_url:{url:`data:image/jpeg;base64,${jpeg}`,detail:"low"}}]}:entry;
@@ -38,31 +40,31 @@ export function buildUpstreamRequest(model,secret,input){
       m.role==="user"&&m===messages[messages.length-1]&&jpeg?
         [{type:"input_text",text:input.text},{type:"input_image",image_url:`data:image/jpeg;base64,${jpeg}`}]:
         [{type:m.role==="assistant"?"output_text":"input_text",text:m.content}]}));
-    body={model:model.model,instructions:system,input:items,max_output_tokens:Math.min(input.max_tokens||1400,2400)};
+    body={model:model.model,instructions:system,input:items,max_output_tokens:maxTokens};
   } else if(config.api==="anthropic"){
     headers["x-api-key"]=secret;headers["anthropic-version"]="2023-06-01";
     const turns=messages.filter(m=>m.role!=="system");
     if(jpeg)turns[turns.length-1]={role:"user",content:[
       {type:"text",text:input.text},{type:"image",source:{type:"base64",media_type:"image/jpeg",data:jpeg}}]};
-    body={model:model.model,system,max_tokens:Math.min(input.max_tokens||1400,2400),messages:turns};
+    body={model:model.model,system,max_tokens:maxTokens,messages:turns};
   } else if(config.api==="gemini"){
     headers["x-goog-api-key"]=secret;
     url=`${config.url}/${encodeURIComponent(model.model)}:generateContent`;
     body={systemInstruction:{parts:[{text:system}]},contents:messages.filter(m=>m.role!=="system").map((m,i,arr)=>({
       role:m.role==="assistant"?"model":"user",
       parts:i===arr.length-1&&jpeg?[{text:input.text},{inlineData:{mimeType:"image/jpeg",data:jpeg}}]:[{text:m.content}]
-    })),generationConfig:{maxOutputTokens:Math.min(input.max_tokens||1400,2400)}};
+    })),generationConfig:{maxOutputTokens:maxTokens}};
   } else if(config.api==="cohere"){
     if(jpeg)throw new GatewayError(422,"Vision not enabled for this model/API");
     headers.authorization=`Bearer ${secret}`;
-    body={model:model.model,messages,max_tokens:Math.min(input.max_tokens||1400,2400)};
+    body={model:model.model,messages,max_tokens:maxTokens};
   } else {
     if(jpeg&&!["xai","openrouter","together","fireworks"].includes(model.provider))
       throw new GatewayError(422,"Vision not enabled for this model/API");
     headers.authorization=`Bearer ${secret}`;
     const turns=[...messages];
     if(jpeg)turns[turns.length-1]=setImageMessage(turns[turns.length-1]);
-    body={model:model.model,messages:turns,stream:false,max_tokens:Math.min(input.max_tokens||1400,2400)};
+    body={model:model.model,messages:turns,stream:false,max_tokens:maxTokens};
   }
   return {url,headers,body};
 }
