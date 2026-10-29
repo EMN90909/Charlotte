@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Cross builds with Rust targets and toolchains; host must provide linker.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p dist
 targets=(linux/amd64)
-if [[ -n "$TARGETS" ]]; then read -r -a targets <<< "$TARGETS"; fi
-for spec in "$(printf '%s\n' "$@")"; do :; done
+if [[ -n "${TARGETS:-}" ]]; then read -r -a targets <<< "$TARGETS"; fi
 for spec in "${targets[@]}"; do
   case "$spec" in
     linux/amd64) target=x86_64-unknown-linux-gnu ;;
@@ -18,8 +16,8 @@ for spec in "${targets[@]}"; do
   esac
   rustup target add "$target"
   cargo build --release --target "$target" --bins
-  os="$(echo "$spec" | cut -d/ -f1)"
-  arch="$(echo "$spec" | cut -d/ -f2)"
+  os="${spec%/*}"
+  arch="${spec#*/}"
   suffix=""
   if [[ "$os" == windows ]]; then suffix=".exe"; fi
   for tool in server ops; do
