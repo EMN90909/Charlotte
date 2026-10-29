@@ -10,6 +10,37 @@ pub struct Tool {
     pub server_id:String,pub name:String,pub original_name:String,
     pub description:String,pub input_schema:Value,
 }
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum ToolRisk{ReadOnly,Modifying,Financial}
+impl ToolRisk{
+    pub fn label(self)->&'static str{
+        match self{
+            Self::ReadOnly=>"Read only — review data disclosure",
+            Self::Modifying=>"May change external account data",
+            Self::Financial=>"Financial or payment-related — review carefully",
+        }
+    }
+}
+/// MCP tool descriptions and annotations are untrusted; infer conservative
+/// risk from the verified tool name and server identity, never downgrade an
+/// unknown method to read-only merely on a server's self-declaration.
+pub fn tool_risk(tool:&Tool)->ToolRisk{
+    if matches!(tool.server_id.as_str(),"stripe"|"paypal"){
+        return ToolRisk::Financial
+    }
+    let name=tool.original_name.to_ascii_lowercase();
+    if ["pay","charge","refund","payout","transfer","checkout","purchase",
+        "invoice_send"].iter().any(|word|name.contains(word)){
+        return ToolRisk::Financial
+    }
+    let read=["get_","list_","search_","read_","fetch_","inspect_",
+        "query_","describe_","find_","lookup_","retrieve_"];
+    if read.iter().any(|prefix|name.starts_with(prefix)) ||
+        matches!(name.as_str(),"schema"|"select"){
+        return ToolRisk::ReadOnly
+    }
+    ToolRisk::Modifying
+}
 pub struct Connection {
     endpoint:Url,
     client:Client,
@@ -325,6 +356,16 @@ impl Connection {
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]fn mcp_risk_defaults_to_mutating_on_unknown_names(){
+        let mut tool=Tool{server_id:"github".into(),name:"mcp__s1__custom".into(),
+            original_name:"custom".into(),description:String::new(),
+            input_schema:json!({"type":"object"})};
+        assert_eq!(tool_risk(&tool),ToolRisk::Modifying);
+        tool.original_name="list_repos".into();
+        assert_eq!(tool_risk(&tool),ToolRisk::ReadOnly);
+        tool.server_id="paypal".into();
+        assert_eq!(tool_risk(&tool),ToolRisk::Financial);
+    }
     #[test]fn namespaced_tools(){assert_eq!(parse_name("mcp__s616263__search_files"),Some(("s616263","search_files")));assert!(parse_name("mcp__bad__hi").is_none());}
     #[test]fn registry_starts_empty(){assert!(Registry::new().tools().is_empty());}
     #[test]fn mcp_config_validates_remote_endpoints(){
