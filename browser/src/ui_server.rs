@@ -16,6 +16,7 @@ pub enum Command {
         reply:std::sync::mpsc::Sender<Result<serde_json::Value,String>>,
     },
     AutomationFinished(i32),
+    BrowserClosed(i32),
 }
 #[derive(Clone)]
 pub struct Ui {
