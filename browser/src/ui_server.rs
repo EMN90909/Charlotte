@@ -5,7 +5,7 @@
 use std::{net::TcpListener, sync::{Arc,Mutex,atomic::{AtomicBool,Ordering}}, thread};
 use axum::{extract::{State,Form},http::{HeaderMap,StatusCode,header},response::{Html,IntoResponse,Redirect,Response},routing::{get,post},Json,Router};
 use serde::Deserialize;
-use crate::{agent::{self,Plan},browser_agent::{self,Decision as BrowserDecision},browser_automation::{self,Action as BrowserAction,Context as BrowserContext},cef_bridge::{Filter,TabState}, mcp, permissions::{self,Capability,Decision}, services::{self, ChatIdentity, Provider, Turn}};
+use crate::{agent::{self,Plan},browser_agent::{self,Decision as BrowserDecision},browser_automation::{self,Action as BrowserAction,Context as BrowserContext},automation_semantics,cef_bridge::{Filter,TabState}, mcp, permissions::{self,Capability,Decision}, services::{self, ChatIdentity, Provider, Turn}};
 #[derive(Clone, Debug)]
 pub enum Command {
     Sync, New(String), Select(i32), Close(i32), Navigate(String),
@@ -34,7 +34,7 @@ struct PendingTool {
 struct PendingBrowser {
     context:BrowserContext, action:BrowserAction, goal:String,
     provider:String, step:u8, observed_url:String, target_label:String, visual:bool,
-    screenshot_fingerprint:Option<u64>,
+    screenshot_fingerprint:Option<u64>, risk_label:String,
 }
 struct UiInner {
     pending_browser:Option<PendingBrowser>,
@@ -277,6 +277,10 @@ fn plan_browser_next(
     let (provider,default_model)=provider_model(&provider_name).ok_or("Unknown AI provider")?;
     let model=if visual&&provider_name=="ollama"{"llava"}else{default_model};
     let mut snapshot=context.observe_settled()?;
+    automation_semantics::index_snapshot(&mut snapshot)?;
+    if let Ok(ax)=context.accessibility_summary(){
+        snapshot["accessibility"]=ax;
+    }
     let screenshot=if visual {Some(context.screenshot()?)}else{None};
     if let Some((_,(width,height)))=&screenshot {
         snapshot["imagePixels"]=serde_json::json!({"width":width,"height":height});
@@ -299,11 +303,13 @@ fn plan_browser_next(
             browser_answer(state,&goal,
                 "Charlotte has inspected this page but needs a more specific next action. You can refine your task.".into());
         },
-        BrowserDecision::Action(action)=>{
+        BrowserDecision::Action(proposed)=>{
+            let action=automation_semantics::resolve_index(proposed,&snapshot)?;
             if matches!(action,BrowserAction::ClickAt{..})&&!visual {
                 return Err("Screenshot-coordinate click requires explicit visual mode".into())
             }
             browser_automation::ensure_observed_target(&action,&snapshot)?;
+            let risk_label=automation_semantics::classify(&action,&snapshot).label().to_owned();
             if let BrowserAction::Navigate{url}=&action {
                 browser_automation::require_same_origin(&context.origin,url)?;
             }
@@ -325,7 +331,7 @@ fn plan_browser_next(
                 }else{None};
                 inner.pending_browser=Some(PendingBrowser{
                     context,action,goal,provider:provider_name,step,observed_url,target_label,
-                    visual,screenshot_fingerprint,
+                    visual,screenshot_fingerprint,risk_label,
                 });
             }else{return Err("Automation state lock failed".into())}
             finish(state,None);
@@ -830,7 +836,8 @@ mod tests{
                     selector:"html > body > button".into()},
                 goal:"Open settings".into(),provider:"ollama".into(),
                 step:0,observed_url:"https://example.org/page".into(),
-                target_label:"Settings".into(),visual:false,screenshot_fingerprint:None
+                target_label:"Settings".into(),visual:false,screenshot_fingerprint:None,
+                risk_label:"Website interaction".into()
             });
         }
         let html=sidebar(&ui).0;
