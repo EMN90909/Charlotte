@@ -443,11 +443,32 @@ async fn browser_approve(
             // alert/confirm/prompt is open. CEF still checks tab+origin before
             // invoking Page.handleJavaScriptDialog.
             if !matches!(pending.action,BrowserAction::Dialog{..}){
-                let current=pending.context.observe_settled()?;
+                let mut current=pending.context.observe_settled()?;
+                automation_semantics::index_snapshot(&mut current)?;
                 if current.get("url").and_then(serde_json::Value::as_str)!=Some(pending.observed_url.as_str()){
                     return Err("Page changed since Charlotte proposed this action. Nothing was clicked or typed; start a new task.".into())
                 }
-                browser_automation::ensure_observed_target(&pending.action,&current)?;
+                if let Err(error)=browser_automation::ensure_observed_target(&pending.action,&current){
+                    // If the DOM re-ordered, semantic role/name can suggest
+                    // a replacement. NEVER use an old approval on the new
+                    // target: show it to the user and require another click.
+                    if let Some(updated)=automation_semantics::replan_stale_target(
+                        &pending.action,&current,&pending.target_role,&pending.target_label)?{
+                        let mut renewed=pending.clone();
+                        renewed.action=updated;
+                        renewed.risk_label=automation_semantics::classify(&renewed.action,&current)
+                            .label().to_owned();
+                        renewed.target_label=format!("{} (layout changed — reapprove)",pending.target_label);
+                        if let Ok(mut inner)=state.inner.lock(){
+                            inner.pending_browser=Some(renewed);
+                        }else{return Err("Unable to propose updated control".into())}
+                        checkpoint_status(&pending.run_id,"awaiting_approval",
+                            "Page layout changed; new target needs fresh approval",pending.step);
+                        finish(&state,None);
+                        return Ok(())
+                    }
+                    return Err(error)
+                }
             let now=automation_semantics::classify(&pending.action,&current);
             if now==automation_semantics::Risk::Consequential &&
                pending.risk_label!=now.label(){
