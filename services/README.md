@@ -12,8 +12,10 @@ native sidebar (OpenAI, Anthropic, Gemini, xAI, Mistral, DeepSeek, Groq,
 Cohere, OpenRouter, Together, Fireworks, Cerebras or Perplexity). A user's
 secret is stored using the desktop OS credential store via Rust `keyring`.
 The user selects a provider-specific model ID, optionally using the curated
-model hints; requests originate directly from native Rust. Keys **never**
-enter the CEF webpage DOM, SQLite profile or cloud gateway.
+model hints; requests originate directly from native Rust. Keys are entered transiently in Charlotte's own protected loopback settings
+form, then transferred to the OS keychain. They are not injected into any
+**third-party website**, stored in SQLite, or sent to the Charlotte cloud
+gateway.
 
 **Charlotte Cloud:** The user signs into their Charlotte account with
 the existing Supabase identity flow, saves their service's HTTPS URL and
