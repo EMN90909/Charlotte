@@ -85,6 +85,8 @@ Build status must be determined from actual target-OS compilation and the CEF
 runtime smoke tests. The current source tree alone is not proof that all
 platform builds or browser navigation work.
 
+See [PERFORMANCE.md](PERFORMANCE.md) for the Rust/CEF threading contract, release build flags, lazy tab loading, security constraints and reproducible Linux native memory/startup measurements (`make measure`).
+
 ## Licensing
 
 The original work's MIT license (copyright 2026 Samuel Abolo) is preserved
