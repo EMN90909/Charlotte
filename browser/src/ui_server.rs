@@ -39,6 +39,8 @@ struct PendingBrowser {
 struct UiInner {
     pending_browser:Option<PendingBrowser>,
     active_run_id:Option<String>,
+    automation_browser_id:Option<i32>,
+    automation_origin:Option<String>,
     cancel_automation:Arc<AtomicBool>,
     pending_tool:Option<PendingTool>,
     ai: Vec<Turn>,
@@ -307,6 +309,8 @@ fn browser_answer(state:&Ui,goal:&str,answer:String,run_id:Option<&str>,step:u8)
     if let Ok(mut inner)=state.inner.lock(){
         inner.pending_browser=None;
         inner.active_run_id=None;
+        inner.automation_browser_id=None;
+        inner.automation_origin=None;
         inner.ai.push(Turn{role:"user".into(),text:goal.into()});
         inner.ai.push(Turn{role:"assistant".into(),text:answer.clone()});
         if inner.ai.len()>100 {let excess=inner.ai.len()-100;inner.ai.drain(0..excess);}
@@ -553,7 +557,11 @@ async fn browser_control(
         let working=inner.working;
         inner.cancel_automation.store(true,Ordering::SeqCst);
         inner.pending_browser=None;
-        if !working{inner.active_run_id=None}
+        if !working{
+            inner.active_run_id=None;
+            inner.automation_browser_id=None;
+            inner.automation_origin=None;
+        }
         (id,step,working)
     };
     if let Some(id)=run_id{
@@ -602,6 +610,8 @@ async fn browser_resume(
     if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is already working").into_response()}
     if let Ok(mut inner)=ui.inner.lock(){
         inner.active_run_id=Some(run.id.clone());
+        inner.automation_browser_id=Some(browser_id);
+        inner.automation_origin=Some(context.origin.clone());
         inner.cancel_automation.store(false,Ordering::SeqCst);
     }
     let state=ui.clone();
@@ -727,6 +737,8 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
         };
         if let Ok(mut inner)=ui.inner.lock(){
             inner.active_run_id=Some(run_id.clone());
+            inner.automation_browser_id=Some(id);
+            inner.automation_origin=Some(context.origin.clone());
             inner.cancel_automation.store(false,Ordering::SeqCst);
         }
         let state=ui.clone();
@@ -960,7 +972,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
         port,token,tabs,filter,inner:Arc::new(Mutex::new(UiInner{
-            pending_browser:None,active_run_id:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
+            pending_browser:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
         }))
@@ -1002,7 +1014,50 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
     Ok(ui)
 }
 impl Ui{
+    /// Called by the CEF UI thread on tab selection/closure/navigation.
+    /// A changed tab or origin invalidates pending approval. Never replay it.
+    fn interrupt_task(&self,reason:&str){
+        let pending={
+            let Ok(mut inner)=self.inner.lock() else{return};
+            let Some(id)=inner.active_run_id.clone() else{return};
+            let step=inner.pending_browser.as_ref().map(|pending|pending.step).unwrap_or(0);
+            inner.cancel_automation.store(true,Ordering::SeqCst);
+            inner.pending_browser=None;
+            inner.error=reason.to_owned();
+            if !inner.working{
+                inner.active_run_id=None;
+                inner.automation_browser_id=None;
+                inner.automation_origin=None;
+            }
+            Some((id,step))
+        };
+        if let Some((run_id,step))=pending {
+            checkpoint_status(&run_id,"paused",reason,step);
+        }
+    }
+    pub fn tab_selected(&self,browser_id:i32){
+        let wrong=self.inner.lock().ok().is_some_and(|inner|
+            inner.active_run_id.is_some() &&
+            inner.automation_browser_id!=Some(browser_id));
+        if wrong{
+            self.interrupt_task("Charlotte paused: a different Chromium tab was selected");
+        }
+    }
+    pub fn tab_closed(&self,browser_id:i32){
+        let closed=self.inner.lock().ok().is_some_and(|inner|
+            inner.active_run_id.is_some() &&
+            inner.automation_browser_id==Some(browser_id));
+        if closed{
+            self.interrupt_task("Charlotte paused: its Chromium tab closed");
+        }
+    }
     pub fn page_changed(&self,url:&str){
+        let changed=self.inner.lock().ok().is_some_and(|inner|
+            inner.active_run_id.is_some() && inner.automation_origin.as_deref()!=
+                crate::permissions::canonical_origin(url).as_deref());
+        if changed{
+            self.interrupt_task("Charlotte paused: page left the authorized website");
+        }
         if let Ok(mut inner)=self.inner.lock() {
             if !inner.chat_token.is_empty() && inner.room_url != url {
                 inner.stop.store(true, Ordering::Relaxed);
@@ -1065,6 +1120,22 @@ mod tests{
         let inner=ui.inner.lock().unwrap();
         assert!(inner.chat_token.is_empty());
         assert_eq!(inner.chat_cursor,0);
+    }
+    #[test]
+    fn tab_change_invalidates_pending_browser_authority(){
+        let ui=start(Arc::new(Mutex::new(crate::tabs::Tabs::default())),
+            Arc::new(std::sync::RwLock::new(
+                crate::shield::Shield::new(&[crate::shield::STARTER_RULES],true)))).unwrap();
+        {
+            let mut inner=ui.inner.lock().unwrap();
+            inner.active_run_id=Some("run-tab-test".into());
+            inner.automation_browser_id=Some(41);
+            inner.automation_origin=Some("https://site.example".into());
+        }
+        ui.tab_selected(42);
+        let inner=ui.inner.lock().unwrap();
+        assert!(inner.cancel_automation.load(Ordering::SeqCst));
+        assert!(inner.active_run_id.is_none());
     }
     #[test]
     fn charlotte_sidebar_requires_user_approval_for_mcp() {
