@@ -1044,6 +1044,23 @@ fn execute_auto_route(
                 finish_if_current(state,&run_id,Some(error));
             }
         },
+        AutoRoute::BrowserThenMcp{server_id}=>{
+            let context=context.ok_or("No valid active Chromium page")?;
+            let id=context.browser_id;
+            let run_id=create_checkpoint(&question,&provider_name,&context,false)?;
+            if let Ok(mut inner)=state.inner.lock(){
+                inner.active_run_id=Some(run_id.clone());
+                inner.automation_browser_id=Some(id);
+                inner.automation_origin=Some(context.origin.clone());
+                inner.cancel_automation.store(false,Ordering::SeqCst);
+                inner.auto_handoff=Some((run_id.clone(),server_id));
+            }else{return Err("Cannot acquire browser task state".into())}
+            if let Err(error)=plan_browser_next(state,context,question,
+                provider_name,0,"Prepare the webpage for a later MCP handoff; do not send external app data yet",false,run_id.clone()){
+                checkpoint_status(&run_id,"interrupted",&error,0);
+                finish_if_current(state,&run_id,Some(error));
+            }
+        },
         AutoRoute::McpTask{server_id}=>{
             plan_mcp_goal(state,question,provider_name,Some(server_id),None,None)?;
         },
