@@ -17,7 +17,7 @@ chmod 700 "$PROFILE"
 export CHARLOTTE_UI_PORT_FILE="$PORT_FILE"
 export CHARLOTTE_PROFILE_DIR="$PROFILE"
 # Use a local new-tab page to avoid remote network variability during cold start.
-export CHARLOTTE_START_URL="about:blank"
+unset CHARLOTTE_START_URL
 started="$(date +%s%3N)"
 xvfb-run -a "$APP" >"$LOG_FILE" 2>&1 &
 pid=$!
@@ -33,10 +33,12 @@ cleanup(){
 }
 trap cleanup EXIT
 port=""
+ready_flag=0
 for _ in $(seq 1 100); do
   if [[ -s "$PORT_FILE" ]]; then
     port="$(cat "$PORT_FILE")"
     if [[ "$port" =~ ^[0-9]+$ ]] && curl --fail --silent --max-time 1 "http://127.0.0.1:$port/chrome" > /dev/null; then
+      ready_flag=1
       break
     fi
   fi
@@ -46,7 +48,7 @@ for _ in $(seq 1 100); do
   fi
   sleep 0.1
 done
-[[ "$port" =~ ^[0-9]+$ ]] || { cat "$LOG_FILE" >&2; exit 1; }
+[[ "$ready_flag" == 1 ]] || { cat "$LOG_FILE" >&2; echo "CEF chrome UI never became ready" >&2; exit 1; }
 ready="$(date +%s%3N)"
 # Traverse descendants of xvfb-run (including Chromium renderer and GPU helpers).
 # Xvfb itself is counted as part of the test harness, so the figure is an upper
