@@ -724,6 +724,29 @@ mod tests{
         assert!(page.contains(r#"name="command" value="reject""#));
         assert!(!page.contains("<script>"));
     }
+    #[test]
+    fn browser_automation_requires_explicit_action_approval(){
+        let tabs=Arc::new(Mutex::new(crate::tabs::Tabs::default()));
+        let shield=Arc::new(std::sync::RwLock::new(
+            crate::shield::Shield::new(&[crate::shield::STARTER_RULES],true)));
+        let ui=start(tabs,shield).unwrap();
+        let context=BrowserContext::new(41,"https://example.org/page").unwrap();
+        {
+            let mut inner=ui.inner.lock().unwrap();
+            inner.pending_browser=Some(PendingBrowser{
+                context,action:BrowserAction::Click{
+                    selector:"html > body > button".into()},
+                goal:"Open settings".into(),provider:"ollama".into(),
+                step:0,observed_url:"https://example.org/page".into(),
+                target_label:"Settings".into()
+            });
+        }
+        let html=sidebar(&ui).0;
+        assert!(html.contains("Automate this Chromium tab"));
+        assert!(html.contains("Approve this browser step"));
+        assert!(html.contains("Stop automation"));
+        assert!(html.contains("Settings"));
+    }
     #[test]fn address_search_sanitizes_scheme(){
         assert!(resolve_address("file:///etc/passwd").is_none());
         assert!(resolve_address("javascript:alert(1)").is_none());
