@@ -34,7 +34,7 @@ struct PendingTool {
 struct PendingBrowser {
     context:BrowserContext, action:BrowserAction, goal:String,
     provider:String, step:u8, observed_url:String, target_label:String, visual:bool,
-    screenshot_fingerprint:Option<u64>, risk_label:String, run_id:String,
+    screenshot_fingerprint:Option<u64>, risk_label:String, run_id:String, target_role:String,
 }
 struct UiInner {
     pending_browser:Option<PendingBrowser>,
@@ -382,6 +382,14 @@ fn plan_browser_next(
                 },
                 _=>String::new(),
             };
+            let target_role=match &action{
+                BrowserAction::Click{selector}|BrowserAction::Type{selector,..}=>{
+                    snapshot["controls"].as_array().and_then(|xs|xs.iter().find(|c|
+                        c["selector"].as_str()==Some(selector.as_str())))
+                        .and_then(|c|c["role"].as_str()).unwrap_or("").to_owned()
+                },
+                _=>String::new(),
+            };
             let observed_url=snapshot.get("url").and_then(serde_json::Value::as_str)
                 .ok_or("Chromium observation has no page URL")?.to_owned();
             checkpoint_status(&run_id,"awaiting_approval",
@@ -392,7 +400,7 @@ fn plan_browser_next(
                 }else{None};
                 inner.pending_browser=Some(PendingBrowser{
                     context,action,goal,provider:provider_name,step,observed_url,target_label,
-                    visual,screenshot_fingerprint,risk_label,run_id:run_id.clone(),
+                    visual,screenshot_fingerprint,risk_label,run_id:run_id.clone(),target_role,
                 });
             }else{return Err("Automation state lock failed".into())}
             finish(state,None);
@@ -1011,7 +1019,7 @@ mod tests{
                 goal:"Open settings".into(),provider:"ollama".into(),
                 step:0,observed_url:"https://example.org/page".into(),
                 target_label:"Settings".into(),visual:false,screenshot_fingerprint:None,
-                risk_label:"Website interaction".into(),run_id:"test".into()
+                risk_label:"Website interaction".into(),run_id:"test".into(),target_role:"button".into()
             });
         }
         let html=sidebar(&ui).0;
