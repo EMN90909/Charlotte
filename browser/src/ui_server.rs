@@ -135,6 +135,7 @@ fn sidebar(ui:&Ui)->Html<String>{
         html.push_str("<div class=\"bubble\"><strong>Charlotte requests approval to use an MCP tool</strong>");
         html.push_str(&format!("<p>Tool: <code>{}</code></p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
             escape(&pending.name),escape(&pending.args.to_string())));
+        html.push_str("<small class=\"muted\">Tool output may be sent to your selected AI provider to explain the result.</small>");
         html.push_str(&format!(r#"<form action="/agent/approve" method="post">{token}<button class="primary" name="command" value="approve">Approve once</button><button name="command" value="reject">Deny</button></form>"#));
         html.push_str("</div>");
     }
@@ -305,8 +306,18 @@ async fn agent_approve(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<Act
             let output=agent::execute_approved(&mut registry,&pending.name,pending.args)?;
             let (provider,model)=provider_model(&pending.provider).ok_or("Invalid AI provider")?;
             let key=crate::credentials::retrieve(&format!("ai:{}",pending.provider)).ok();
-            agent::explain_result(provider,key.as_deref(),model,
-                &pending.question,&pending.name,&output)
+            // An MCP action may have succeeded even if the model is offline.
+            // Never report a completed external mutation as a failed tool.
+            match agent::explain_result(provider,key.as_deref(),model,
+                &pending.question,&pending.name,&output) {
+                Ok(summary)=>Ok(summary),
+                Err(error)=>{
+                    let excerpt=output.to_string();
+                    let excerpt:String=excerpt.chars().take(2000).collect();
+                    Ok(format!("Charlotte executed approved MCP tool {}. AI summary unavailable: {}. Tool response: {}",
+                        pending.name,error,excerpt))
+                },
+            }
         })();
         match result{
             Ok(reply)=>{
