@@ -16,6 +16,7 @@ Usage:
   charlotte-settings history clear
   charlotte-settings downloads list [count]
   charlotte-settings downloads clear
+  charlotte-settings credential set|remove|show openai|claude|gemini
   charlotte-settings profile
 The browser must be restarted for changes to ad blocking; media permissions
 are checked on every CEF media request. Only HTTPS origins or loopback HTTP
@@ -30,6 +31,27 @@ fn run(args: &[String]) -> Result<(), String> {
     let db = Storage::open(&profile::profile_root().join("charlotte.sqlite")).map_err(|e|e.to_string())?;
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["profile"] => println!("{}", profile::profile_root().display()),
+        ["credential", action, provider] => {
+            if !["openai", "claude", "gemini"].contains(provider) {
+                return Err("Supported provider: openai, claude, gemini".into());
+            }
+            let key = format!("ai:{provider}");
+            match *action {
+                "set" => {
+                    eprintln!("Enter {provider} API key (input is hidden):");
+                    let password = rpassword::read_password().map_err(|e|e.to_string())?;
+                    if password.trim().is_empty() {return Err("Empty keys are not accepted".into());}
+                    charlotte_native::credentials::store(&key,&password).map_err(|e|e.to_string())?;
+                    println!("{provider} API key saved in the operating system credential store");
+                }
+                "remove" => {
+                    charlotte_native::credentials::remove(&key).map_err(|e|e.to_string())?;
+                    println!("{provider} API key removed");
+                }
+                "show" => println!("{provider}: {}",if charlotte_native::credentials::retrieve(&key).is_ok() {"configured"}else{"not configured"}),
+                _ => return Err("Credential action must be set, remove or show".into()),
+            }
+        },
         ["shields", "on" | "off"] => {
             db.set_setting("shields", args[1].as_str()).map_err(|e|e.to_string())?;
             println!("Shields {} (restart Charlotte to apply)", args[1]);

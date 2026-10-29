@@ -46,6 +46,7 @@ wrap_client! {
 
 
 fn persist_tabs(state: &TabState) {
+    if crate::app::is_restoring(){return}
     if let Ok(tabs) = state.lock() {
         if let Ok(db) = Storage::open(&profile::profile_root().join("charlotte.sqlite")) {
             if let Err(error) = crate::session::save_tabs(&db, &tabs) {
@@ -281,12 +282,13 @@ wrap_display_handler! {
     impl DisplayHandler {
         fn on_title_change(&self, browser: Option<&mut Browser>, title: Option<&CefString>) {
             let Some(browser) = browser else { return };
+            let id=browser.identifier();
             let Some(mut browser_view) = browser_view_get_for_browser(Some(browser)) else { return };
             let Some(window) = browser_view.window() else { return };
             window.set_title(title);
             if let Some(title) = title {
                 if let Ok(mut tabs) = self.tabs.lock() {
-                    tabs.title(browser.identifier(), &title.to_string());
+                    tabs.title(id, &title.to_string());
                 }
                 persist_tabs(&self.tabs);
             }
@@ -305,6 +307,7 @@ wrap_display_handler! {
                     tabs.navigate(browser.identifier(), &address);
                 }
                 persist_tabs(&self.tabs);
+                crate::app::notify_navigation(browser.identifier(),&address);
             }
             let millis = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;

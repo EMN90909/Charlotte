@@ -42,6 +42,7 @@ url = "2"
 axum = { version = "0.7", features = ["form"] }
 tokio = { version = "1.42", features = ["rt-multi-thread", "macros", "net"] }
 rand = "0.8"
+rpassword = "7"
 keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync-secret-service"] }
 
 [build-dependencies]

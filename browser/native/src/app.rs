@@ -30,6 +30,11 @@ impl Controller {
             frame.load_url(Some(&url));
         }
     }
+    fn refresh_sidebar(&self) {
+        if let Some(frame)=self._sidebar.browser().and_then(|b|b.main_frame()) {
+            frame.load_url(Some(&CefString::from(self._ui.sidebar_url().as_str())));
+        }
+    }
     fn select(&mut self, selected:i32) {
         let Some(index)=self.views.iter().position(|view|browser_id(view)==Some(selected)) else{return};
         for (i,view) in self.views.iter().enumerate() {view.set_visible((i==index) as i32);}
@@ -40,7 +45,11 @@ impl Controller {
             }
         }
         self.page_panel.layout();
+        if let Ok(tabs)=self.tabs.lock(){
+            if let Some(active)=tabs.active(){self._ui.page_changed(&active.url);}
+        }
         self.refresh_chrome();
+        self.refresh_sidebar();
     }
     fn active_browser(&self)->Option<Browser>{
         let id=self.tabs.lock().ok()?.active_id()?;
@@ -82,6 +91,7 @@ impl Controller {
             Command::New(url)=>self.add(url),
             Command::Select(id)=>self.select(id),
             Command::Navigate(url)=>{
+                self._ui.page_changed(&url);
                 if let Some(browser)=self.active_browser(){
                     if let Some(frame)=browser.main_frame() {
                         frame.load_url(Some(&CefString::from(url.as_str())));
@@ -123,6 +133,24 @@ wrap_task! {
             });
         }
     }
+}
+pub fn is_restoring()->bool{
+    CONTROLLER.with(|cell|cell.try_borrow().ok()
+        .and_then(|c|c.as_ref().map(|controller|controller.restore_pending))
+        .unwrap_or(false))
+}
+pub fn notify_navigation(browser_id:i32,url:&str){
+    CONTROLLER.with(|cell|{
+        if let Ok(state)=cell.try_borrow() {
+            if let Some(controller)=state.as_ref(){
+                if controller.tabs.lock().ok().and_then(|t|t.active_id())==Some(browser_id){
+                    controller._ui.page_changed(url);
+                    controller.refresh_sidebar();
+                    controller.refresh_chrome();
+                }
+            }
+        }
+    });
 }
 pub fn post_ui_command(command:Command){
     let mut task=UiDispatchTask::new(command);
@@ -280,9 +308,17 @@ wrap_window_delegate! {
             if count==0{quit_message_loop()}
         }
         fn can_close(&self,_window:Option<&mut Window>)->i32{
-            let Some(browser)=self.pages.child_view_at(0).and_then(|v|v.as_browser_view())
-                .and_then(|v|v.browser()) else{return 1};
-            browser.host().map(|host|host.try_close_browser()).unwrap_or(1)
+            CONTROLLER.with(|cell|{
+                let state=cell.borrow();
+                let Some(controller)=state.as_ref() else{return 1};
+                let mut can_close=true;
+                for browser in controller.views.iter().filter_map(BrowserView::browser){
+                    if let Some(host)=browser.host(){
+                        if host.try_close_browser()==0 { can_close=false; }
+                    }
+                }
+                if can_close {1}else{0}
+            })
         }
     }
 }

@@ -2,7 +2,7 @@
 //! but commands, chat, AI requests, profiles and secrets are owned by Rust.
 //! Bound only to 127.0.0.1 with an unpredictable per-launch form token.
 //! There is no Electron, Node process, websocket proxy or JS-facing OS API.
-use std::{collections::HashMap, net::TcpListener, sync::{Arc,Mutex,atomic::{AtomicBool,Ordering}}, thread};
+use std::{net::TcpListener, sync::{Arc,Mutex,atomic::{AtomicBool,Ordering}}, thread};
 use axum::{extract::{State,Form},http::{HeaderMap,StatusCode,header},response::{Html,IntoResponse,Redirect,Response},routing::{get,post},Router};
 use serde::Deserialize;
 use crate::{cef_bridge::TabState, services::{self, ChatIdentity, Provider, Turn}};
@@ -24,6 +24,7 @@ struct UiInner {
     chat_base: String,
     chat_token: String,
     chat_cursor: u64,
+    room_url: String,
     error: String,
     working: bool,
     stop: Arc<AtomicBool>,
@@ -48,7 +49,7 @@ fn input(name: &str, value: &str) -> String {
 fn header_html(title: &str, compact: bool) -> String {
     let width=if compact {"100%"} else {"100%"};
     format!(r#"<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; object-src 'none'">
 <title>{}</title><style>
 :root{{color-scheme:dark;--bg:#1b1b18;--card:#292924;--text:#f5eee0;--sub:#a9a394;--line:#3d3b35;--accent:#cbaa7a}}
 *{{box-sizing:border-box}}body{{width:{};margin:0;background:var(--bg);color:var(--text);font:13px system-ui,-apple-system,Segoe UI,sans-serif}}
@@ -63,7 +64,13 @@ small,.muted{{color:var(--sub)}}section{{border-top:1px solid var(--line);paddin
 label{{color:var(--sub);font-size:12px}}h2{{font-size:16px;margin:0 0 14px}}.error{{color:#e9aeae}}
 </style></head><body>"#,escape(title),width)
 }
-fn footer() -> &'static str {"</body></html>"}
+fn footer() -> &'static str {r#"<script>
+setInterval(() => {
+  const el = document.activeElement;
+  if (el && ['INPUT','TEXTAREA','SELECT'].includes(el.tagName)) return;
+  if (document.visibilityState === 'visible') window.location.reload();
+}, 5000);
+</script></body></html>"#}
 pub fn resolve_address(raw: &str) -> Option<String> {
     let value=raw.trim();
     if value.is_empty() || value.len()>2048 {return None}
@@ -187,9 +194,14 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
         match answer{
             Ok(reply)=>{
                 if let Ok(mut inner)=state.inner.lock(){
-                    inner.ai.push(Turn{role:"user".into(),text});
-                    inner.ai.push(Turn{role:"assistant".into(),text:reply});
+                    inner.ai.push(Turn{role:"user".into(),text:text.clone()});
+                    inner.ai.push(Turn{role:"assistant".into(),text:reply.clone()});
                     if inner.ai.len()>100 {let extra=inner.ai.len()-100;inner.ai.drain(0..extra);}
+                }
+                if let Ok(db)=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
+                    let time=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
+                    let _=db.add_message("ai","user",&text,time);
+                    let _=db.add_message("ai","assistant",&reply,time+1);
                 }
                 finish(&state,None);
             },
@@ -213,7 +225,7 @@ async fn connect(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionFor
         match services::chat_connect(&base,&identity){
             Ok(session)=>{
                 if let Ok(mut inner)=state.inner.lock(){
-                    inner.chat_base=base.clone();inner.chat_token=session.token.clone();inner.chat_cursor=session.cursor;
+                    inner.chat_base=base.clone();inner.chat_token=session.token.clone();inner.chat_cursor=session.cursor;inner.room_url=room.clone();
                     inner.stop.store(true,Ordering::Relaxed);
                     inner.stop=Arc::new(AtomicBool::new(false));
                 }
@@ -226,8 +238,11 @@ async fn connect(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionFor
                     while !stop.load(Ordering::Relaxed){
                         let result=services::chat_events(&base,&session.token,cursor,&stop,|msg|{
                             if let Ok(mut inner)=listener.inner.lock(){
-                                inner.chat.push((msg.sender,msg.content));
+                                inner.chat.push((msg.sender.clone(),msg.content.clone()));
                                 inner.chat_cursor=msg.seq;
+                                if let Ok(db)=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
+                                    let _=db.add_message(&msg.room,&msg.sender,&msg.content,msg.timestamp);
+                                }
                                 if inner.chat.len()>200 {let excess=inner.chat.len()-200;inner.chat.drain(0..excess);}
                             }
                         });
@@ -274,10 +289,13 @@ pub fn start(tabs:TabState)->Result<Ui,String>{
     let listener=TcpListener::bind("127.0.0.1:0").map_err(|e|e.to_string())?;
     let port=listener.local_addr().map_err(|e|e.to_string())?.port();
     listener.set_nonblocking(true).map_err(|e|e.to_string())?;
+    let history=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
+        .ok().and_then(|db|db.messages("ai",100).ok())
+        .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
         port,token,tabs,inner:Arc::new(Mutex::new(UiInner{
-            ai:Vec::new(),chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
-            chat_token:String::new(),chat_cursor:0,error:String::new(),working:false,
+            ai:history,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
+            chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
         }))
     };
@@ -302,6 +320,18 @@ pub fn start(tabs:TabState)->Result<Ui,String>{
     Ok(ui)
 }
 impl Ui{
+    pub fn page_changed(&self,url:&str){
+        if let Ok(mut inner)=self.inner.lock() {
+            if !inner.chat_token.is_empty() && inner.room_url != url {
+                inner.stop.store(true, Ordering::Relaxed);
+                inner.chat_token.clear();
+                inner.chat.clear();
+                inner.chat_cursor=0;
+                inner.room_url.clear();
+                inner.error="Page changed — reconnect to join this page's chat".into();
+            }
+        }
+    }
     pub fn chrome_url(&self)->String{format!("http://127.0.0.1:{}/chrome",self.port)}
     pub fn sidebar_url(&self)->String{format!("http://127.0.0.1:{}/sidebar",self.port)}
 }
