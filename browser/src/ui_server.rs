@@ -686,6 +686,9 @@ async fn browser_control(
         let working=inner.working;
         inner.cancel_automation.store(true,Ordering::SeqCst);
         inner.pending_browser=None;
+        // A resumed browser run always replans; it must not reuse old
+        // implicit authority to hand data to another MCP service.
+        inner.auto_handoff=None;
         if !working{
             inner.active_run_id=None;
             inner.automation_browser_id=None;
