@@ -49,6 +49,9 @@ curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Automate this C
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Visual automation (shares a screenshot)"
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Accept open dialog"
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Browser skills"
+curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "MCP integrations directory"
+mcp_code="$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST "http://127.0.0.1:$port/mcp/catalog" -d 'catalog=github&command=enable')"
+[[ "$mcp_code" == 403 ]] || { echo "Unsafe unsigned MCP catalog endpoint: $mcp_code" >&2; exit 1; }
 skill_code="$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST "http://127.0.0.1:$port/browser/skill" -d 'skill=summary')"
 [[ "$skill_code" == 403 ]] || { echo "Unsafe unsigned browser skill endpoint: $skill_code" >&2; exit 1; }
 automation_code="$(curl --silent --output /dev/null --write-out '%{http_code}'   -X POST "http://127.0.0.1:$port/browser/approve" -d 'command=approve')"
