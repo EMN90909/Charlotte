@@ -535,6 +535,26 @@ mod tests{
         assert!(inner.chat_token.is_empty());
         assert_eq!(inner.chat_cursor,0);
     }
+    #[test]
+    fn charlotte_sidebar_requires_user_approval_for_mcp() {
+        let tabs=Arc::new(Mutex::new(crate::tabs::Tabs::default()));
+        let filter=Arc::new(std::sync::RwLock::new(
+            crate::shield::Shield::new(&[crate::shield::STARTER_RULES],true)));
+        let ui=start(tabs,filter).unwrap();
+        {
+            let mut inner=ui.inner.lock().unwrap();
+            inner.pending_tool=Some(PendingTool{
+                name:"mcp__s0__read".into(),server_id:"docs".into(),
+                args:serde_json::json!({"path":"/test"}),question:"Read file".into(),
+                provider:"ollama".into(),
+            });
+        }
+        let page=sidebar(&ui).0;
+        assert!(page.contains("Charlotte requests approval"));
+        assert!(page.contains("Approve once"));
+        assert!(page.contains("name=\\"command\\" value=\\"reject\\""));
+        assert!(!page.contains("<script>"));
+    }
     #[test]fn address_search_sanitizes_scheme(){
         assert!(resolve_address("file:///etc/passwd").is_none());
         assert!(resolve_address("javascript:alert(1)").is_none());
