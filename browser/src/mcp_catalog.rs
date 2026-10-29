@@ -32,7 +32,7 @@ pub static PRESETS:&[Preset]=&[
     Preset{id:"vercel",name:"Vercel",category:"Cloud",endpoint:"https://mcp.vercel.com",auth:"oauth",description:"Deployments and logs",keywords:"vercel deploy"},
     Preset{id:"gitlab",name:"GitLab",category:"Dev & code",endpoint:"https://gitlab.com/api/v4/mcp",auth:"oauth-or-token",description:"Repos, pipelines and merge requests",keywords:"gitlab ci"},
     Preset{id:"postgres",name:"PostgreSQL tools",category:"Databases",endpoint:"local:postgres",auth:"local",description:"Local database tools (requires configured DB)",keywords:"postgres sql query"},
-    Preset{id:"sqlite",name:"SQLite tools",category:"Databases",endpoint:"",auth:"manual",description:"Choose and install a vetted local SQLite MCP server",keywords:"sqlite local db"},
+    Preset{id:"sqlite",name:"SQLite tools",category:"Databases",endpoint:"local:sqlite",auth:"local-file",description:"Built-in native read-only SQLite MCP tools for a selected file",keywords:"sqlite local db"},
     Preset{id:"zapier",name:"Zapier",category:"Automation",endpoint:"https://mcp.zapier.com",auth:"oauth",description:"Zapier-connected apps, metered actions",keywords:"zapier automation"},
     Preset{id:"exa",name:"Exa",category:"Search",endpoint:"https://mcp.exa.ai/mcp",auth:"optional-token",description:"Semantic search",keywords:"exa search"},
     Preset{id:"firecrawl",name:"Firecrawl",category:"Search",endpoint:"https://mcp.firecrawl.dev/v2/mcp",auth:"optional-token",description:"Website extraction",keywords:"firecrawl scrape"},
