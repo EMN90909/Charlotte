@@ -57,6 +57,7 @@ struct UiInner {
     skill_output:Option<String>,
     skill_source:Option<(i32,String)>,
     provider_status:Option<String>,
+    route_status:Option<String>,
     chat: Vec<(String,String)>,
     chat_base: String,
     chat_token: String,
@@ -166,6 +167,9 @@ fn sidebar(ui:&Ui)->Html<String>{
     html.push_str("<small class=\"muted\">Saving doesn't verify billing, model availability or API access. Testing uses a small, user-requested model call that may incur provider charges. Ollama needs a separately running local server.</small></section>");
     if let Some(status)=&inner.provider_status{
         html.push_str(&format!("<p class=\"muted\">AI provider check: {}</p>",escape(status)));
+    }
+    if let Some(status)=&inner.route_status{
+        html.push_str(&format!("<p class=\"muted\"><strong>Auto selected:</strong> {}</p>",escape(status)));
     }
     // Listing a catalog never opens a vendor session, fetches tools, or
     // installs local executables. Connecting is a separate explicit action.
@@ -1040,6 +1044,18 @@ fn plan_mcp_goal(
 /// Auto mode uses one AI routing decision, then a type-checked, bounded
 /// executor: answer / inspect Chromium / approved browser action / MCP /
 /// read-page-to-MCP. No screenshot, password or arbitrary JS authority.
+fn route_label(route:&AutoRoute)->String{
+    match route{
+        AutoRoute::Reply(_)=>"AI response; no browser or app tool".into(),
+        AutoRoute::Clarify(_)=>"Clarification; no external action".into(),
+        AutoRoute::LocalSkill{name}=>format!("Local Chromium read-only skill: {name}"),
+        AutoRoute::PageAnswer=>"Read current Chromium page, then AI explanation".into(),
+        AutoRoute::BrowserTask=>"Native Chromium interaction with per-step approval".into(),
+        AutoRoute::McpTask{server_id}=>format!("MCP service {server_id}, per-tool approval"),
+        AutoRoute::PageToMcp{server_id}=>format!("Read Chromium page, then MCP {server_id}"),
+        AutoRoute::BrowserThenMcp{server_id}=>format!("Chromium first, then approved MCP {server_id}"),
+    }
+}
 fn route_needs_page(route:&AutoRoute)->bool{
     matches!(route,AutoRoute::PageAnswer|AutoRoute::BrowserTask|AutoRoute::PageToMcp{..}|AutoRoute::BrowserThenMcp{..})
 }
@@ -1173,6 +1189,9 @@ fn run_auto_task(
     let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
     let route=orchestrator::decide(provider,key.as_deref(),&model,
         &history,&question,&capabilities)?;
+    if let Ok(mut inner)=state.inner.lock(){
+        inner.route_status=Some(route_label(&route));
+    }
     if route_needs_page(&route){
         let source=source.ok_or("No available Chromium tab for approval")?;
         if !source_page_still_active(state,&source){
@@ -1528,7 +1547,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
         port,token,tabs,filter,inner:Arc::new(Mutex::new(UiInner{
-            pending_browser:None,pending_auto:None,auto_handoff:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,provider_status:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
+            pending_browser:None,pending_auto:None,auto_handoff:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,provider_status:None,route_status:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
         }))
