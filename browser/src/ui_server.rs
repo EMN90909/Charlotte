@@ -10,6 +10,12 @@ use crate::{agent::{self,Plan},cef_bridge::{Filter,TabState}, mcp, permissions::
 pub enum Command {
     Sync, New(String), Select(i32), Close(i32), Navigate(String),
     Back, Forward, Reload, HardReload, Shields(bool),
+    Automation {
+        browser_id:i32,expected_origin:String,method:String,
+        params:serde_json::Value,
+        reply:std::sync::mpsc::Sender<Result<serde_json::Value,String>>,
+    },
+    AutomationFinished(i32),
 }
 #[derive(Clone)]
 pub struct Ui {
