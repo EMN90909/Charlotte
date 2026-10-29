@@ -23,8 +23,9 @@ Authorization header; the gateway verifies it at the configured Supabase
 `/auth/v1/user` endpoint. The gateway then uses its own server-side
 credentials from host environment secrets. No provider key is sent to the
 desktop. Cloud model choices are the provider/model IDs returned by its
-authenticated `GET /v1/models` endpoint. `auto` randomly selects an enabled
-model (from those appropriate to the text/vision modality).
+authenticated `GET /v1/models` endpoint. `auto` selects an enabled model from the operator's `CLOUD_AUTO_MODELS`
+preference list (or low-cost defaults), never a random expensive model.
+Provider **API keys**, not billable models, are randomized for load distribution.
 
 **Model routing is not user authentication**: Cloud requests are subject to
 account auth, per-user limits and the configured provider pool. It is the
