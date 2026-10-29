@@ -110,7 +110,7 @@ impl Controller {
         self.views.push(view);
         self.page_panel.layout();
     }
-    fn automation_request(&mut self,browser_id:i32,expected_origin:String,
+    fn automation_request(&mut self,request_id:i32,browser_id:i32,expected_origin:String,
         method:String,params:Value,reply:mpsc::Sender<Result<Value,String>>){
         // CEF references never leave the UI thread. Prevent stale tab actions.
         let active=self.tabs.lock().ok().and_then(|tabs|tabs.active_id());
@@ -127,10 +127,8 @@ impl Controller {
         let Some(host)=browser.host() else{
             let _=reply.send(Err("CEF browser host unavailable".into()));return
         };
-        static NEXT_ID:std::sync::atomic::AtomicI32=
-            std::sync::atomic::AtomicI32::new(100_000_000);
-        let id=NEXT_ID.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
-        if id>1_900_000_000{
+        let id=request_id;
+        if id<100_000_000||id>1_900_000_000||self.devtools_observers.len()>16{
             let _=reply.send(Err("Automation DevTools IDs exhausted".into()));return
         }
         let mut observer=CharlotteAutomationObserver::new(id,reply.clone());
@@ -147,8 +145,8 @@ impl Controller {
     fn apply(&mut self,command:Command){
         match command{
             Command::Sync=>self.sync(),
-            Command::Automation{browser_id,expected_origin,method,params,reply}=>
-                self.automation_request(browser_id,expected_origin,method,params,reply),
+            Command::Automation{request_id,browser_id,expected_origin,method,params,reply}=>
+                self.automation_request(request_id,browser_id,expected_origin,method,params,reply),
             Command::AutomationFinished(id)=>{self.devtools_observers.remove(&id);},
             Command::Shields(enabled)=>{
                 let was_enabled=self.filter.read().map(|s|s.is_enabled()).unwrap_or(false);
