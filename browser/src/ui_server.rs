@@ -47,6 +47,7 @@ struct UiInner {
     pending_tool:Option<PendingTool>,
     ai: Vec<Turn>,
     skill_output:Option<String>,
+    skill_source:Option<(i32,String)>,
     chat: Vec<(String,String)>,
     chat_base: String,
     chat_token: String,
@@ -665,6 +666,7 @@ async fn browser_skill(
                     // Do not mix page extracts into LLM chat or persisted
                     // conversation history; this output is local and ephemeral.
                     inner.skill_output=Some(result);
+                    inner.skill_source=Some((id,url));
                 }
                 finish(&state,None);
             },
@@ -977,7 +979,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
         port,token,tabs,filter,inner:Arc::new(Mutex::new(UiInner{
-            pending_browser:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
+            pending_browser:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
         }))
@@ -1041,7 +1043,12 @@ impl Ui{
         }
     }
     pub fn tab_selected(&self,browser_id:i32){
-        if let Ok(mut inner)=self.inner.lock(){inner.skill_output=None;}
+        if let Ok(mut inner)=self.inner.lock(){
+            if inner.skill_source.as_ref().is_some_and(|(id,_)|*id!=browser_id){
+                inner.skill_output=None;
+                inner.skill_source=None;
+            }
+        }
         let wrong=self.inner.lock().ok().is_some_and(|inner|
             inner.active_run_id.is_some() &&
             inner.automation_browser_id!=Some(browser_id));
@@ -1058,7 +1065,12 @@ impl Ui{
         }
     }
     pub fn tab_closed(&self,browser_id:i32){
-        if let Ok(mut inner)=self.inner.lock(){inner.skill_output=None;}
+        if let Ok(mut inner)=self.inner.lock(){
+            if inner.skill_source.as_ref().is_some_and(|(id,_)|*id==browser_id){
+                inner.skill_output=None;
+                inner.skill_source=None;
+            }
+        }
         let closed=self.inner.lock().ok().is_some_and(|inner|
             inner.active_run_id.is_some() &&
             inner.automation_browser_id==Some(browser_id));
@@ -1074,7 +1086,10 @@ impl Ui{
             self.interrupt_task("Charlotte paused: page left the authorized website");
         }
         if let Ok(mut inner)=self.inner.lock() {
-            inner.skill_output=None;
+            if inner.skill_source.as_ref().is_some_and(|(_,stored)|stored!=url){
+                inner.skill_output=None;
+                inner.skill_source=None;
+            }
             if !inner.chat_token.is_empty() && inner.room_url != url {
                 inner.stop.store(true, Ordering::Relaxed);
                 inner.chat_token.clear();
@@ -1145,6 +1160,7 @@ mod tests{
         {
             let mut inner=ui.inner.lock().unwrap();
             inner.skill_output=Some("Private page excerpt".into());
+            inner.skill_source=Some((10,"https://first.example".into()));
             assert!(!inner.ai.iter().any(|turn|turn.text.contains("Private page excerpt")));
         }
         assert!(sidebar(&ui).0.contains("Private page excerpt"));
