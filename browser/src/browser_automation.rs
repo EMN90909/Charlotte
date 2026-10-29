@@ -15,6 +15,8 @@ pub enum Action {
     Observe,
     Navigate {url:String},
     Click {selector:String},
+    ClickIndex {index:u32},
+    TypeIndex {index:u32,text:String},
     Type {selector:String,text:String},
     Scroll {direction:ScrollDirection},
     ClickAt {x:u32,y:u32},
@@ -28,6 +30,10 @@ impl Action {
     pub fn validate(&self)->Result<(),String>{
         match self {
             Self::Observe|Self::Scroll{..}=>Ok(()),
+            Self::ClickIndex{index} if (1..=70).contains(index)=>Ok(()),
+            Self::ClickIndex{..}=>Err("Invalid semantic element index".into()),
+            Self::TypeIndex{index,text} if (1..=70).contains(index) && text.len()<=MAX_TEXT && !text.contains('\0')=>Ok(()),
+            Self::TypeIndex{..}=>Err("Invalid semantic input index or value".into()),
             Self::ClickAt{x,y} if *x<=10000 && *y<=10000=>Ok(()),
             Self::ClickAt{..}=>Err("Visual click outside allowed viewport".into()),
             Self::Drag{from,to} if from.is_empty()||to.is_empty()||
@@ -54,6 +60,8 @@ impl Action {
             Self::Observe=>"Inspect current page".into(),
             Self::Navigate{url}=>format!("Navigate Chromium to {url}"),
             Self::Click{selector}=>format!("Click page element {selector}"),
+            Self::ClickIndex{index}=>format!("Click accessible element [{index}]"),
+            Self::TypeIndex{index,text}=>format!("Type {} characters into accessible element [{index}]",text.chars().count()),
             Self::Type{selector,text}=>format!("Type {} characters into {selector}",text.chars().count()),
             Self::Scroll{direction}=>format!("Scroll page {:?}",direction),
             Self::ClickAt{x,y}=>format!("Click screenshot position ({x},{y})"),
@@ -330,6 +338,7 @@ impl Context {
         action.validate()?;
         match action {
             Action::Observe=>self.observe(),
+            Action::ClickIndex{..}|Action::TypeIndex{..}=>Err("Semantic element index requires fresh snapshot resolution".into()),
             Action::Navigate{url}=>{
                 require_same_origin(&self.origin,url)?;
                 let result=self.cdp("Page.navigate",json!({"url":url}))?;
