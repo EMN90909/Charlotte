@@ -263,7 +263,7 @@ fn plan_browser_next(
     step:u8,previous:&str,
 )->Result<(),String>{
     let (provider,model)=provider_model(&provider_name).ok_or("Unknown AI provider")?;
-    let snapshot=context.observe()?;
+    let snapshot=context.observe_settled()?;
     let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
     let history=state.inner.lock().ok().map(|inner|inner.ai.clone()).unwrap_or_default();
     match browser_agent::decide(provider,key.as_deref(),model,&history,
@@ -330,13 +330,17 @@ async fn browser_approve(
         let outcome=(||->Result<(),String>{
             // Check the actual live Chromium URL before executing a selector
             // generated from an earlier DOM snapshot.
-            let current=pending.context.observe()?;
+            let current=pending.context.observe_settled()?;
             if current.get("url").and_then(serde_json::Value::as_str)!=Some(&pending.observed_url){
                 return Err("Page changed since Charlotte proposed this action. Nothing was clicked or typed; start a new task.".into())
             }
             browser_automation::ensure_observed_target(&pending.action,&current)?;
             let action_outcome=pending.context.act(&pending.action)?;
-            std::thread::sleep(std::time::Duration::from_millis(350));
+            if let BrowserAction::Navigate{url}= &pending.action {
+                pending.context.wait_for_navigation(url)?;
+            } else {
+                std::thread::sleep(std::time::Duration::from_millis(350));
+            }
             plan_browser_next(&state,pending.context,pending.goal,
                 pending.provider,pending.step+1,&action_outcome.to_string())
         })();
