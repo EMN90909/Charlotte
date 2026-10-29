@@ -449,6 +449,12 @@ fn plan_browser_next(
     }
     match proposed{
         BrowserDecision::Answer(text)=>{
+            if step>=browser_automation::MAX_STEPS {
+                // Never hand off partial work to another app merely because
+                // the Chromium action budget has been exhausted.
+                browser_answer(state,&goal,text,Some(&run_id),step);
+                return Ok(())
+            }
             // A browser-first cross-app task never silently launches an MCP
             // operation. Completing its Chromium stage stages another,
             // separate page-sharing consent followed by per-tool approval.
