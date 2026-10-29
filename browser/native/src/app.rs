@@ -12,6 +12,7 @@ thread_local! {
 }
 struct Controller {
     _ui: Ui, tabs: TabState,
+    windows: Rc<Cell<usize>>,
     views: Vec<BrowserView>,
     page_panel: Panel,
     toolbar: BrowserView,
@@ -75,7 +76,7 @@ impl Controller {
                 .unwrap_or_else(|_| "https://www.google.com/".into())
         };
         let mut client=self.client.clone();
-        let mut delegate=CharlotteBrowserViewDelegate::new();
+        let mut delegate=CharlotteBrowserViewDelegate::new(self.windows.clone());
         let view=browser_view_create(Some(&mut client),Some(&CefString::from(initial.as_str())),
             Some(&BrowserSettings::default()),None,None,Some(&mut delegate));
         let Some(view)=view else{return};
@@ -229,7 +230,7 @@ wrap_browser_process_handler! {
             let mut views=Vec::new();
             for url in urls.into_iter().take(crate::tabs::MAX_TABS){
                 let mut c=client.clone();
-                let mut delegate=CharlotteBrowserViewDelegate::new();
+                let mut delegate=CharlotteBrowserViewDelegate::new(self.windows.clone());
                 if let Some(view)=browser_view_create(Some(&mut c),Some(&CefString::from(url.as_str())),
                     Some(&settings),None,None,Some(&mut delegate)){
                     view.set_visible((views.len()==restore.active_index) as i32);
@@ -240,7 +241,7 @@ wrap_browser_process_handler! {
             }
             if views.is_empty(){quit_message_loop();return;}
             let control=Controller{
-                _ui:ui,tabs,views,page_panel:panel.clone(),toolbar:toolbar.clone(),
+                _ui:ui,tabs,windows:self.windows.clone(),views,page_panel:panel.clone(),toolbar:toolbar.clone(),
                 _sidebar:sidebar.clone(),client,restore_index:restore.active_index,
                 restore_pending:true,
             };
@@ -252,10 +253,47 @@ wrap_browser_process_handler! {
 }
 wrap_client! {struct CharlotteLocalClient;impl Client {}}
 wrap_browser_view_delegate! {
-    struct CharlotteBrowserViewDelegate;
+    struct CharlotteBrowserViewDelegate { windows: Rc<Cell<usize>>, }
     impl ViewDelegate {}
     impl BrowserViewDelegate {
         fn browser_runtime_style(&self)->RuntimeStyle{RuntimeStyle::ALLOY}
+        fn on_popup_browser_view_created(
+            &self, _browser_view: Option<&mut BrowserView>,
+            popup_browser_view: Option<&mut BrowserView>, _is_devtools: i32,
+        )->i32{
+            let Some(view)=popup_browser_view else{return 0};
+            let mut delegate=CharlottePopupWindowDelegate::new(RefCell::new(Some(view.clone())),self.windows.clone());
+            window_create_top_level(Some(&mut delegate));
+            1
+        }
+    }
+}
+wrap_window_delegate! {
+    struct CharlottePopupWindowDelegate { view: RefCell<Option<BrowserView>>, windows: Rc<Cell<usize>>, }
+    impl ViewDelegate {
+        fn preferred_size(&self,_view:Option<&mut View>)->Size{Size{width:1000,height:740}}
+    }
+    impl PanelDelegate {}
+    impl WindowDelegate {
+        fn window_runtime_style(&self)->RuntimeStyle{RuntimeStyle::ALLOY}
+        fn on_window_created(&self,window:Option<&mut Window>){
+            let (Some(window),Some(view))=(window,self.view.borrow().as_ref().cloned()) else{return};
+            let _=window.set_to_fill_layout();
+            let mut native=View::from(&view);
+            window.add_child_view(Some(&mut native));
+            self.windows.set(self.windows.get()+1);
+            window.show();
+        }
+        fn on_window_destroyed(&self,_window:Option<&mut Window>){
+            self.view.borrow_mut().take();
+            let count=self.windows.get().saturating_sub(1);
+            self.windows.set(count);if count==0{quit_message_loop()}
+        }
+        fn can_close(&self,_window:Option<&mut Window>)->i32{
+            let Some(view)=self.view.borrow().as_ref().cloned() else{return 1};
+            view.browser().and_then(|browser|browser.host())
+                .map(|host|host.try_close_browser()).unwrap_or(1)
+        }
     }
 }
 wrap_browser_view_delegate! {
