@@ -58,7 +58,21 @@ Cargo-based browser build.
 Select **Automate this Chromium tab** in Charlotte's sidebar, describe a
 goal and let the Rust agent inspect the active page, propose one action,
 obtain your explicit approval, execute it using CEF's built-in Chrome
-DevTools Protocol bridge, and verify the result. Supported first-pass
+DevTools Protocol bridge, and verify the result.
+
+The extended automation layer now inspects **open shadow roots** and
+**same-origin iframe documents**, and provides mouse-based drag/drop
+between observed controls. A separate **Visual automation (shares a
+screenshot)** mode captures a bounded JPEG of the visible Chromium
+page and sends it to the chosen AI provider; it can propose approved
+coordinate clicks on visually rendered content, including a cross-origin
+iframe's visible pixels **without reading its isolated DOM**.
+JavaScript alert/confirm/prompt dialogs can be resolved explicitly
+through Charlotte's sidebar. System file pickers and permission dialogs
+remain under direct user control.
+
+See [ADVANCED_AUTOMATION.md](ADVANCED_AUTOMATION.md) for scope, consent,
+privacy, iframe isolation, unverified behaviors and native test cases. Supported first-pass
 actions include page inspection, same-origin navigation, real Chromium
 mouse clicks, non-sensitive text entry and scrolling, for up to eight
 approved steps. There is no Selenium, external Chrome, Node or browser
@@ -66,10 +80,12 @@ debugging port.
 
 The page observation (bounded visible page text and interactive controls)
 is sent to your selected AI provider **only after you choose browser
-automation mode**. Password and file inputs are excluded from control
-inspection. Browser actions are constrained to a single active tab and
-require explicit user approval; vision, cross-origin frames and fully
-autonomous execution are not yet supported.
+automation mode**. In visual mode, visible screenshot pixels are
+additionally sent. Password and file inputs are excluded from control
+inspection. Browser actions remain scoped to one active tab and require
+explicit approval. Direct DOM access to cross-origin frames and automated
+operating-system dialogs are not supported; native runtime behavior
+has not yet been verified.
 
 See [BROWSER_AUTOMATION.md](BROWSER_AUTOMATION.md) for the Chromium/CEF
 research, implementation, security decisions, limitations and validation
