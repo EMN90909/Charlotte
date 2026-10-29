@@ -75,7 +75,7 @@ pub fn local_command(id:&str)->Option<(&'static str,&'static [&'static str])>{
 }
 pub fn supported(preset:&Preset)->bool{
     !preset.endpoint.is_empty()&&
-    (!preset.endpoint.starts_with("local:")||local_command(preset.id).is_some())
+    (!preset.endpoint.starts_with("local:")||local_command(preset.id).is_some()||preset.id=="sqlite")
 }
 /// Require explicit user action before registering any template. This is
 /// NOT an OAuth sign-in or a guarantee that vendor connectivity works.
