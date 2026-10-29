@@ -1,11 +1,11 @@
 # Charlotte browser: native Rust + CEF. No npm, Electron, Forge or Vite.
 CARGO ?= cargo
 RUSTUP ?= rustup
-.PHONY: all build dev check test fmt lint clean package package-windows release  linux-x64 linux-arm64 windows-x64 windows-arm64 macos-x64 macos-arm64  freebsd-x64 bump-major bump-minor bump-patch tag help
+.PHONY: all build dev check test fmt lint measure clean package package-windows release  linux-x64 linux-arm64 windows-x64 windows-arm64 macos-x64 macos-arm64  freebsd-x64 bump-major bump-minor bump-patch tag help
 all: build
 help:
 	@echo 'Charlotte native Rust+CEF targets:'
-	@echo ' build dev check test fmt lint package package-windows clean'
+	@echo ' build dev check test fmt lint measure package package-windows clean'
 	@echo ' linux-x64 linux-arm64 windows-x64 windows-arm64 macos-x64 macos-arm64 freebsd-x64'
 	@echo ' Cross-target builds require matching linker, CEF SDK and platform toolchain.'
 build:
@@ -20,6 +20,8 @@ fmt:
 	$(CARGO) fmt --all
 lint:
 	$(CARGO) clippy --all-targets -- -D warnings
+measure:
+	bash scripts/measure-native-linux.sh
 clean:
 	$(CARGO) clean
 package:
