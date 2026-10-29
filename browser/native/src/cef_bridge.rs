@@ -179,11 +179,13 @@ wrap_life_span_handler! {
         fn on_after_created(&self, browser: Option<&mut Browser>) {
             let Some(browser) = browser else { return };
             if let Ok(mut tabs) = self.tabs.lock() { tabs.open(browser.identifier()); }
+            crate::app::post_ui_command(crate::ui_server::Command::Sync);
         }
         fn on_before_close(&self, browser: Option<&mut Browser>) {
             let Some(browser) = browser else { return };
             if let Ok(mut tabs) = self.tabs.lock() { tabs.close(browser.identifier()); }
             persist_tabs(&self.tabs);
+            crate::app::post_ui_command(crate::ui_server::Command::Sync);
         }
     }
 }
@@ -290,7 +292,7 @@ wrap_display_handler! {
             }
         }
         fn on_address_change(
-            &self, _browser: Option<&mut Browser>,
+            &self, browser: Option<&mut Browser>,
             frame: Option<&mut Frame>,
             url: Option<&CefString>,
         ) {
