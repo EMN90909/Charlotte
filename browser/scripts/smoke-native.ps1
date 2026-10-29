@@ -31,7 +31,7 @@ try {
   if (!$port -or $port -notmatch '^\d+$') { throw 'Native UI server did not start' }
   $chrome = Invoke-WebRequest "http://127.0.0.1:$port/chrome"
   $sidebar = Invoke-WebRequest "http://127.0.0.1:$port/sidebar"
-  if ($chrome.Content -notmatch 'Charlotte' -or $sidebar.Content -notmatch 'Ask Charlotte' -or $chrome.Content -notmatch 'Toggle ad blocker') {
+  if ($chrome.Content -notmatch 'Charlotte' -or $sidebar.Content -notmatch 'Ask Charlotte' -or $sidebar.Content -notmatch 'Automate this Chromium tab' -or $chrome.Content -notmatch 'Toggle ad blocker') {
     throw 'CEF native UI HTML is missing'
   }
   $rendered = $false
@@ -47,7 +47,13 @@ try {
   } catch {
     if ($_.Exception.Response.StatusCode.value__ -ne 403) { throw }
   }
-  Write-Host 'Native Windows CEF page render and Rust UI smoke passed.'
+  try {
+    Invoke-WebRequest "http://127.0.0.1:$port/browser/approve" -Method POST -Body @{command='approve'} | Out-Null
+    throw 'Unsigned Chromium browser automation unexpectedly succeeded'
+  } catch {
+    if ($_.Exception.Response.StatusCode.value__ -ne 403) { throw }
+  }
+  Write-Host 'Native Windows CEF page render, browser automation UI and CSRF smoke passed.'
 } finally {
   if ($process -and !$process.HasExited) {
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
