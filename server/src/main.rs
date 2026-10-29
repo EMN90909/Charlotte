@@ -157,7 +157,7 @@ async fn send(
         room.messages.pop_front();
     }
     drop(rooms);
-    sse::broadcast(&state,&claims.room,&Message{id:id.clone(),seq:published_seq,room:claims.room,sender:claims.username,content:published_content,timestamp:now});
+    sse::broadcast(&state,&claims.room,&Message{id:id.clone(),seq:published_seq,room:claims.room.clone(),sender:claims.username.clone(),content:published_content,timestamp:now});
     Ok(Json(SendResponse { id }))
 }
 async fn poll(
@@ -246,7 +246,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(address()?).await?;
     tracing::info!(addr = %listener.local_addr()?, "Charlotte Rust HTTP listening");
     axum::serve(listener, app).with_graceful_shutdown(async {
-        let _ = tokio::signal::ctrl_c().await;
+        #[cfg(unix)]
+        {
+            if let Ok(mut term) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {},
+                    _ = term.recv() => {},
+                }
+            } else { let _ = tokio::signal::ctrl_c().await; }
+        }
+        #[cfg(not(unix))]
+        { let _ = tokio::signal::ctrl_c().await; }
     }).await?;
     if let Ok(m) = final_metrics.lock() { m.save()?; }
     Ok(())

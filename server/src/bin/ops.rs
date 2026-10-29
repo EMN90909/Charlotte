@@ -113,7 +113,7 @@ impl Supervisor {
             return Err(("invalid buildVersion".into(),false));
         }
         let dest=self.data_dir.join("bin").join(format!("chat-service-server-{}",claims.build_version));
-        if self.state.as_ref().is_some_and(|s|s.binary_path==dest.to_string_lossy()){return Err(("this version is already deployed".into(),false));}
+        if self.state.as_ref().is_some_and(|s|s.binary_path==dest.to_string_lossy().as_ref()){return Err(("this version is already deployed".into(),false));}
         let mut request=self.client.get(url);
         if let Some(token)=&self.download_token {request=request.bearer_auth(token);}
         let response=request.send().await.map_err(|e|(format!("download: {e}"),false))?;
@@ -140,7 +140,7 @@ impl Supervisor {
                 };
                 if let Err(e)=self.persist(&record).await{tracing::error!("persist deployment state: {e}");}
                 self.state=Some(record);
-                if let Some(prev)=previous {if prev.binary_path!=dest.to_string_lossy(){let _=tokio::fs::remove_file(prev.binary_path).await;}}
+                if let Some(prev)=previous {if prev.binary_path!=dest.to_string_lossy().as_ref(){let _=tokio::fs::remove_file(prev.binary_path).await;}}
                 Ok(claims.build_version)
             }
             Err(reason)=>{
