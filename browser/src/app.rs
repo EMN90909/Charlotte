@@ -1,7 +1,7 @@
 //! Native Charlotte CEF Views host: tab strip, Chromium page viewport, AI/chat
 //! sidebar. There is no Electron and no Node or JS/OS bridge in this process.
 use cef::*;
-use std::{cell::{Cell,RefCell},rc::Rc,sync::{Arc,Mutex}};
+use std::{cell::{Cell,RefCell},collections::HashMap,rc::Rc,sync::{Arc,Mutex}};
 use crate::{
     cef_bridge::{CharlotteClient,default_filter,TabState},
     ui_server::{self,Ui,Command},
@@ -20,6 +20,8 @@ struct Controller {
     client: Client,
     restore_index: usize,
     restore_pending: bool,
+    restore_urls: Vec<String>,
+    pending_restore: HashMap<i32,String>,
 }
 fn browser_id(view:&BrowserView)->Option<i32> {
     view.browser().map(|browser| browser.identifier())
@@ -39,10 +41,18 @@ impl Controller {
     fn select(&mut self, selected:i32) {
         let Some(index)=self.views.iter().position(|view|browser_id(view)==Some(selected)) else{return};
         for (i,view) in self.views.iter().enumerate() {view.set_visible((i==index) as i32);}
+        // Saved background URLs remain in Rust until explicitly selected.
+        if let Some(url)=self.pending_restore.remove(&selected) {
+            if let Some(frame)=self.views[index].browser().and_then(|b|b.main_frame()){
+                frame.load_url(Some(&CefString::from(url.as_str())));
+            } else { self.pending_restore.insert(selected,url); }
+        }
         if let Ok(mut tabs)=self.tabs.lock() {
-            tabs.activate(selected);
-            if let Ok(store)=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
-                let _=crate::session::save_tabs(&store,&tabs);
+            if tabs.active_id()!=Some(selected) {
+                tabs.activate(selected);
+                if let Ok(store)=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
+                    let _=crate::session::save_tabs(&store,&tabs);
+                }
             }
         }
         self.page_panel.layout();
@@ -57,14 +67,26 @@ impl Controller {
         self.views.iter().filter_map(BrowserView::browser).find(|browser|browser.identifier()==id)
     }
     fn sync(&mut self){
-        let ready=self.views.iter().all(|v|v.browser().is_some());
-        if self.restore_pending && ready {
+        if self.restore_pending {
+            // CEF BrowserView may exist before its Browser is initialized.
+            // Wait for all saved browser IDs before restoring selection.
+            if !self.views.iter().all(|v|v.browser().is_some()) {return}
             self.restore_pending=false;
+            if let Ok(mut tabs)=self.tabs.lock() {
+                for (index,view) in self.views.iter().enumerate() {
+                    if index==self.restore_index {continue}
+                    if let (Some(id),Some(url))=(browser_id(view),self.restore_urls.get(index)){
+                        if tabs.restore_background(id,url){
+                            self.pending_restore.insert(id,url.clone());
+                        }
+                    }
+                }
+            }
+            self.restore_urls.clear();
             if let Some(id)=self.views.get(self.restore_index).and_then(browser_id) {
                 self.select(id);return
             }
         }
-        // Newly created page tabs are activated when their CEF browser is ready.
         let active=self.tabs.lock().ok().and_then(|t|t.active_id());
         if let Some(id)=active {self.select(id);}
     }
@@ -114,6 +136,7 @@ impl Controller {
             Command::Reload=>{if let Some(b)=self.active_browser(){b.reload()}},
             Command::HardReload=>{if let Some(b)=self.active_browser(){b.reload_ignore_cache()}},
             Command::Close(id)=>{
+                self.pending_restore.remove(&id);
                 if self.views.len()==1{
                     self.add(String::new());
                 }
@@ -238,11 +261,15 @@ wrap_browser_process_handler! {
                     .unwrap_or_else(||"https://www.google.com/".into())]};
             let Some(panel)=panel_create(None) else{quit_message_loop();return};
             let _fill=panel.set_to_fill_layout();
+            let restore_urls=urls;
             let mut views=Vec::new();
-            for url in urls.into_iter().take(crate::tabs::MAX_TABS){
+            for (index,url) in restore_urls.iter().take(crate::tabs::MAX_TABS).enumerate(){
+                // Avoid network and decode work for pages the user has not
+                // selected. A lightweight blank CEF view keeps tab IDs stable.
+                let initial=if index==restore.active_index {url.as_str()}else{"about:blank"};
                 let mut c=client.clone();
                 let mut delegate=CharlotteBrowserViewDelegate::new(self.windows.clone());
-                if let Some(view)=browser_view_create(Some(&mut c),Some(&CefString::from(url.as_str())),
+                if let Some(view)=browser_view_create(Some(&mut c),Some(&CefString::from(initial)),
                     Some(&settings),None,None,Some(&mut delegate)){
                     view.set_visible((views.len()==restore.active_index) as i32);
                     let mut native=View::from(&view);
@@ -254,7 +281,7 @@ wrap_browser_process_handler! {
             let control=Controller{
                 _ui:ui,tabs,filter,windows:self.windows.clone(),views,page_panel:panel.clone(),toolbar:toolbar.clone(),
                 _sidebar:sidebar.clone(),client,restore_index:restore.active_index,
-                restore_pending:true,
+                restore_pending:true,restore_urls,pending_restore:HashMap::new(),
             };
             CONTROLLER.with(|cell|{cell.replace(Some(control));});
             let mut delegate=CharlotteWindowDelegate::new(toolbar,panel,sidebar,self.windows.clone());
