@@ -115,87 +115,15 @@ fn serialized(value:&str)->Result<String,String>{
     serde_json::to_string(value).map_err(|e|e.to_string())
 }
 pub fn observation_command()->(String,Value){
-    let script=String::from(r#"(() => {
-        const selectable='a[href],button,input:not([type=hidden]),textarea,select,[role=button],[contenteditable=true]';
-        const short=s=>String(s||'').replace(/\s+/g,' ').trim().slice(0,180);
-        const path=el=>{
-            const parts=[];
-            for(let node=el;node&&node.nodeType===1&&parts.length<20;node=node.parentElement){
-                const tag=node.localName;
-                if(!tag)break;
-                let ordinal=1;
-                for(let sibling=node.previousElementSibling;sibling;sibling=sibling.previousElementSibling)
-                    if(sibling.localName===tag)ordinal++;
-                parts.unshift(tag+':nth-of-type('+ordinal+')');
-                if(tag==='html')break;
-            }
-            return parts.join(' > ');
-        };
-        const controls=Array.from(document.querySelectorAll(selectable)).slice(0,300)
-            .filter(el=>{
-                if(el.matches('input[type=password],input[type=hidden],input[type=file]'))return false;
-                const r=el.getBoundingClientRect();
-                return r.width>0&&r.height>0&&!el.disabled;
-            }).slice(0,70).map(el=>({
-                selector:path(el),tag:el.localName,
-                role:short(el.getAttribute('role')),
-                label:short(el.getAttribute('aria-label')||el.labels?.[0]?.innerText||el.innerText||el.placeholder||el.name),
-                type:short(el.getAttribute('type')),href:el.localName==='a'?short(new URL(el.href).origin+new URL(el.href).pathname):'',
-                editable:el.matches('input,textarea,[contenteditable=true]'),
-                password:el.matches('input[type=password]')
-            }));
-        return {url:location.origin+location.pathname,title:document.title,ready:document.readyState,
-            text:short(document.body?.innerText).slice(0,180),
-            excerpt:String(document.body?.innerText||'').slice(0,5000),
-            controls};
-    })()"#);
-    runtime_evaluate(script)
+    crate::advanced_automation::observation_command()
 }
 pub fn click_point_command(selector:&str)->Result<(String,Value),String>{
     Action::Click{selector:selector.to_owned()}.validate()?;
-    let quoted=serialized(selector)?;
-    let expr=format!(r#"(() => {{
-      const el=document.querySelector({quoted});
-      if(!el) return {{error:"Element not found"}};
-      if(document.querySelectorAll({quoted}).length!==1)return {{error:"Ambiguous selector"}};
-      if(el.matches('input[type=password]')) return {{error:"Password control not actionable"}};
-      el.scrollIntoView({{block:"center",inline:"center"}});
-      const r=el.getBoundingClientRect();
-      if(r.width<1||r.height<1) return {{error:"Element hidden"}};
-      const x=Math.round(r.left+r.width/2),y=Math.round(r.top+r.height/2);
-      const visible=document.elementFromPoint(x,y);
-      if(!visible||(!el.contains(visible)&&!visible.contains(el)))
-        return {{error:"Element is covered or not actually clickable"}};
-      return {{x,y,tag:el.localName,
-        text:String(el.innerText||el.getAttribute("aria-label")||"").slice(0,120)}};
-    }})()"#);
-    Ok(runtime_evaluate(expr))
+    crate::advanced_automation::element_command(selector,"position",None)
 }
 pub fn type_command(selector:&str,text:&str)->Result<(String,Value),String>{
-    Action::Type{selector:selector.into(),text:text.into()}.validate()?;
-    let selector=serialized(selector)?;
-    let value=serialized(text)?;
-    // Native Chromium DOM value setter + input/change events for common SPA
-    // frameworks; no arbitrary JS from the model can be injected.
-    let expr=format!(r#"(() => {{
-        const el=document.querySelector({selector});
-        if(!el||document.querySelectorAll({selector}).length!==1||!el.matches("input,textarea,[contenteditable=true]"))
-            return {{error:"Editable field not found"}};
-        if(el.matches("input[type=password],input[type=file]"))
-            return {{error:"Sensitive input requires manual user interaction"}};
-        if(el.matches("[contenteditable=true]")) {{
-            el.focus();el.textContent={value};
-        }} else {{
-            const proto=el.localName==="textarea"?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
-            const setter=Object.getOwnPropertyDescriptor(proto,"value")?.set;
-            if(!setter)return {{error:"Value setter unavailable"}};
-            setter.call(el,{value});el.focus();
-        }}
-        el.dispatchEvent(new Event("input",{{bubbles:true}}));
-        el.dispatchEvent(new Event("change",{{bubbles:true}}));
-        return {{ok:true}};
-    }})()"#);
-    Ok(runtime_evaluate(expr))
+    Action::Type{selector:selector.to_owned(),text:text.to_owned()}.validate()?;
+    crate::advanced_automation::element_command(selector,"fill",Some(text))
 }
 pub fn scroll_command(direction:ScrollDirection)->(String,Value){
     let amount=match direction{ScrollDirection::Down=>610,ScrollDirection::Up=>-610};
