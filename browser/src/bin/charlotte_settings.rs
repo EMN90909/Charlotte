@@ -29,6 +29,8 @@ Usage:
   charlotte-settings mcp verify <configured-id>
   charlotte-settings mcp oauth authorize <id>
   charlotte-settings mcp oauth client-id set|remove <id>
+  charlotte-settings mcp filesystem root set <existing-directory>
+  charlotte-settings mcp filesystem root remove
   charlotte-settings mcp add <id> <https-url>
   charlotte-settings mcp remove <id>
   charlotte-settings mcp token set|remove <id>
@@ -49,6 +51,19 @@ fn run(args: &[String]) -> Result<(), String> {
     let db = Storage::open(&profile::profile_root().join("charlotte.sqlite")).map_err(|e|e.to_string())?;
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["profile"] => println!("{}", profile::profile_root().display()),
+        ["mcp","filesystem","root","set",directory]=>{
+            let root=std::fs::canonicalize(directory).map_err(|e|e.to_string())?;
+            if !root.is_dir(){return Err("Filesystem MCP root must be a directory".into())}
+            charlotte_native::credentials::store("mcp-root:filesystem",&root.to_string_lossy())
+                .map_err(|e|e.to_string())?;
+            println!("Approved filesystem MCP root: {}",root.display());
+            println!("File operations through this MCP require separate agent approval.");
+        },
+        ["mcp","filesystem","root","remove"]=>{
+            charlotte_native::credentials::remove("mcp-root:filesystem")
+                .map_err(|e|e.to_string())?;
+            println!("Removed approved filesystem MCP root");
+        },
         ["mcp","catalog"]=>{
             let selected=mcp::saved_servers(&db)?;
             for p in charlotte_native::mcp_catalog::PRESETS {
