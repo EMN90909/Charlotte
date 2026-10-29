@@ -137,7 +137,11 @@ pub fn click_point_command(selector:&str)->Result<(String,Value),String>{
       el.scrollIntoView({{block:"center",inline:"center"}});
       const r=el.getBoundingClientRect();
       if(r.width<1||r.height<1) return {{error:"Element hidden"}};
-      return {{x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2),tag:el.localName,
+      const x=Math.round(r.left+r.width/2),y=Math.round(r.top+r.height/2);
+      const visible=document.elementFromPoint(x,y);
+      if(!visible||(!el.contains(visible)&&!visible.contains(el)))
+        return {{error:"Element is covered or not actually clickable"}};
+      return {{x,y,tag:el.localName,
         text:String(el.innerText||el.getAttribute("aria-label")||"").slice(0,120)}};
     }})()"#);
     Ok(runtime_evaluate(expr))
@@ -333,6 +337,20 @@ mod tests {
             selector:"#invented".into()},&snap).is_err());
         assert!(ensure_observed_target(&Action::Type{
             selector:"html > body > button".into(),text:"x".into()},&snap).is_err());
+    }
+    #[test]fn mouse_down_and_up_both_keep_left_button(){
+        for event in ["mousePressed","mouseReleased"] {
+            let (method,args)=input_mouse_command(event,21,34);
+            assert_eq!(method,"Input.dispatchMouseEvent");
+            assert_eq!(args["button"],"left");
+            assert_eq!(args["clickCount"],1);
+        }
+    }
+    #[test]fn browser_snapshot_does_not_read_password_values(){
+        let (_,args)=observation_command();
+        let source=args["expression"].as_str().unwrap();
+        assert!(source.contains("input[type=password]"));
+        assert!(!source.contains("||el.value"));
     }
     #[test]fn validates_chromium_reply(){
         assert_eq!(extract_result(&json!({"result":{"value":{"ok":true}}})).unwrap(),json!({"ok":true}));
