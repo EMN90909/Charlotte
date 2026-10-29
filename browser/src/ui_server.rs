@@ -33,7 +33,7 @@ struct PendingTool {
 #[derive(Clone)]
 struct PendingBrowser {
     context:BrowserContext, action:BrowserAction, goal:String,
-    provider:String, step:u8, observed_url:String,
+    provider:String, step:u8, observed_url:String, target_label:String,
 }
 struct UiInner {
     pending_browser:Option<PendingBrowser>,
@@ -148,7 +148,7 @@ fn sidebar(ui:&Ui)->Html<String>{
         html.push_str("<div class=\"bubble\"><strong>Charlotte wants to interact with this page</strong>");
         html.push_str(&format!("<p class=\"muted\">Site: {} | Step {}/{}</p><p>{}</p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
             escape(&pending.context.origin),pending.step+1,browser_automation::MAX_STEPS,
-            escape(&pending.action.description()),escape(&serde_json::to_string(&pending.action).unwrap_or_default())));
+            escape(&format!("{} — {}",pending.action.description(),pending.target_label)),escape(&serde_json::to_string(&pending.action).unwrap_or_default())));
         html.push_str(&format!(r#"<form action="/browser/approve" method="post">{token}<button name="command" class="primary" value="approve">Approve this browser step</button><button name="command" value="reject">Stop automation</button></form>"#));
         html.push_str("</div>");
     }
@@ -278,11 +278,22 @@ fn plan_browser_next(
                 "Charlotte has inspected this page but needs a more specific next action. You can refine your task.".into());
         },
         BrowserDecision::Action(action)=>{
+            browser_automation::ensure_observed_target(&action,&snapshot)?;
+            let target_label=match &action{
+                BrowserAction::Click{selector}|BrowserAction::Type{selector,..}=>{
+                    snapshot.get("controls").and_then(serde_json::Value::as_array)
+                        .and_then(|controls|controls.iter().find(|c|
+                            c.get("selector").and_then(serde_json::Value::as_str)==Some(selector.as_str())))
+                        .and_then(|c|c.get("label").and_then(serde_json::Value::as_str))
+                        .unwrap_or("").to_owned()
+                },
+                _=>String::new(),
+            };
             let observed_url=snapshot.get("url").and_then(serde_json::Value::as_str)
                 .ok_or("Chromium observation has no page URL")?.to_owned();
             if let Ok(mut inner)=state.inner.lock(){
                 inner.pending_browser=Some(PendingBrowser{
-                    context,action,goal,provider:provider_name,step,observed_url,
+                    context,action,goal,provider:provider_name,step,observed_url,target_label,
                 });
             }else{return Err("Automation state lock failed".into())}
             finish(state,None);
@@ -323,6 +334,7 @@ async fn browser_approve(
             if current.get("url").and_then(serde_json::Value::as_str)!=Some(&pending.observed_url){
                 return Err("Page changed since Charlotte proposed this action. Nothing was clicked or typed; start a new task.".into())
             }
+            browser_automation::ensure_observed_target(&pending.action,&current)?;
             let action_outcome=pending.context.act(&pending.action)?;
             std::thread::sleep(std::time::Duration::from_millis(350));
             plan_browser_next(&state,pending.context,pending.goal,
