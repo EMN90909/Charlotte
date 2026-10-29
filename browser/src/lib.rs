@@ -23,6 +23,7 @@ pub mod mcp_stdio;
 pub mod mcp_oauth;
 pub mod mcp_sqlite;
 pub mod agent;
+pub mod orchestrator;
 pub mod browser_automation;
 pub mod advanced_automation;
 pub mod automation_semantics;
