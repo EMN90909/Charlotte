@@ -27,6 +27,30 @@ pub fn saved_endpoint()->Result<Url,ServiceError>{
         .ok_or(ServiceError::InvalidEndpoint)?;
     validate_cloud_url(&endpoint)
 }
+/// List only models that the hosted gateway currently enables for this
+/// account. Does not expose provider API secrets or unconfigured models.
+pub fn models()->Result<Vec<String>,ServiceError>{
+    let base=saved_endpoint()?;
+    let url=base.join("v1/models").map_err(|_|ServiceError::InvalidEndpoint)?;
+    let auth=crate::auth::SupabaseAuth::configured()
+        .map_err(|_|ServiceError::MissingCredential)?;
+    let token=auth.access_token().map_err(|_|ServiceError::MissingCredential)?;
+    let response=Client::builder().timeout(Duration::from_secs(15))
+        .redirect(Policy::none()).build()?.get(url).bearer_auth(token).send()?;
+    if !response.status().is_success(){
+        return Err(ServiceError::Server{status:response.status().as_u16(),retry_after:None})
+    }
+    if response.content_length().is_some_and(|len|len>100_000){
+        return Err(ServiceError::InvalidResponse)
+    }
+    let bytes=response.bytes()?;
+    if bytes.len()>100_000{return Err(ServiceError::InvalidResponse)}
+    let data:Value=serde_json::from_slice(&bytes).map_err(|_|ServiceError::InvalidResponse)?;
+    Ok(data["models"].as_array().ok_or(ServiceError::InvalidResponse)?.iter()
+        .filter_map(|m|m["id"].as_str())
+        .filter(|id|crate::ai_providers::valid_model(id))
+        .take(200).map(str::to_owned).collect())
+}
 pub fn send(model:&str,system:&str,history:&[Turn],text:&str,image:Option<&str>)
     ->Result<String,ServiceError>{
     if text.len()>12_000||system.len()>8_000||history.len()>16{
