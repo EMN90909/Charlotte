@@ -3,7 +3,7 @@
 use reqwest::blocking::Client;
 use reqwest::{header,redirect::Policy};
 use serde_json::{json,Value};
-use std::{collections::HashMap,io::Read,time::Duration};
+use std::{collections::HashMap,io::{BufRead,BufReader,Read},time::Duration};
 use url::Url;
 #[derive(Clone,Debug)]
 pub struct Tool {
@@ -98,7 +98,7 @@ impl Registry {
         }
         let alias=format!("s{}",self.next_alias);
         let mut conn=Connection{
-            endpoint,client:Client::builder().timeout(Duration::from_secs(30))
+            endpoint,client:Client::builder().connect_timeout(Duration::from_secs(5)).timeout(Duration::from_secs(20))
                 .redirect(Policy::none()).build().map_err(|e|e.to_string())?,
             bearer:token,session:None,next_id:0,tools:Vec::new(),alias,server_id:id.to_owned(),
         };
@@ -146,24 +146,46 @@ impl Connection {
             self.session=Some(session);
         }
         let mime=response.headers().get(header::CONTENT_TYPE).and_then(|v|v.to_str().ok()).unwrap_or("").to_owned();
-        let mut bytes=Vec::new();
-        response.take(2*1024*1024+1).read_to_end(&mut bytes).map_err(|e|e.to_string())?;
-        if bytes.len()>2*1024*1024{return Err("MCP response exceeds 2 MB".into())}
-        if bytes.is_empty(){return Ok(None)}
+        const LIMIT:usize=2*1024*1024;
         if mime.starts_with("text/event-stream"){
-            let text=String::from_utf8(bytes).map_err(|_|"Malformed SSE response")?;
+            // Streamable HTTP MCP may keep the SSE connection alive after
+            // sending its JSON-RPC reply; read until *our* reply arrives,
+            // rather than blocking on read_to_end() until server shutdown.
+            let expected=body.get("id").and_then(Value::as_u64);
+            let mut reader=BufReader::new(response.take((LIMIT+1) as u64));
+            let mut line=String::new();
             let mut data=String::new();
-            for line in text.lines(){
-                if let Some(part)=line.strip_prefix("data:") {
-                    data.push_str(part.trim_start());
-                } else if line.is_empty()&&!data.is_empty(){
-                    let result=serde_json::from_str(&data).map_err(|e|e.to_string())?;
-                    return Ok(Some(result));
+            let mut used=0usize;
+            loop {
+                line.clear();
+                let size=reader.read_line(&mut line).map_err(|e|e.to_string())?;
+                used=used.saturating_add(size);
+                if used>LIMIT{return Err("MCP SSE stream exceeded 2 MB".into())}
+                if size==0 {break}
+                if let Some(fragment)=line.strip_prefix("data:"){
+                    data.push_str(fragment.trim());
+                } else if line.trim().is_empty() && !data.is_empty(){
+                    if let Ok(value)=serde_json::from_str::<Value>(&data){
+                        if expected.is_none() ||
+                           value.get("id").and_then(Value::as_u64)==expected {
+                            return Ok(Some(value))
+                        }
+                    }
+                    data.clear();
                 }
             }
-            if !data.is_empty(){return serde_json::from_str(&data).map(Some).map_err(|e|e.to_string())}
-            return Err("No JSON-RPC response in SSE stream".into())
+            if !data.is_empty(){
+                let value:Value=serde_json::from_str(&data).map_err(|e|e.to_string())?;
+                if expected.is_none()||value.get("id").and_then(Value::as_u64)==expected{
+                    return Ok(Some(value))
+                }
+            }
+            return Err("MCP SSE stream ended without matching JSON-RPC response".into())
         }
+        let mut bytes=Vec::new();
+        response.take((LIMIT+1) as u64).read_to_end(&mut bytes).map_err(|e|e.to_string())?;
+        if bytes.len()>LIMIT{return Err("MCP response exceeds 2 MB".into())}
+        if bytes.is_empty(){return Ok(None)}
         serde_json::from_slice(&bytes).map(Some).map_err(|e|e.to_string())
     }
     fn call(&mut self,method:&str,params:Value)->Result<Value,String>{
