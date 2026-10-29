@@ -44,6 +44,16 @@ pub fn index_snapshot(snapshot:&mut Value)->Result<(),String>{
 /// Convert model index tools into the corresponding observed CSS path.
 /// The existing unique-target, origin and live-DOM checks then apply.
 pub fn resolve_index(action:Action,snapshot:&Value)->Result<Action,String>{
+    if let Action::DragIndex{from_index,to_index}=action{
+        let from=resolve_index(Action::ClickIndex{index:from_index},snapshot)?;
+        let to=resolve_index(Action::ClickIndex{index:to_index},snapshot)?;
+        if let (Action::Click{selector:from},Action::Click{selector:to})=(from,to){
+            let drag=Action::Drag{from,to};
+            crate::browser_automation::ensure_observed_target(&drag,snapshot)?;
+            return Ok(drag)
+        }
+        return Err("Could not resolve draggable accessible elements".into())
+    }
     let (index,typed)=match action{
         Action::ClickIndex{index}=>(index,None),
         Action::TypeIndex{index,text}=>(index,Some(text)),
@@ -93,6 +103,31 @@ pub fn compact_ax(response:&Value)->Value{
     }
     json!(filtered)
 }
+/// Small pruned role/name observation. Keep exact selectors only inside
+/// Rust; let the model use ephemeral accessible element indices.
+pub fn model_snapshot(snapshot:&Value)->Value{
+    let controls=snapshot["controls"].as_array().map(|items|{
+        items.iter().take(MAX_SEMANTIC_CONTROLS).map(|item|{
+            json!({
+                "index":item["index"],
+                "role":item["role"],
+                "name":item["label"],
+                "editable":item["editable"],
+                "draggable":item["draggable"],
+                "href":item["href"],
+            })
+        }).collect::<Vec<_>>()
+    }).unwrap_or_default();
+    let excerpt=snapshot["excerpt"].as_str().unwrap_or("");
+    json!({
+        "url":snapshot["url"],"title":snapshot["title"],
+        "viewport":snapshot["viewport"],"imagePixels":snapshot["imagePixels"],
+        "text":cleaned(excerpt,2400),
+        "controls":controls,
+        "accessibility":snapshot["accessibility"],
+        "frames":snapshot["frames"],"isolatedFrames":snapshot["isolatedFrames"],
+    })
+}
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub enum Risk{ReadOnly,SafeWrite,Consequential}
 impl Risk{
@@ -113,7 +148,7 @@ pub fn classify(action:&Action,snapshot:&Value)->Risk{
                 v["href"].as_str().unwrap_or(""))).unwrap_or_default();
             if is_consequential(&text){Risk::Consequential}else{Risk::SafeWrite}
         }
-        Action::ClickIndex{..}|Action::ClickAt{..}|Action::Drag{..}|Action::Dialog{..}=>
+        Action::ClickIndex{..}|Action::ClickAt{..}|Action::Drag{..}|Action::DragIndex{..}|Action::Dialog{..}=>
             Risk::Consequential, // Unknown coordinate/button/dialog side effects.
     }
 }
@@ -137,6 +172,16 @@ mod tests{
      assert!(matches!(resolve_index(Action::ClickIndex{index:1},&snap).unwrap(),Action::Click{..}));
      assert!(resolve_index(Action::TypeIndex{index:1,text:"x".into()},&snap).is_err());
      assert!(resolve_index(Action::ClickIndex{index:999},&snap).is_err());
+ }
+ #[test]fn pruned_model_snapshot_uses_numbered_roles_without_css_paths(){
+    let mut input=json!({"url":"https://example.org","controls":[
+        {"selector":"html > body > button","label":"Open menu","tag":"button","type":"","role":"","editable":false,"draggable":false}
+    ]});
+    index_snapshot(&mut input).unwrap();
+    let model=model_snapshot(&input).to_string();
+    assert!(model.contains("Open menu"));
+    assert!(model.contains("index"));
+    assert!(!model.contains("html > body"));
  }
  #[test]fn action_risk_treats_unlabelled_coordinates_as_consequential(){
      let snap=json!({"controls":[{"selector":"button","label":"Delete account"}]});
