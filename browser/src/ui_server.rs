@@ -986,6 +986,21 @@ fn execute_auto_route(
         AutoRoute::Reply(answer)|AutoRoute::Clarify(answer)=>{
             browser_answer(state,&question,answer,None,0);
         },
+        AutoRoute::LocalSkill{name}=>{
+            let context=context.ok_or("No valid active Chromium page")?;
+            let source=source.ok_or("No current Chromium tab")?;
+            let skill=crate::browser_skills::Skill::parse(&name)?;
+            let result=crate::browser_skills::execute(skill,&context)?;
+            if !source_page_still_active(state,&source){
+                return Err("Chromium tab changed while running the local skill".into())
+            }
+            if let Ok(mut inner)=state.inner.lock(){
+                inner.skill_output=Some(result);
+                inner.skill_source=Some(source);
+            }
+            // Local results are NEVER injected into AI chat history.
+            finish(state,None);
+        },
         AutoRoute::PageAnswer=>{
             let context=context.ok_or("No valid active Chromium page")?;
             let source=source.ok_or("No current page")?;
