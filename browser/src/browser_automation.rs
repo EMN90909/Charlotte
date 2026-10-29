@@ -48,6 +48,27 @@ impl Action {
         }
     }
 }
+/// Never let a model invent an arbitrary CSS selector to click, or repurpose
+/// a text-only element as a form field. Its action must match the last real
+/// Chromium DOM observation. Called again immediately before approval.
+pub fn ensure_observed_target(action:&Action,snapshot:&Value)->Result<(),String>{
+    let (selector,needs_editable)=match action {
+        Action::Click{selector}=>(selector.as_str(),false),
+        Action::Type{selector,..}=>(selector.as_str(),true),
+        _=>return Ok(()),
+    };
+    let controls=snapshot.get("controls").and_then(Value::as_array)
+        .ok_or("Missing page controls in Chromium observation")?;
+    let matching=controls.iter().filter(|control|
+        control.get("selector").and_then(Value::as_str)==Some(selector) &&
+        control.get("password").and_then(Value::as_bool)!=Some(true) &&
+        (!needs_editable||control.get("editable").and_then(Value::as_bool)==Some(true))
+    ).count();
+    if matching!=1 {
+        return Err("Charlotte action does not match a unique, permitted visible page control".into())
+    }
+    Ok(())
+}
 pub fn require_same_origin(current:&str,target:&str)->Result<(),String>{
     let source=crate::permissions::canonical_origin(current)
         .ok_or("Browser automation requires an active HTTPS/loopback page")?;
@@ -74,7 +95,7 @@ pub fn observation_command()->(String,Value){
         const short=s=>String(s||'').replace(/\s+/g,' ').trim().slice(0,180);
         const path=el=>{
             const parts=[];
-            for(let node=el;node&&node.nodeType===1&&parts.length<12;node=node.parentElement){
+            for(let node=el;node&&node.nodeType===1&&parts.length<20;node=node.parentElement){
                 const tag=node.localName;
                 if(!tag)break;
                 let ordinal=1;
@@ -111,6 +132,7 @@ pub fn click_point_command(selector:&str)->Result<(String,Value),String>{
     let expr=format!(r#"(() => {{
       const el=document.querySelector({quoted});
       if(!el) return {{error:"Element not found"}};
+      if(document.querySelectorAll({quoted}).length!==1)return {{error:"Ambiguous selector"}};
       if(el.matches('input[type=password]')) return {{error:"Password control not actionable"}};
       el.scrollIntoView({{block:"center",inline:"center"}});
       const r=el.getBoundingClientRect();
@@ -128,7 +150,7 @@ pub fn type_command(selector:&str,text:&str)->Result<(String,Value),String>{
     // frameworks; no arbitrary JS from the model can be injected.
     let expr=format!(r#"(() => {{
         const el=document.querySelector({selector});
-        if(!el||!el.matches("input,textarea,[contenteditable=true]"))
+        if(!el||document.querySelectorAll({selector}).length!==1||!el.matches("input,textarea,[contenteditable=true]"))
             return {{error:"Editable field not found"}};
         if(el.matches("input[type=password],input[type=file]"))
             return {{error:"Sensitive input requires manual user interaction"}};
@@ -256,6 +278,18 @@ mod tests {
         let expr=params["expression"].as_str().unwrap();
         assert!(expr.contains(r#"hello \"world\""#));
         assert!(!expr.contains("eval("));
+    }
+    #[test]fn disallows_invented_or_noneditable_selectors(){
+        let snap=json!({"controls":[
+            {"selector":"html > body > button","editable":false,"password":false},
+            {"selector":"html > body > input","editable":true,"password":false}
+        ]});
+        assert!(ensure_observed_target(&Action::Click{
+            selector:"html > body > button".into()},&snap).is_ok());
+        assert!(ensure_observed_target(&Action::Click{
+            selector:"#invented".into()},&snap).is_err());
+        assert!(ensure_observed_target(&Action::Type{
+            selector:"html > body > button".into(),text:"x".into()},&snap).is_err());
     }
     #[test]fn validates_chromium_reply(){
         assert_eq!(extract_result(&json!({"result":{"value":{"ok":true}}})).unwrap(),json!({"ok":true}));
