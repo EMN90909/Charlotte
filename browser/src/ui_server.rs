@@ -90,7 +90,7 @@ fn chrome(ui:&Ui)->Html<String>{
         html.push_str(&format!(r#"<form method="post" action="/action">{}<button name="command" value="{}" title="{}">{}</button></form>"#,tok,action,action,label));
     }
     html.push_str(&format!(r#"<form style="flex:1" method="post" action="/action">{tok}<input name="value" aria-label="Address or search" value="{}" placeholder="Enter address or search" style="flex:1"><button class="primary" name="command" value="navigate">Go</button></form>"#,escape(active_url)));
-    let (enabled,blocked,rules)=ui.filter.lock().map(|f|(f.is_enabled(),f.blocked_count(),f.rule_count()))
+    let (enabled,blocked,rules)=ui.filter.read().map(|f|(f.is_enabled(),f.blocked_count(),f.rule_count()))
         .unwrap_or((true,0,0));
     let action=if enabled{"shields-off"}else{"shields-on"};
     let state=if enabled{"ON"}else{"OFF"};
@@ -305,7 +305,9 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
     };
     let state=ui.clone();
     thread::Builder::new().name("charlotte-native-ui".into()).spawn(move||{
-        let runtime=tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("tokio UI runtime");
+        // The loopback chrome API is I/O-bound; one event-loop thread is
+        // sufficient. Blocking AI/network work uses Tokio's on-demand pool.
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio UI runtime");
         runtime.block_on(async move{
             let router=Router::new()
                 .route("/chrome",get(|State(ui):State<Ui>|async move{chrome(&ui)}))
@@ -354,7 +356,7 @@ mod tests{
     #[test]
     fn csrf_denies_cross_origin_and_missing_tokens() {
         let tabs=Arc::new(Mutex::new(crate::tabs::Tabs::default()));
-        let ui=start(tabs).unwrap();
+        let ui=start(tabs,Arc::new(std::sync::RwLock::new(crate::shield::Shield::new(&[crate::shield::STARTER_RULES],true)))).unwrap();
         let mut headers=HeaderMap::new();
         headers.insert(header::ORIGIN,format!("http://127.0.0.1:{}",ui.port).parse().unwrap());
         headers.insert(header::HOST,format!("127.0.0.1:{}",ui.port).parse().unwrap());
@@ -374,7 +376,7 @@ mod tests{
             t.title(42,"<img src=x onerror=alert(1)>");
             t.navigate(42,"https://example.org");
         }
-        let ui=start(tabs).unwrap();
+        let ui=start(tabs,Arc::new(std::sync::RwLock::new(crate::shield::Shield::new(&[crate::shield::STARTER_RULES],true)))).unwrap();
         let page=chrome(&ui).0;
         assert!(page.contains("&lt;img"));
         assert!(!page.contains("<img src=x"));
@@ -383,7 +385,7 @@ mod tests{
     }
     #[test]
     fn resets_page_chat_credentials_on_navigation() {
-        let ui=start(Arc::new(Mutex::new(crate::tabs::Tabs::default()))).unwrap();
+        let ui=start(Arc::new(Mutex::new(crate::tabs::Tabs::default())),Arc::new(std::sync::RwLock::new(crate::shield::Shield::new(&[crate::shield::STARTER_RULES],true)))).unwrap();
         {
             let mut inner=ui.inner.lock().unwrap();
             inner.chat_token="secret".into();
