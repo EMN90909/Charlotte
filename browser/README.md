@@ -14,6 +14,7 @@ browser crate.
 - `src/shield.rs`: ad blocking; `src/permissions.rs`: origin permissions
 - `src/auth.rs`: Supabase account transport, keychain session storage
 - `src/translate.rs`: AI-backed text translation
+- `src/browser_automation.rs`, `src/browser_agent.rs`: native CEF/CDP browser automation and bounded AI action loop
 - `src/bin/`: settings utility and CEF renderer helper
 - `scripts/`, `packaging/`, `resources/`: native CEF distribution assets
 
@@ -51,6 +52,28 @@ translation UI, and additional settings features are not fully connected.
 The source history retains the prior Electron implementation for reference;
 a Git revert remains possible. No legacy Node runtime ships through this
 Cargo-based browser build.
+
+## Charlotte — Chromium AI browser automation
+
+Select **Automate this Chromium tab** in Charlotte's sidebar, describe a
+goal and let the Rust agent inspect the active page, propose one action,
+obtain your explicit approval, execute it using CEF's built-in Chrome
+DevTools Protocol bridge, and verify the result. Supported first-pass
+actions include page inspection, same-origin navigation, real Chromium
+mouse clicks, non-sensitive text entry and scrolling, for up to eight
+approved steps. There is no Selenium, external Chrome, Node or browser
+debugging port.
+
+The page observation (bounded visible page text and interactive controls)
+is sent to your selected AI provider **only after you choose browser
+automation mode**. Password and file inputs are excluded from control
+inspection. Browser actions are constrained to a single active tab and
+require explicit user approval; vision, cross-origin frames and fully
+autonomous execution are not yet supported.
+
+See [BROWSER_AUTOMATION.md](BROWSER_AUTOMATION.md) for the Chromium/CEF
+research, implementation, security decisions, limitations and validation
+matrix. Compilation and end-to-end tests remain unverified.
 
 ## Charlotte AI Agent, MCP and site notifications
 
