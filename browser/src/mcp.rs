@@ -107,7 +107,10 @@ pub fn connect_saved_for(
     ranked.sort_by(|a,b|b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
     let mut registry=Registry::new();
     let limit=max.clamp(1,5);
-    for (index,_) in ranked.into_iter().take(limit){
+    let relevant:Vec<_>=ranked.iter().copied().filter(|(_,score)|*score>0).collect();
+    let selected=if relevant.is_empty(){ranked.into_iter().take(2).collect::<Vec<_>>()}
+        else{relevant.into_iter().take(limit).collect::<Vec<_>>()};
+    for (index,_) in selected{
         let server=&servers[index];
         let token=crate::credentials::retrieve(&format!("mcp:{}",server.id)).ok();
         if let Err(error)=registry.connect_config(&server.id,&server.url,token){
