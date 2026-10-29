@@ -119,7 +119,7 @@ pub fn observation_command()->(String,Value){
                 editable:el.matches('input,textarea,[contenteditable=true]'),
                 password:el.matches('input[type=password]')
             }));
-        return {url:location.origin+location.pathname,title:document.title,
+        return {url:location.origin+location.pathname,title:document.title,ready:document.readyState,
             text:short(document.body?.innerText).slice(0,180),
             excerpt:String(document.body?.innerText||'').slice(0,5000),
             controls};
@@ -238,6 +238,38 @@ impl Context {
             return Err("Page left the authorized origin".into())
         }
         Ok(data)
+    }
+    /// Page transitions are asynchronous; wait for an interactive document
+    /// instead of assuming a fixed post-click delay is sufficient.
+    pub fn observe_settled(&self)->Result<Value,String>{
+        let mut last=String::from("Page did not become ready");
+        for _ in 0..8 {
+            match self.observe(){
+                Ok(snapshot)=>{
+                    if snapshot.get("ready").and_then(Value::as_str)!=Some("loading"){
+                        return Ok(snapshot)
+                    }
+                    last="Chromium document is still loading".into();
+                },
+                Err(error)=>last=error,
+            }
+            std::thread::sleep(std::time::Duration::from_millis(350));
+        }
+        Err(last)
+    }
+    pub fn wait_for_navigation(&self,target:&str)->Result<(),String>{
+        let parsed=url::Url::parse(target).map_err(|e|e.to_string())?;
+        let expected=format!("{}{}",parsed.origin().ascii_serialization(),parsed.path());
+        for _ in 0..12{
+            if let Ok(snapshot)=self.observe(){
+                if snapshot.get("url").and_then(Value::as_str)==Some(expected.as_str()) &&
+                   snapshot.get("ready").and_then(Value::as_str)!=Some("loading"){
+                    return Ok(())
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(350));
+        }
+        Err("Navigation did not complete on the approved origin".into())
     }
     pub fn act(&self,action:&Action)->Result<Value,String>{
         action.validate()?;
