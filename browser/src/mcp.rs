@@ -40,7 +40,7 @@ pub fn validate_server(id:&str,raw:&str)->Result<(),String>{
     }
     if raw.len()>1024 {return Err("MCP URL too long".into())}
     if let Some(local)=raw.strip_prefix("local:"){
-        if local!=id || crate::mcp_catalog::local_command(local).is_none(){
+        if local!=id || (crate::mcp_catalog::local_command(local).is_none()&&local!="sqlite"){
             return Err("Unapproved local MCP executable; choose a catalog preset".into())
         }
         return Ok(())
@@ -142,12 +142,19 @@ pub(crate) fn valid_tool_name(name:&str)->bool{
 pub struct Registry {
     connections:HashMap<String,Connection>,
     local:HashMap<String,crate::mcp_stdio::LocalConnection>,
+    sqlite:Option<crate::mcp_sqlite::SqliteConnection>,
 }
 impl Registry {
-    pub fn new()->Self{Self{connections:HashMap::new(),local:HashMap::new()}}
+    pub fn new()->Self{Self{connections:HashMap::new(),local:HashMap::new(),sqlite:None}}
     pub fn connect_config(&mut self,id:&str,endpoint:&str,token:Option<String>)
         ->Result<&[Tool],String>{
         validate_server(id,endpoint)?;
+        if endpoint=="local:sqlite"&&id=="sqlite"{
+            if self.sqlite.is_none(){
+                self.sqlite=Some(crate::mcp_sqlite::SqliteConnection::open()?);
+            }
+            return Ok(&self.sqlite.as_ref().ok_or("SQLite MCP not connected")?.tools)
+        }
         if endpoint==format!("local:{id}"){
             if !self.local.contains_key(id){
                 let conn=crate::mcp_stdio::LocalConnection::connect(id)?;
@@ -185,7 +192,8 @@ impl Registry {
     }
     pub fn tools(&self)->Vec<Tool>{
         let mut list:Vec<Tool>=self.connections.values().flat_map(|c|c.tools.iter().cloned())
-            .chain(self.local.values().flat_map(|c|c.tools.iter().cloned())).collect();
+            .chain(self.local.values().flat_map(|c|c.tools.iter().cloned()))
+            .chain(self.sqlite.iter().flat_map(|c|c.tools.iter().cloned())).collect();
         list.sort_by(|a,b|a.server_id.cmp(&b.server_id).then(a.name.cmp(&b.name)));
         list
     }
@@ -204,9 +212,15 @@ impl Registry {
             }
             return c.invoke(name,args)
         }
+        if let Some(c)=self.sqlite.as_mut().filter(|c|c.alias==alias){
+            if !c.tools.iter().any(|t|t.name==alias_name&&t.original_name==name){
+                return Err("SQLite MCP tool is not advertised".into())
+            }
+            return c.invoke(name,args)
+        }
         Err("MCP server is not connected".into())
     }
-    pub fn disconnect(&mut self,id:&str){self.connections.remove(id);self.local.remove(id);}
+    pub fn disconnect(&mut self,id:&str){self.connections.remove(id);self.local.remove(id);if id=="sqlite"{self.sqlite=None;}}
 }
 fn parse_name(name:&str)->Option<(&str,&str)> {
     let rest=name.strip_prefix("mcp__")?;
@@ -327,6 +341,7 @@ mod tests{
         assert!(validate_server("supabase","https://mcp.supabase.com/mcp?read_only=true").is_ok());
         assert!(validate_server("supabase","https://mcp.supabase.com/mcp?read_only=false").is_err());
         assert!(validate_server("playwright","local:playwright").is_ok());
+        assert!(validate_server("sqlite","local:sqlite").is_ok());
         assert!(validate_server("unknown","local:unknown").is_err());
     }
     #[test]fn persisted_server_ids_are_bounded(){
