@@ -71,6 +71,31 @@ JavaScript alert/confirm/prompt dialogs can be resolved explicitly
 through Charlotte's sidebar. System file pickers and permission dialogs
 remain under direct user control.
 
+### Accessibility-first agent control and task recovery
+
+Based on the supplied agentic-browser research, Charlotte now requests a
+bounded Chromium Accessibility tree, merges semantic roles/names with the
+visible control inventory and gives the model **numbered element tools**:
+click_index, type_index and drag_index. The native Rust controller resolves
+these ephemeral IDs to live DOM elements and still requires explicit approval.
+
+A stale selector can only be re-targeted when a fresh observation finds
+one uniquely matching accessible role/name. The replacement **must be
+approved again** rather than quietly applying the older consent.
+
+Automation tasks are checkpointed in SQLite WAL with a bounded local log.
+The sidebar can **Inspect and re-plan saved task** after a restart, or
+**Discard saved task**. Nothing previously attempted is automatically
+replayed. **Pause / Take Over** stops future actions, although a Chromium
+action already dispatched may still finish. Checkpoints do not contain
+screenshots, field values, credentials or pending approval tokens.
+
+See [AUTOMATION_RESEARCH_INTEGRATION.md](AUTOMATION_RESEARCH_INTEGRATION.md)
+for the full mapping of the provided Strawberry-style architecture research
+to Charlotte's implemented features, tradeoffs and outstanding gaps.
+Parallel autonomous tabs, custom skills/routines, OOPIF node handles and
+opt-in long-term semantic memory are **not** completed.
+
 See [ADVANCED_AUTOMATION.md](ADVANCED_AUTOMATION.md) for scope, consent,
 privacy, iframe isolation, unverified behaviors and native test cases. Supported first-pass
 actions include page inspection, same-origin navigation, real Chromium
