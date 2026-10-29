@@ -198,6 +198,28 @@ wrap_download_handler! {
 wrap_permission_handler! {
     struct CharlottePermissionHandler;
     impl PermissionHandler {
+        fn on_show_permission_prompt(
+            &self, _browser: Option<&mut Browser>, _prompt_id:u64,
+            requesting_origin:Option<&CefString>, requested_permissions:u32,
+            callback:Option<&mut PermissionPromptCallback>,
+        )->i32{
+            // Alloy has no built-in Chrome-style permission prompt. Resolve
+            // notification requests explicitly, never silently grant them.
+            // A grant must already have been given via Charlotte's UI.
+            if requested_permissions != crate::permissions::NOTIFICATIONS_BIT {return 0}
+            let Some(callback)=callback else {return 0};
+            let origin=requesting_origin.map(CefString::to_string).unwrap_or_default();
+            let decision=Storage::open(&profile::profile_root().join("charlotte.sqlite"))
+                .ok()
+                .and_then(|db|crate::permissions::allowed_notification_prompt(
+                    &db,&origin,requested_permissions).ok().flatten());
+            match decision {
+                Some(crate::permissions::Decision::Allow) =>
+                    callback.cont(PermissionRequestResult::ACCEPT),
+                _ => callback.cont(PermissionRequestResult::DENY),
+            }
+            1
+        }
         fn on_request_media_access_permission(
             &self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>,
             requesting_origin: Option<&CefString>,
