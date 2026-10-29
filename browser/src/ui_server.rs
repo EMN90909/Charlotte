@@ -754,7 +754,7 @@ mod tests{
                     selector:"html > body > button".into()},
                 goal:"Open settings".into(),provider:"ollama".into(),
                 step:0,observed_url:"https://example.org/page".into(),
-                target_label:"Settings".into()
+                target_label:"Settings".into(),visual:false
             });
         }
         let html=sidebar(&ui).0;
