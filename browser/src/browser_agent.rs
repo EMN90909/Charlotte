@@ -81,6 +81,21 @@ mod tests {
         assert!(parse(r#"{"kind":"action","step":{"action":"run_js","code":"fetch('/secret')"} }"#).is_err());
         assert!(parse(r#"{"kind":"action","step":{"action":"navigate","url":"file:///etc/passwd"}}"#).is_err());
     }
+    #[test]fn parses_visual_shadow_drag_and_dialog_actions(){
+        assert!(matches!(
+            parse(r#"{"kind":"action","step":{"action":"click_at","x":60,"y":120}}"#).unwrap(),
+            Decision::Action(Action::ClickAt{x:60,y:120})
+        ));
+        assert!(matches!(
+            parse(r#"{"kind":"action","step":{"action":"drag","from":"x-item >>> button","to":"div > section"}}"#).unwrap(),
+            Decision::Action(Action::Drag{..})
+        ));
+        assert!(matches!(
+            parse(r#"{"kind":"action","step":{"action":"dialog","accept":false}}"#).unwrap(),
+            Decision::Action(Action::Dialog{accept:false,..})
+        ));
+        assert!(parse(r#"{"kind":"action","step":{"action":"click_at","x":100000,"y":25}}"#).is_err());
+    }
     #[test]fn allow_fenced_safe_answers(){
         assert_eq!(parse("```json\n{\"kind\":\"answer\",\"text\":\"Done\"}\n```").unwrap(),Decision::Answer("Done".into()));
     }
