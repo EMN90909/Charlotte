@@ -34,7 +34,7 @@ struct PendingTool {
 struct PendingBrowser {
     context:BrowserContext, action:BrowserAction, goal:String,
     provider:String, step:u8, observed_url:String, target_label:String, visual:bool,
-    screenshot_fingerprint:Option<u64>, risk_label:String,
+    screenshot_fingerprint:Option<u64>, risk_label:String, run_id:String,
 }
 struct UiInner {
     pending_browser:Option<PendingBrowser>,
@@ -248,7 +248,31 @@ fn provider_model(name:&str)->Option<(Provider,&'static str)>{
         _=>None,
     }
 }
-fn browser_answer(state:&Ui,goal:&str,answer:String){
+fn checkpoint_status(id:&str,status:&str,summary:&str,step:u8){
+    if let Ok(db)=crate::storage::Storage::open(
+        &crate::profile::profile_root().join("charlotte.sqlite")){
+        if let Err(error)=db.set_automation_status(id,status,summary,step){
+            eprintln!("Unable to checkpoint Charlotte automation: {error}");
+        }
+    }
+}
+fn create_checkpoint(goal:&str,provider:&str,context:&BrowserContext,visual:bool)
+    ->Result<String,String>{
+    use rand::RngCore;
+    let mut rng=rand::rngs::OsRng;
+    let id=format!("run-{:016x}",rng.next_u64());
+    let now=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default().as_millis() as i64;
+    let record=crate::storage::AutomationRun{id:id.clone(),goal:goal.into(),
+        origin:context.origin.clone(),provider:provider.into(),visual,step:0,
+        status:"observing".into(),summary:"Starting task".into(),updated_at:now};
+    let db=crate::storage::Storage::open(
+        &crate::profile::profile_root().join("charlotte.sqlite"))
+        .map_err(|e|e.to_string())?;
+    db.save_automation_run(&record).map_err(|e|e.to_string())?;
+    Ok(id)
+}
+fn browser_answer(state:&Ui,goal:&str,answer:String,run_id:Option<&str>){
     if let Ok(mut inner)=state.inner.lock(){
         inner.pending_browser=None;
         inner.ai.push(Turn{role:"user".into(),text:goal.into()});
@@ -261,6 +285,7 @@ fn browser_answer(state:&Ui,goal:&str,answer:String){
         let _=db.add_message("ai","user",goal,time);
         let _=db.add_message("ai","assistant",&answer,time+1);
     }
+    if let Some(run_id)=run_id{checkpoint_status(run_id,"done","Task completed",0);}
     finish(state,None);
 }
 /// Fingerprint only: screenshots are never stored in persistent browser state.
@@ -272,8 +297,9 @@ fn screenshot_fingerprint(jpeg:&str)->u64{
 }
 fn plan_browser_next(
     state:&Ui,context:BrowserContext,goal:String,provider_name:String,
-    step:u8,previous:&str,visual:bool,
+    step:u8,previous:&str,visual:bool,run_id:String,
 )->Result<(),String>{
+    checkpoint_status(&run_id,"observing","Reading current page",step);
     let (provider,default_model)=provider_model(&provider_name).ok_or("Unknown AI provider")?;
     let model=if visual&&provider_name=="ollama"{"llava"}else{default_model};
     let mut snapshot=context.observe_settled()?;
@@ -290,18 +316,19 @@ fn plan_browser_next(
             snapshot["isolatedFrames"]=serde_json::json!(frames);
         }
     }
+    checkpoint_status(&run_id,"planning","Choosing next step",step);
     let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
     let history=state.inner.lock().ok().map(|inner|inner.ai.clone()).unwrap_or_default();
     match browser_agent::decide(provider,key.as_deref(),model,&history,
         &goal,step,&snapshot,previous,screenshot.as_ref().map(|(jpeg,_)|jpeg.as_str()))?{
         BrowserDecision::Answer(text)=>{
-            browser_answer(state,&goal,text);
+            browser_answer(state,&goal,text,Some(&run_id));
         },
         BrowserDecision::Action(BrowserAction::Observe)=>{
             // Observation is performed before every planning step; letting
             // the model repeatedly request it would create an infinite loop.
             browser_answer(state,&goal,
-                "Charlotte has inspected this page but needs a more specific next action. You can refine your task.".into());
+                "Charlotte has inspected this page but needs a more specific next action. You can refine your task.".into(),Some(&run_id));
         },
         BrowserDecision::Action(proposed)=>{
             let action=automation_semantics::resolve_index(proposed,&snapshot)?;
@@ -331,9 +358,11 @@ fn plan_browser_next(
                 }else{None};
                 inner.pending_browser=Some(PendingBrowser{
                     context,action,goal,provider:provider_name,step,observed_url,target_label,
-                    visual,screenshot_fingerprint,risk_label,
+                    visual,screenshot_fingerprint,risk_label,run_id:run_id.clone(),
                 });
             }else{return Err("Automation state lock failed".into())}
+            checkpoint_status(&run_id,"awaiting_approval",
+                &format!("{}: {}",risk_label,action.description()),step);
             finish(state,None);
         },
     }
@@ -842,7 +871,7 @@ mod tests{
                 goal:"Open settings".into(),provider:"ollama".into(),
                 step:0,observed_url:"https://example.org/page".into(),
                 target_label:"Settings".into(),visual:false,screenshot_fingerprint:None,
-                risk_label:"Website interaction".into()
+                risk_label:"Website interaction".into(),run_id:"test".into()
             });
         }
         let html=sidebar(&ui).0;
