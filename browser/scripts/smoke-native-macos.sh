@@ -31,5 +31,6 @@ for _ in $(seq 1 100); do
 done
 [[ "$port" =~ ^[0-9]+$ ]] || { cat "$LOG" >&2; exit 1; }
 curl --silent --fail "http://127.0.0.1:$port/chrome" | grep -q 'Charlotte'
+curl --silent --fail "http://127.0.0.1:$port/chrome" | grep -q 'Toggle ad blocker'
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q 'Ask AI'
 echo 'Native macOS CEF launch and Rust toolbar/sidebar smoke passed.'
