@@ -150,11 +150,12 @@ pub fn scroll_command(direction:ScrollDirection)->(String,Value){
     let amount=match direction{ScrollDirection::Down=>610,ScrollDirection::Up=>-610};
     runtime_evaluate(format!("(() => {{ window.scrollBy({{top:{amount},behavior:'instant'}});return {{ok:true}}; }})()"))
 }
-pub fn input_mouse_command(kind:&str,x:i32,y:i32,button:bool)->(String,Value){
+pub fn input_mouse_command(kind:&str,x:i32,y:i32)->(String,Value){
     ("Input.dispatchMouseEvent".into(),json!({
         "type":kind,"x":x,"y":y,
-        "button":if button {"left"}else{"none"},
-        "clickCount":if button {1}else{0}
+        // Chrome requires the released button to match the pressed one.
+        "button":if kind=="mouseMoved" {"none"} else {"left"},
+        "clickCount":if kind=="mouseMoved" {0}else{1}
     }))
 }
 pub fn extract_result(raw:&Value)->Result<Value,String>{
@@ -227,8 +228,8 @@ impl Context {
                 let (method,params)=click_point_command(selector)?;
                 let position=extract_result(&self.cdp(&method,params)?)?;
                 let (x,y)=click_coordinates(&position)?;
-                for (kind,pressed) in [("mouseMoved",false),("mousePressed",true),("mouseReleased",false)] {
-                    let (method,params)=input_mouse_command(kind,x,y,pressed);
+                for kind in ["mouseMoved","mousePressed","mouseReleased"] {
+                    let (method,params)=input_mouse_command(kind,x,y);
                     self.cdp(&method,params)?;
                 }
                 Ok(json!({"clicked":true,"selector":selector}))
