@@ -157,6 +157,10 @@ impl Controller {
                 self._ui.tab_closed(id);
                 self.devtools_observers.clear();
             },
+            Command::BrowserCrashed(id)=>{
+                self._ui.tab_crashed(id);
+                self.devtools_observers.clear();
+            },
             Command::Shields(enabled)=>{
                 let was_enabled=self.filter.read().map(|s|s.is_enabled()).unwrap_or(false);
                 if let Ok(db)=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
