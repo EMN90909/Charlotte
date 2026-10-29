@@ -52,11 +52,9 @@ wrap_browser_process_handler! {
         fn on_context_initialized(&self) {
             let client = CharlotteClient::new(default_filter());
             *self.client.borrow_mut() = Some(client.clone());
-            let initial = std::env::var("CHARLOTTE_START_URL")
+            let initial = crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
+                .map(|db| crate::session::start_page(&db))
                 .unwrap_or_else(|_| "https://www.google.com/".to_string());
-            let initial = if initial.starts_with("https://") || initial.starts_with("http://") {
-                initial
-            } else { "https://www.google.com/".to_string() };
             let url = CefString::from(initial.as_str());
             let settings = BrowserSettings::default();
             let mut delegate = CharlotteBrowserViewDelegate::new(self.windows.clone());

@@ -7,6 +7,7 @@ pub mod services;
 pub mod credentials;
 pub mod shield;
 pub mod storage;
+pub mod session;
 
 #[cfg(target_os = "macos")]
 fn load_cef_library(helper: bool) -> cef::library_loader::LibraryLoader {

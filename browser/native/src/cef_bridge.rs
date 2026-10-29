@@ -30,7 +30,7 @@ wrap_client! {
 wrap_request_handler! {
     struct CharlotteRequestHandler { filter: Filter, }
     impl RequestHandler {
-        fn resource_request_handler(
+        fn get_resource_request_handler(
             &self,
             _browser: Option<&mut Browser>,
             _frame: Option<&mut Frame>,
@@ -134,6 +134,9 @@ wrap_display_handler! {
             let millis = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
             if let Ok(store) = Storage::open(&profile::profile_root().join("charlotte.sqlite")) {
+                if let Err(error) = crate::session::remember_page(&store, &address) {
+                    eprintln!("Unable to persist last active page: {error}");
+                }
                 if let Err(error) = store.record_visit(&address, &address, millis) {
                     eprintln!("Unable to record history: {error}");
                 }
