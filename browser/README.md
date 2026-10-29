@@ -29,8 +29,7 @@ app, then show the actual proposed MCP operation for approval. Local
 read-only browser skills keep page content on device.
 
 For workflows, permission boundaries and non-claims see
-[AUTO_ORCHESTRATION.md](AUTO_ORCHESTRATION.md). This is source code under a
-draft PR, not a verified production build or hosted multi-tenant system.
+[AUTO_ORCHESTRATION.md](AUTO_ORCHESTRATION.md). This is source code being integrated into the main branch, **not a verified production build** or a hosted multi-tenant system.
 
 ## Charlotte MCP integration directory
 
