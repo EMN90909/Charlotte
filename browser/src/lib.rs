@@ -6,6 +6,7 @@ pub mod legacy;
 pub mod services;
 pub mod credentials;
 pub mod shield;
+pub mod shield_lists;
 pub mod storage;
 pub mod session;
 pub mod tabs;
