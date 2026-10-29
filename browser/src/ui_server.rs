@@ -150,7 +150,7 @@ fn sidebar(ui:&Ui)->Html<String>{
         html.push_str("<div class=\"bubble\"><strong>Charlotte wants to interact with this page</strong>");
         html.push_str(&format!("<p class=\"muted\">Site: {} | Step {}/{}</p><p>{}</p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
             escape(&pending.context.origin),pending.step+1,browser_automation::MAX_STEPS,
-            escape(&format!("{} — {}",pending.action.description(),pending.target_label)),escape(&serde_json::to_string(&pending.action).unwrap_or_default())));
+            escape(&format!("{} — {} — {}",pending.risk_label,pending.action.description(),pending.target_label)),escape(&serde_json::to_string(&pending.action).unwrap_or_default())));
         html.push_str(&format!(r#"<form action="/browser/approve" method="post">{token}<button name="command" class="primary" value="approve">Approve this browser step</button><button name="command" value="reject">Stop automation</button></form>"#));
         html.push_str("</div>");
     }
@@ -378,6 +378,11 @@ async fn browser_approve(
                     return Err("Page changed since Charlotte proposed this action. Nothing was clicked or typed; start a new task.".into())
                 }
                 browser_automation::ensure_observed_target(&pending.action,&current)?;
+            let now=automation_semantics::classify(&pending.action,&current);
+            if now==automation_semantics::Risk::Consequential &&
+               pending.risk_label!=now.label(){
+                return Err("Action became consequential since planning; review and approve a fresh action.".into())
+            }
                 if matches!(pending.action,BrowserAction::ClickAt{..}){
                     let (new_image,_)=pending.context.screenshot()?;
                     if pending.screenshot_fingerprint!=Some(screenshot_fingerprint(&new_image)){
