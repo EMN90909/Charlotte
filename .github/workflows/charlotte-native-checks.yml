@@ -1,0 +1,45 @@
+name: Charlotte Native checks
+
+on:
+  pull_request:
+    paths: ["browser/**", ".github/workflows/charlotte-native-checks.yml"]
+  push:
+    branches: [main]
+    paths: ["browser/**"]
+
+defaults:
+  run:
+    working-directory: browser
+
+jobs:
+  rust:
+    name: Rust / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: browser
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --no-run
+
+  linux-runtime:
+    name: CEF package smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: browser
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-3-0 libnss3 libx11-xcb1 xvfb
+      - run: scripts/build.sh
+      - run: test -x target/bundle/Charlotte.exe
