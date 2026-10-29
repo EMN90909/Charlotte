@@ -108,8 +108,17 @@ export async function generate(input,{env=process.env,fetchImpl=fetch}={}){
     throw new GatewayError(400,"History too long");
   const models=enabledModels(env).filter(m=>!input.image_jpeg_base64||allowedVision.has(m.provider));
   if(!models.length)throw new GatewayError(503,"No configured AI model for this request");
+  // "auto" must not randomly choose an expensive frontier model.
+  // The operator controls the eligible auto pool; the fallback is a
+  // cost-conscious ordered default. Randomize API KEYS, not the billable model.
+  const preferred=(env.CLOUD_AUTO_MODELS||"").split(",").map(v=>v.trim()).filter(Boolean);
+  const sensible=["openai/gpt-6-luna","gemini/gemini-3.5-flash-lite",
+    "gemini/gemini-3.8-flash","groq/openai/gpt-oss-20b",
+    "anthropic/claude-haiku-5-5","deepseek/deepseek-flash"];
+  const selected=(preferred.length?preferred:sensible).map(id=>models.find(m=>m.id===id))
+    .find(Boolean)||models[0];
   const model=input.model&&input.model!=="auto"?
-    models.find(m=>m.id===input.model):models[randomInt(models.length)];
+    models.find(m=>m.id===input.model):selected;
   if(!model)throw new GatewayError(422,"Model not enabled or not available for this task");
   const keys=providerKeys(model.provider,env);
   const order=keys.map((_,i)=>i);
