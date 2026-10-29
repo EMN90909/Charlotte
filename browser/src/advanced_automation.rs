@@ -68,12 +68,15 @@ pub fn observation_command()->(String,Value) {
       while(queue.length && examined<30 && controls.length<70){
         const {root,prefix,ox,oy}=queue.shift();examined++;
         const choices=Array.from(root.querySelectorAll(pick)).slice(0,250);
+        let collected=0;
         for(const el of choices){
-          if(controls.length>=70)break;
+          // Reserve observation capacity for open shadow roots and iframes.
+          if(controls.length>=70||collected>=35)break;
           if(el.matches('input[type=password],input[type=file],input[type=hidden]'))continue;
           const r=bounds(el);
           if(r.width<1||r.height<1||el.disabled)continue;
           const selector=prefix+path(el);
+          collected++;
           controls.push({selector,tag:el.localName,
             label:short(el.getAttribute('aria-label')||el.labels?.[0]?.innerText||
               el.innerText||el.placeholder||el.name),
