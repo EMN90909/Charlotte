@@ -160,14 +160,14 @@ fn sidebar(ui:&Ui)->Html<String>{
     }
     html.push_str(r#"</select><button name="command" class="primary" value="enable">Enable profile</button><button name="command" value="disable">Disable</button></form>"#);
     html.push_str(&format!(r#"<form action="/mcp/custom" method="post" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">{token}<input name="custom_id" aria-label="Custom MCP ID" maxlength="40" placeholder="Provider ID"><input name="endpoint" aria-label="HTTPS MCP endpoint" maxlength="1024" placeholder="https://vendor.example/mcp"><button class="primary">Save custom HTTPS MCP</button></form>"#));
-    html.push_str("<small class=\"muted\">OAuth services need user sign-in and compatible OAuth support; locally installed STDIO packages are never installed automatically. Unsupported vendor-specific entries require the actual MCP URL.</small></section>");
+    html.push_str("<small class=\"muted\">OAuth services need explicit user sign-in (charlotte-settings mcp oauth authorize ID); some providers require client registration. Local STDIO packages are never installed automatically. Unsupported vendor-specific entries require the actual MCP URL.</small></section>");
     let configured=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
         .ok().and_then(|db|mcp::saved_servers(&db).ok()).unwrap_or_default();
     if configured.is_empty(){
         html.push_str("<p class=\"muted\">No MCP tools connected. Configure a server with charlotte-settings mcp add.</p>");
     } else {
         let names=configured.iter().map(|c|escape(&c.id)).collect::<Vec<_>>().join(", ");
-        html.push_str(&format!("<p class=\"muted\">MCP servers configured: {names}. Charlotte asks before using any tool.</p>"));
+        html.push_str(&format!("<p class=\"muted\">MCP profiles enabled (not necessarily authenticated): {names}. Charlotte asks before using any tool.</p>"));
     }
     html.push_str("<section><h2>Browser skills</h2><p class=\"muted\">Repeatable read-only inspections of the current Chromium tab. No AI provider, screenshot sharing or autonomous clicks required.</p>");
     html.push_str(&format!(r#"<form action="/browser/skill" method="post">{token}<select name="skill" aria-label="Read-only browser skill"><option value="summary">Summarize visible page text</option><option value="links">List visible links</option><option value="controls">List interactive controls</option><option value="frames">List page frames</option></select><button class="primary">Run skill</button></form>"#));
