@@ -33,9 +33,11 @@ impl Storage {
              COMMIT;",
         )?;
         if version < 2 {
-            let has_folder = connection.prepare("PRAGMA table_info(bookmarks)")?
-                .query_map([], |row| row.get::<_, String>(1))?
-                .filter_map(Result::ok).any(|col| col == "folder_id");
+            let has_folder = {
+                let mut statement = connection.prepare("PRAGMA table_info(bookmarks)")?;
+                let rows = statement.query_map([], |row| row.get::<_, String>(1))?;
+                rows.filter_map(Result::ok).any(|col| col == "folder_id")
+            };
             if !has_folder { connection.execute_batch("ALTER TABLE bookmarks ADD COLUMN folder_id TEXT;")?; }
             connection.pragma_update(None, "user_version", 2)?;
         }
