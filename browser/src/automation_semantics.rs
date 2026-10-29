@@ -164,7 +164,19 @@ impl Risk{
 pub fn classify(action:&Action,snapshot:&Value)->Risk{
     match action{
         Action::Observe=>Risk::ReadOnly,
-        Action::Type{..}|Action::TypeIndex{..}|Action::Scroll{..}=>Risk::SafeWrite,
+        Action::Type{selector,..}=>{
+            // Entering an address, recipient, payment or identity field is
+            // sensitive even before the final submit button is pressed.
+            let control=snapshot["controls"].as_array().and_then(|xs|xs.iter().find(|c|
+                c["selector"].as_str()==Some(selector.as_str())));
+            let label=control.map(|c|format!("{} {} {}",
+                c["label"].as_str().unwrap_or(""),
+                c["type"].as_str().unwrap_or(""),
+                c["autocomplete"].as_str().unwrap_or(""))).unwrap_or_default();
+            if is_sensitive_field(&label){Risk::Consequential}else{Risk::SafeWrite}
+        },
+        Action::TypeIndex{..}=>Risk::Consequential,
+        Action::Scroll{..}=>Risk::SafeWrite,
         Action::Navigate{..}=>Risk::SafeWrite,
         Action::Click{selector}=>{
             let details=snapshot["controls"].as_array().and_then(|xs|xs.iter().find(|v|
@@ -176,6 +188,14 @@ pub fn classify(action:&Action,snapshot:&Value)->Risk{
         Action::ClickIndex{..}|Action::ClickAt{..}|Action::Drag{..}|Action::DragIndex{..}|Action::Dialog{..}=>
             Risk::Consequential, // Unknown coordinate/button/dialog side effects.
     }
+}
+fn is_sensitive_field(text:&str)->bool{
+    let text=text.to_ascii_lowercase();
+    ["password","one-time","otp","verification code","security code",
+     "credit card","card number","cvv","payment","bank account",
+     "iban","routing number","recipient","send to","transfer to",
+     "national id","passport","social security","secret","token"]
+        .iter().any(|term|text.contains(term))
 }
 fn is_consequential(text:&str)->bool{
     let lower=text.to_ascii_lowercase();
@@ -225,6 +245,14 @@ mod tests{
      let snap=json!({"controls":[{"selector":"button","label":"Delete account"}]});
      assert_eq!(classify(&Action::Click{selector:"button".into()},&snap),Risk::Consequential);
      assert_eq!(classify(&Action::ClickAt{x:4,y:5},&snap),Risk::Consequential);
+ }
+ #[test]fn sensitive_text_fields_are_escalated(){
+     let snapshot=json!({"controls":[
+         {"selector":"input:nth-of-type(1)","label":"Recipient","type":"email"},
+         {"selector":"input:nth-of-type(2)","label":"Search","type":"search"}
+     ]});
+     assert_eq!(classify(&Action::Type{selector:"input:nth-of-type(1)".into(),text:"a".into()},&snapshot),Risk::Consequential);
+     assert_eq!(classify(&Action::Type{selector:"input:nth-of-type(2)".into(),text:"a".into()},&snapshot),Risk::SafeWrite);
  }
  #[test]fn accessibility_tree_filters_textbox_values(){
      let ax=json!({"nodes":[
