@@ -34,13 +34,13 @@ sandbox = ["cef/sandbox"]
 [dependencies]
 cef = { version = "=156.2.0+156.0.14", features = ["build-util"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
-adblock = "=0.13.3"
+adblock = { version = "=0.13.3", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"
 axum = { version = "0.7", features = ["form"] }
-tokio = { version = "1.42", features = ["rt-multi-thread", "macros", "net"] }
+tokio = { version = "1.42", features = ["rt", "macros", "net"] }
 rand = "0.8"
 rpassword = "7"
 keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync-secret-service"] }
