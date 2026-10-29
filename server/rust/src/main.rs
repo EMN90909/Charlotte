@@ -1,3 +1,4 @@
+mod hll;
 //! Native Rust HTTP implementation of the Charlotte chat endpoints.
 //! Migration-in-progress: gRPC, SSE, HLL persistence and ops are not ported yet.
 use axum::{
@@ -25,7 +26,7 @@ struct AppState {
     secret: Arc<Vec<u8>>,
     registry: Arc<Mutex<Registry>>,
     hub: Arc<Mutex<HashMap<String, Room>>>,
-    seen_rooms: Arc<Mutex<HashSet<String>>>,
+    metrics: Arc<Mutex<hll::Metrics>>,
     allowed_origin: Option<String>,
 }
 struct Registry { names: HashSet<String>, path: PathBuf }
@@ -112,10 +113,11 @@ async fn connect(
         writeln!(file, "{name}").and_then(|_| file.sync_all())
             .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not claim username"))?;
         registry.names.insert(name.to_lowercase());
+        lock(&state.metrics).map_err(|s| (s, "metrics lock failed"))?.add_user(&name);
         name
     };
     let room = room_from_url(&req.url);
-    lock(&state.seen_rooms).map_err(|s| (s, "room lock failed"))?.insert(room.clone());
+    lock(&state.metrics).map_err(|s| (s, "metrics lock failed"))?.add_room(&room);
     let claims = Claims {
         url: req.url, username: identity, browser: req.browser,
         session_id: req.session_id, region: req.region, room: room.clone(),
@@ -177,8 +179,9 @@ async fn poll(
     }))))
 }
 async fn metrics(State(state): State<AppState>) -> Result<Json<Metrics>, StatusCode> {
-    let unique_rooms = lock(&state.seen_rooms)?.len();
-    let unique_users = lock(&state.registry)?.names.len().saturating_sub(1);
+    let (rooms,users) = lock(&state.metrics)?.snapshot();
+    let unique_rooms = rooms as usize;
+    let unique_users = users as usize;
     Ok(Json(Metrics { unique_rooms, unique_users }))
 }
 fn address() -> Result<SocketAddr, String> {
@@ -203,13 +206,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !line.trim().is_empty() { names.insert(line.trim().to_lowercase()); }
         }
     }
+    let metrics = hll::Metrics::load(env::var("CHAT_ROOMS_HLL_FILE").unwrap_or_else(|_| "data/rooms.hll".into()), env::var("CHAT_USERS_HLL_FILE").unwrap_or_else(|_| "data/users.hll".into()))?;
     let state = AppState {
         secret: Arc::new(secret.into_bytes()),
         registry: Arc::new(Mutex::new(Registry { names, path })),
         hub: Arc::new(Mutex::new(HashMap::new())),
-        seen_rooms: Arc::new(Mutex::new(HashSet::new())),
+        metrics: Arc::new(Mutex::new(metrics)),
         allowed_origin: env::var("CHARLOTTE_WEB_ORIGIN").ok(),
     };
+    let persist = state.metrics.clone();
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(30));
+        loop { ticker.tick().await; if let Ok(m) = persist.lock() { if let Err(e) = m.save() { tracing::error!("metrics persist failed: {e}"); } } }
+    });
+    let final_metrics = state.metrics.clone();
     let app = Router::new()
         .route("/healthz", get(health))
         .route("/connect", post(connect))
@@ -223,6 +233,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app).with_graceful_shutdown(async {
         let _ = tokio::signal::ctrl_c().await;
     }).await?;
+    if let Ok(m) = final_metrics.lock() { m.save()?; }
     Ok(())
 }
 async fn cors(
@@ -267,7 +278,7 @@ mod tests {
             secret: Arc::new(secret.to_vec()),
             registry: Arc::new(Mutex::new(Registry { names: HashSet::new(), path: PathBuf::new() })),
             hub: Arc::new(Mutex::new(HashMap::new())),
-            seen_rooms: Arc::new(Mutex::new(HashSet::new())),
+            metrics: Arc::new(Mutex::new(hll::Metrics::load(String::new(), String::new()).unwrap())),
             allowed_origin: None,
         };
         assert_eq!(verify(&state, &token).unwrap().username, "alice");
