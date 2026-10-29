@@ -144,6 +144,23 @@ mod tests{
         assert!(list_file(root,"custom").is_ok());
     }
     #[test]
+    fn local_filters_and_disabled_state_are_respected(){
+        let root=std::env::temp_dir().join(format!("charlotte-shield-test-{}",std::process::id()));
+        fs::create_dir_all(list_dir(&root)).unwrap();
+        let db=Storage::open(&root.join("test.sqlite")).unwrap();
+        let rules=list_file(&root,"custom").unwrap();
+        fs::write(&rules,"||ads.example.test^\nexample.test##.ad-banner\n").unwrap();
+        let shield=load_cached(&db,&root);
+        assert_eq!(shield.check("https://ads.example.test/banner.js","https://example.test","script","GET"),
+            crate::shield::Decision::Block);
+        assert!(shield.cosmetics("https://example.test").hide_selectors.contains(".ad-banner"));
+        db.set_setting("shields","off").unwrap();
+        let shield=load_cached(&db,&root);
+        assert_eq!(shield.check("https://ads.example.test/banner.js","https://example.test","script","GET"),
+            crate::shield::Decision::Allow);
+        let _=fs::remove_dir_all(root);
+    }
+    #[test]
     fn subscriptions_are_https_and_unique(){
         for (index,list) in LISTS.iter().enumerate(){
             assert!(list.url.starts_with("https://"));
