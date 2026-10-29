@@ -30,7 +30,7 @@ pub struct Ui {
 #[derive(Clone)]
 struct PendingTool {
     name:String, server_id:String, args:serde_json::Value,
-    question:String, provider:String,
+    question:String, provider:String, risk_label:String,
 }
 #[derive(Clone)]
 struct PendingBrowser {
@@ -204,8 +204,8 @@ fn sidebar(ui:&Ui)->Html<String>{
     html.push_str("<p class=\"muted\">Browser mode shares page text with your selected AI provider. Visual mode additionally sends a JPEG screenshot of the visible Chromium viewport. Charlotte omits raw form values, password/file inputs and cookies, but visible page text can contain personal information. Every website-changing step requires approval.</p>");
     if let Some(pending)=&inner.pending_tool {
         html.push_str("<div class=\"bubble\"><strong>Charlotte requests approval to use an MCP tool</strong>");
-        html.push_str(&format!("<p>Tool: <code>{}</code></p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
-            escape(&pending.name),escape(&pending.args.to_string())));
+        html.push_str(&format!("<p>Risk: <strong>{}</strong></p><p>Tool: <code>{}</code></p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
+            escape(&pending.risk_label),escape(&pending.name),escape(&pending.args.to_string())));
         html.push_str("<small class=\"muted\">Tool output may be sent to your selected AI provider to explain the result.</small>");
         html.push_str(&format!(r#"<form action="/agent/approve" method="post">{token}<button class="primary" name="command" value="approve">Approve once</button><button name="command" value="reject">Deny</button></form>"#));
         html.push_str("</div>");
@@ -862,6 +862,7 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
                         inner.pending_tool=Some(PendingTool{
                             name,server_id:tool.server_id.clone(),args,
                             question:text,provider:provider_name,
+                            risk_label:mcp::tool_risk(tool).label().to_owned(),
                         });
                     }
                     finish(&state,None);
@@ -901,9 +902,12 @@ async fn agent_approve(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<Act
             let db=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
                 .map_err(|e|e.to_string())?;
             let mut registry=mcp::connect_selected(&db,&pending.server_id)?;
-            let verified=registry.tools().iter().any(|tool|
-                tool.name==pending.name && tool.server_id==pending.server_id);
-            if !verified{return Err("MCP server or tool changed after approval".into())}
+            let verified=registry.tools().into_iter().find(|tool|
+                tool.name==pending.name && tool.server_id==pending.server_id)
+                .ok_or("MCP server or tool changed after approval")?;
+            if mcp::tool_risk(&verified).label()!=pending.risk_label{
+                return Err("MCP tool risk changed; review a fresh approval".into())
+            }
             let output=agent::execute_approved(&mut registry,&pending.name,pending.args)?;
             let (provider,model)=provider_model(&pending.provider).ok_or("Invalid AI provider")?;
             let key=crate::credentials::retrieve(&format!("ai:{}",pending.provider)).ok();
@@ -1271,7 +1275,7 @@ mod tests{
             inner.pending_tool=Some(PendingTool{
                 name:"mcp__s0__read".into(),server_id:"docs".into(),
                 args:serde_json::json!({"path":"/test"}),question:"Read file".into(),
-                provider:"ollama".into(),
+                provider:"ollama".into(),risk_label:"Read only — review data disclosure".into(),
             });
         }
         let page=sidebar(&ui).0;
