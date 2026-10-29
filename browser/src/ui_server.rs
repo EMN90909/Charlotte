@@ -34,6 +34,7 @@ struct PendingTool {
     source_page:Option<(i32,String)>,
 }
 #[derive(Clone)]
+#[derive(Clone)]
 struct PendingAuto {
     route:AutoRoute, question:String, provider_name:String,
     source:(i32,String),
