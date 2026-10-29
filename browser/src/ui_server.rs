@@ -161,9 +161,26 @@ fn sidebar(ui:&Ui)->Html<String>{
     let Ok(inner)=ui.inner.lock() else {return Html("Sidebar unavailable".into())};
     html.push_str(r#"<section><h2>Ask Charlotte</h2><div class="stack"><form action="/ai" method="post" style="display:flex;flex-direction:column;align-items:stretch">"#);
     html.push_str(&token);
-    html.push_str(r#"<label for="provider">Provider</label><select name="provider" id="provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Ollama</option></select><label for="mode">Charlotte mode</label><select id="mode" name="mode"><option value="auto">Auto — Charlotte chooses AI / Chromium / MCP</option><option value="chat">Chat + MCP tools (manual mode)</option><option value="browser">Automate this Chromium tab</option><option value="visual">Visual automation (shares a screenshot)</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask Charlotte a question or give Charlotte a task…"></textarea><button class="primary">Send</button></form>"#);
+    html.push_str(r#"<label for="provider">AI source</label><select name="provider" id="provider">"#);
+    for p in crate::ai_providers::PROVIDERS{
+        html.push_str(&format!(r#"<option value="{}">{}</option>"#,escape(p.id),escape(p.name)));
+    }
+    html.push_str(r#"</select><label for="mode">Charlotte mode</label><select id="mode" name="mode"><option value="auto">Auto — Charlotte chooses AI / Chromium / MCP</option><option value="chat">Chat + MCP tools (manual mode)</option><option value="browser">Automate this Chromium tab</option><option value="visual">Visual automation (shares a screenshot)</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask Charlotte a question or give Charlotte a task…"></textarea><button class="primary">Send</button></form>"#);
     html.push_str("<section><h2>AI provider connection</h2><p class=\"muted\">Use your own API key (or a local Ollama installation) and choose a compatible model. Keys stay in the operating-system credential store, never in Charlotte's browser pages or database.</p>");
-    html.push_str(&format!(r#"<form action="/ai/provider" method="post" style="display:flex;flex-wrap:wrap;gap:6px">{token}<select name="provider" aria-label="Configure AI provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Local Ollama</option></select><input type="password" name="api_key" maxlength="4096" autocomplete="new-password" placeholder="API key (optional when changing model)"><input name="model" maxlength="100" placeholder="Model ID (optional)"><button class="primary" name="command" value="save">Save configuration</button><button name="command" value="test">Test saved model</button><button name="command" value="remove">Remove provider key</button></form>"#));
+    html.push_str(&format!(r#"<form action="/ai/provider" method="post" style="display:flex;flex-wrap:wrap;gap:6px">{token}<select name="provider" aria-label="Configure AI provider">"#));
+    for p in crate::ai_providers::PROVIDERS{
+        html.push_str(&format!(r#"<option value="{}">{}</option>"#,escape(p.id),escape(p.name)));
+    }
+    html.push_str(r#"</select><input type="password" name="api_key" maxlength="4096" autocomplete="new-password" placeholder="BYOK API key (not for Cloud)"><input name="model" list="ai-model-hints" maxlength="120" placeholder="Model ID or auto"><button class="primary" name="command" value="save">Save configuration</button><button name="command" value="test">Test saved model</button><button name="command" value="remove">Remove provider key</button></form>"#));
+    html.push_str(r#"<datalist id="ai-model-hints">"#);
+    for p in crate::ai_providers::PROVIDERS{
+        for model in p.models{
+            let suggested=if p.id=="cloud"{"auto".to_owned()}else{model.to_string()};
+            html.push_str(&format!(r#"<option value="{}">{}</option>"#,
+                escape(&suggested),escape(p.name)));
+        }
+    }
+    html.push_str("</datalist>");
     html.push_str("<small class=\"muted\">Saving doesn't verify billing, model availability or API access. Testing uses a small, user-requested model call that may incur provider charges. Ollama needs a separately running local server.</small></section>");
     if let Some(status)=&inner.provider_status{
         html.push_str(&format!("<p class=\"muted\">AI provider check: {}</p>",escape(status)));
@@ -329,21 +346,23 @@ fn finish(ui:&Ui,error:Option<String>){
     crate::app::post_ui_command(Command::Sync);
 }
 fn valid_model(value:&str)->bool{
-    !value.is_empty()&&value.len()<=100&&value.bytes().all(|c|
+    !value.is_empty()&&value.len()<=120&&value.bytes().all(|c|
         c.is_ascii_alphanumeric()||matches!(c,b'.'|b'/'|b':'|b'-'|b'_'))
 }
 fn provider_model(name:&str)->Option<(Provider,String)>{
-    let (provider,default)=match name {
-        "openai"=>(Provider::OpenAi,"gpt-4o-mini"),
-        "claude"=>(Provider::Claude,"claude-sonnet-4-5"),
-        "gemini"=>(Provider::Gemini,"gemini-2.5-flash"),
-        "ollama"=>(Provider::Ollama,"llama3.2"),
+    let config=crate::ai_providers::get(name)?;
+    let provider=match config.kind{
+        "openai"=>Provider::OpenAi,"anthropic"=>Provider::Claude,
+        "gemini"=>Provider::Gemini,"ollama"=>Provider::Ollama,
+        "cloud"=>Provider::Cloud,"cohere"=>Provider::Cohere,
+        "compatible"=>Provider::Compatible(config.api_base),
         _=>return None,
     };
     let configured=crate::storage::Storage::open(
         &crate::profile::profile_root().join("charlotte.sqlite"))
         .ok().and_then(|db|db.setting(&format!("ai:model:{name}")).ok().flatten());
-    let model=configured.filter(|m|valid_model(m)).unwrap_or_else(||default.into());
+    let model=configured.filter(|m|valid_model(m))
+        .unwrap_or_else(||config.default_model.into());
     Some((provider,model))
 }
 fn checkpoint_status(id:&str,status:&str,summary:&str,step:u8){
@@ -947,7 +966,7 @@ async fn ai_provider_config(
                 }
                 let model=form.model.as_deref().unwrap_or("").trim();
                 if !model.is_empty(){
-                    if !valid_model(model){return Err("Model ID must be 1–100 safe ASCII characters".into())}
+                    if !valid_model(model){return Err("Model ID must be 1–120 safe ASCII characters".into())}
                     let db=crate::storage::Storage::open(
                         &crate::profile::profile_root().join("charlotte.sqlite"))
                         .map_err(|e|e.to_string())?;
