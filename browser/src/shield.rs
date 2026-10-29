@@ -55,6 +55,7 @@ impl Shield {
     pub fn is_enabled(&self)->bool{self.enabled}
     pub fn rule_count(&self)->usize{self.rules}
     pub fn blocked_count(&self)->u64{self.blocked.load(Ordering::Relaxed)}
+    pub fn set_blocked_count(&mut self, count:u64){self.blocked.store(count,Ordering::Relaxed)}
 
     /// Source URL must identify the originating page, not the resource URL.
     /// Malformed/non-web requests are allowed rather than crashing browsing.
@@ -102,6 +103,25 @@ mod tests {
         assert!(shield.cosmetics("https://example.com/").hide_selectors.is_empty());
     }
 
+    #[test]
+    fn engine_is_safe_to_share_between_cef_request_threads() {
+        fn assert_thread_safe<T:Send+Sync>() {}
+        assert_thread_safe::<Shield>();
+        let filter=std::sync::Arc::new(std::sync::RwLock::new(
+            Shield::new(&["||ads.example.test^"],true)));
+        let threads:Vec<_>=(0..4).map(|_|{
+            let filter=filter.clone();
+            std::thread::spawn(move||{
+                for _ in 0..100 {
+                    assert_eq!(filter.read().unwrap().check(
+                        "https://ads.example.test/banner.js","https://source.example",
+                        "script","GET"),Decision::Block);
+                }
+            })
+        }).collect();
+        for thread in threads{thread.join().unwrap()}
+        assert_eq!(filter.read().unwrap().blocked_count(),400);
+    }
     #[test]
     fn unrelated_music_images_and_javascript_are_allowed() {
         let shield = Shield::new(&[STARTER_RULES], true);
