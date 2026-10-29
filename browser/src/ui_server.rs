@@ -31,6 +31,7 @@ pub struct Ui {
 struct PendingTool {
     name:String, server_id:String, args:serde_json::Value,
     question:String, provider:String, risk_label:String,
+    source_page:Option<(i32,String)>,
 }
 #[derive(Clone)]
 struct PendingBrowser {
@@ -211,6 +212,9 @@ fn sidebar(ui:&Ui)->Html<String>{
         html.push_str("<div class=\"bubble\"><strong>Charlotte requests approval to use an MCP tool</strong>");
         html.push_str(&format!("<p>Risk: <strong>{}</strong></p><p>Tool: <code>{}</code></p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
             escape(&pending.risk_label),escape(&pending.name),escape(&pending.args.to_string())));
+        if let Some((_,url))=&pending.source_page{
+            html.push_str(&format!("<p class=\"muted\">Source Chromium page: {}. Switching pages cancels this cross-app handoff.</p>",escape(url)));
+        }
         html.push_str("<small class=\"muted\">Tool output may be sent to your selected AI provider to explain the result.</small>");
         html.push_str(&format!(r#"<form action="/agent/approve" method="post">{token}<button class="primary" name="command" value="approve">Approve once</button><button name="command" value="reject">Deny</button></form>"#));
         html.push_str("</div>");
@@ -926,6 +930,7 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
                             name,server_id:tool.server_id.clone(),args,
                             question:text,provider:provider_name,
                             risk_label:mcp::tool_risk(tool).label().to_owned(),
+                            source_page:None,
                         });
                     }
                     finish(&state,None);
@@ -962,6 +967,14 @@ async fn agent_approve(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<Act
     let state=ui.clone();
     tokio::task::spawn_blocking(move||{
         let result=(||->Result<String,String>{
+            if let Some((id,url))=&pending.source_page{
+                let unchanged=state.tabs.lock().ok().and_then(|tabs|
+                    tabs.active().map(|tab|(tab.id,tab.url.clone())))
+                    .is_some_and(|current|current==(*id,url.clone()));
+                if !unchanged {
+                    return Err("Source Chromium page changed; cross-app MCP action cancelled before execution".into())
+                }
+            }
             let db=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
                 .map_err(|e|e.to_string())?;
             let mut registry=mcp::connect_selected(&db,&pending.server_id)?;
@@ -1340,6 +1353,7 @@ mod tests{
                 name:"mcp__s0__read".into(),server_id:"docs".into(),
                 args:serde_json::json!({"path":"/test"}),question:"Read file".into(),
                 provider:"ollama".into(),risk_label:"Read only — review data disclosure".into(),
+                source_page:None,
             });
         }
         let page=sidebar(&ui).0;
