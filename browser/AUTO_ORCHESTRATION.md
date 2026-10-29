@@ -1,6 +1,6 @@
 # Charlotte Auto — native capability orchestration
 
-**Implementation branch:** `feature/rust-cef-openshield-adblock` (draft PR #6).
+**Source integration:** PR #6 into main (native verification pending).
 **Commercial target:** a desktop browser where each user connects a chosen AI
 provider and separately authorizes their own MCP services. Charlotte's Rust
 host decides which *permitted* browser/service facility will execute the task.
