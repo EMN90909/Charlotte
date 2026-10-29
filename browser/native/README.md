@@ -6,6 +6,7 @@ compilation, application smoke tests and feature-parity verification.
 
 ## Native features implemented in this branch
 - CEF Chrome-style window, browser UI, popup lifecycle and browser-process callbacks
+- Rust-rendered Charlotte new-tab/start page for fresh profiles (local HTML/CSS with HTTPS search and bookmarks; no external scripts)
 - Network request filtering and preliminary CSS selector hiding via the Rust ABP engine
 - Rust SQLite storage for settings, bookmarks, folders, history, messages and completed downloads
 - Browser lifecycle/tab state and ordered multi-tab session snapshots (full tab UI/restore pending)

@@ -109,6 +109,16 @@ mod session_tests {
         assert_eq!(session.active_index, 1);
     }
     #[test]
+    fn fresh_profile_starts_on_local_charlotte_page() {
+        let db = Storage::open(Path::new(":memory:")).unwrap();
+        // The explicit environment override, if present, takes precedence.
+        if std::env::var_os("CHARLOTTE_START_URL").is_none() {
+            let first = start_page(&db);
+            assert!(first.starts_with("data:text/html;charset=utf-8,"));
+            assert!(first.len() > 1000);
+        }
+    }
+    #[test]
     fn malformed_profile_falls_back() {
         let db = Storage::open(Path::new(":memory:")).unwrap();
         db.set_setting(TABS_KEY, "not-json").unwrap();

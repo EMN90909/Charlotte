@@ -3,6 +3,7 @@
 | Former Electron subsystem | Native Rust / CEF status |
 | --- | --- |
 | Browser process and rendering | CEF Views Chrome runtime integrated, not yet smoke-tested |
+| New-tab/start page | Rust-generated Charlotte HTML/CSS, activated for fresh profiles; visual tests pending |
 | Browser UI, navigation and tabs | CEF Chrome-style UI; Rust tab model and lifecycle callbacks; custom tabstrip and full restore pending |
 | Navigation shortcuts | Rust CEF keyboard handler: back/forward/reload and bookmarking |
 | Popup/browser lifecycle | Rust window delegates connected |
