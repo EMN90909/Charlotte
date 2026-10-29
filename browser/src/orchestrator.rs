@@ -9,6 +9,7 @@ pub enum Route {
     PageAnswer,
     LocalSkill{name:String},
     BrowserTask,
+    BrowserThenMcp{server_id:String},
     McpTask{server_id:String},
     PageToMcp{server_id:String},
     Clarify(String),
@@ -20,6 +21,7 @@ enum Proposal {
     PageAnswer,
     LocalSkill{name:String},
     BrowserTask,
+    BrowserThenMcp{server_id:String},
     McpTask{server_id:String},
     PageToMcp{server_id:String},
     Clarify{text:String},
@@ -40,11 +42,11 @@ impl Capabilities{
                 Err("Charlotte's proposed response exceeded the safety limit".into()),
             Route::PageAnswer|Route::LocalSkill{..}|Route::BrowserTask if !self.has_page()=>
                 Err("Charlotte needs an open HTTPS or local Chromium page for that task".into()),
-            Route::PageToMcp{..} if !self.has_page()=>
+            Route::PageToMcp{..}|Route::BrowserThenMcp{..} if !self.has_page()=>
                 Err("Charlotte needs an active Chromium page to combine it with an MCP service".into()),
             Route::LocalSkill{name} if crate::browser_skills::Skill::parse(name).is_err()=>
                 Err("Unknown local read-only browser skill".into()),
-            Route::McpTask{server_id}|Route::PageToMcp{server_id}
+            Route::McpTask{server_id}|Route::PageToMcp{server_id}|Route::BrowserThenMcp{server_id}
                 if !self.server_enabled(server_id)=>
                 Err("Charlotte selected a service that has not been explicitly enabled".into()),
             _=>Ok(route),
@@ -61,6 +63,7 @@ pub fn parse(raw:&str,capabilities:&Capabilities)->Result<Route,String>{
         Proposal::PageAnswer=>Route::PageAnswer,
         Proposal::LocalSkill{name}=>Route::LocalSkill{name},
         Proposal::BrowserTask=>Route::BrowserTask,
+        Proposal::BrowserThenMcp{server_id}=>Route::BrowserThenMcp{server_id},
         Proposal::McpTask{server_id}=>Route::McpTask{server_id},
         Proposal::PageToMcp{server_id}=>Route::PageToMcp{server_id},
         Proposal::Clarify{text}=>Route::Clarify(text),
@@ -81,6 +84,7 @@ Return ONLY a strict JSON object in one of these shapes:
 {"kind":"page_answer"}
 {"kind":"local_skill","name":"summary|links|controls|frames"}
 {"kind":"browser_task"}
+{"kind":"browser_then_mcp","server_id":"enabled-id"}
 {"kind":"mcp_task","server_id":"enabled-id"}
 {"kind":"page_to_mcp","server_id":"enabled-id"}
 {"kind":"clarify","text":"concrete missing prerequisite or question"}
@@ -90,7 +94,8 @@ ROUTING:
 - Questions requiring AI interpretation of the current page's real contents: page_answer.
 - Navigation or interactions in active Chromium: browser_task; each mutation requires explicit approval.
 - An enabled external app: mcp_task with its exact enabled ID; calls require approval.
-- Explicitly moving information from the open webpage to an enabled app: page_to_mcp with exact ID. Read the page first; MCP tool still needs approval.
+- If Chromium must interact/navigate first, then the user wants to hand the resulting page information to an enabled service, choose browser_then_mcp. The browser stage has per-action approval, and the page-to-app handoff has a NEW, separate page consent and MCP tool approval.
+- Explicitly moving already-visible information from the open webpage to an enabled app: page_to_mcp with exact ID. Read the page first; MCP tool still needs approval.
 - No enabled service: clarify how user can connect it. Never invent server IDs or assume a configured service is authenticated.
 - Do NOT pretend to have seen page contents, tool results or account data not supplied.
 - Login, MFA, CAPTCHA, financial transfers and irreversible tasks require the user's direct involvement.
@@ -141,6 +146,9 @@ mod tests{
         assert_eq!(parse(r#"{"kind":"local_skill","name":"links"}"#,&access()).unwrap(),
             Route::LocalSkill{name:"links".into()});
         assert!(parse(r#"{"kind":"local_skill","name":"execute"}"#,&access()).is_err());
+        assert!(parse(r#"{"kind":"browser_then_mcp","server_id":"stripe"}"#,&access()).is_err());
+        assert_eq!(parse(r#"{"kind":"browser_then_mcp","server_id":"notion"}"#,&access()).unwrap(),
+            Route::BrowserThenMcp{server_id:"notion".into()});
         assert_eq!(parse(r#"{"kind":"page_to_mcp","server_id":"github"}"#,&access()).unwrap(),
             Route::PageToMcp{server_id:"github".into()});
     }
