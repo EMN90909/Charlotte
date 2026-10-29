@@ -3,6 +3,7 @@
 //! The embedder must invoke this on each CEF request and apply cosmetic
 //! resources in the appropriate renderer context. This module alone does not
 //! intercept requests or inject scripts.
+use std::sync::atomic::{AtomicU64,Ordering};
 use adblock::{
     cosmetic_filter_cache::UrlSpecificResources, lists::ParseOptions, request::Request, Engine,
     FilterSet,
@@ -25,6 +26,8 @@ pub const STARTER_RULES: &str = "\
 pub struct Shield {
     engine: Engine,
     enabled: bool,
+    rules: usize,
+    blocked: AtomicU64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -40,12 +43,18 @@ impl Shield {
         for list in lists {
             filters.add_filter_list((*list).to_owned(), ParseOptions::default());
         }
-        Self { engine: Engine::new_with_filter_set(filters), enabled }
+        let rules=lists.iter().flat_map(|s|s.lines()).filter(|line|{
+            let line=line.trim();!line.is_empty() && !line.starts_with('!') && !line.starts_with('[')
+        }).count();
+        Self { engine: Engine::new_with_filter_set(filters), enabled, rules, blocked:AtomicU64::new(0) }
     }
 
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
+    pub fn is_enabled(&self)->bool{self.enabled}
+    pub fn rule_count(&self)->usize{self.rules}
+    pub fn blocked_count(&self)->u64{self.blocked.load(Ordering::Relaxed)}
 
     /// Source URL must identify the originating page, not the resource URL.
     /// Malformed/non-web requests are allowed rather than crashing browsing.
@@ -55,7 +64,10 @@ impl Shield {
             return Decision::Allow;
         };
         let result = self.engine.check_network_request(&request);
-        if result.should_block() { return Decision::Block; }
+        if result.should_block() {
+            self.blocked.fetch_add(1,Ordering::Relaxed);
+            return Decision::Block;
+        }
         result.rewritten_url.map_or(Decision::Allow, Decision::Rewrite)
     }
 
