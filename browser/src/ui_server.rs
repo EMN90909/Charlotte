@@ -46,6 +46,7 @@ struct UiInner {
     cancel_automation:Arc<AtomicBool>,
     pending_tool:Option<PendingTool>,
     ai: Vec<Turn>,
+    skill_output:Option<String>,
     chat: Vec<(String,String)>,
     chat_base: String,
     chat_token: String,
@@ -156,6 +157,9 @@ fn sidebar(ui:&Ui)->Html<String>{
     html.push_str("<section><h2>Browser skills</h2><p class=\"muted\">Repeatable read-only inspections of the current Chromium tab. No AI provider, screenshot sharing or autonomous clicks required.</p>");
     html.push_str(&format!(r#"<form action="/browser/skill" method="post">{token}<select name="skill" aria-label="Read-only browser skill"><option value="summary">Summarize visible page text</option><option value="links">List visible links</option><option value="controls">List interactive controls</option><option value="frames">List page frames</option></select><button class="primary">Run skill</button></form>"#));
     html.push_str("</section>");
+    if let Some(result)=&inner.skill_output{
+        html.push_str(&format!("<div class=\"bubble\"><strong>Local skill result — not sent to AI</strong><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre></div>",escape(result)));
+    }
     if inner.working && inner.active_run_id.is_some(){
         html.push_str(&format!(r#"<div class="bubble"><strong>Charlotte is working</strong><p class="muted">You can pause future steps and take manual control. An already-dispatched Chromium action might still finish.</p><form action="/browser/control" method="post">{token}<button name="command" value="pause">Pause / Take Over</button></form></div>"#));
     }
@@ -658,10 +662,9 @@ async fn browser_skill(
         match crate::browser_skills::execute(skill,&context){
             Ok(result)=>{
                 if let Ok(mut inner)=state.inner.lock(){
-                    inner.ai.push(Turn{role:"assistant".into(),text:result});
-                    if inner.ai.len()>100{
-                        let count=inner.ai.len()-100;inner.ai.drain(0..count);
-                    }
+                    // Do not mix page extracts into LLM chat or persisted
+                    // conversation history; this output is local and ephemeral.
+                    inner.skill_output=Some(result);
                 }
                 finish(&state,None);
             },
@@ -974,7 +977,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
         port,token,tabs,filter,inner:Arc::new(Mutex::new(UiInner{
-            pending_browser:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
+            pending_browser:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
         }))
@@ -1038,6 +1041,7 @@ impl Ui{
         }
     }
     pub fn tab_selected(&self,browser_id:i32){
+        if let Ok(mut inner)=self.inner.lock(){inner.skill_output=None;}
         let wrong=self.inner.lock().ok().is_some_and(|inner|
             inner.active_run_id.is_some() &&
             inner.automation_browser_id!=Some(browser_id));
@@ -1054,6 +1058,7 @@ impl Ui{
         }
     }
     pub fn tab_closed(&self,browser_id:i32){
+        if let Ok(mut inner)=self.inner.lock(){inner.skill_output=None;}
         let closed=self.inner.lock().ok().is_some_and(|inner|
             inner.active_run_id.is_some() &&
             inner.automation_browser_id==Some(browser_id));
@@ -1069,6 +1074,7 @@ impl Ui{
             self.interrupt_task("Charlotte paused: page left the authorized website");
         }
         if let Ok(mut inner)=self.inner.lock() {
+            inner.skill_output=None;
             if !inner.chat_token.is_empty() && inner.room_url != url {
                 inner.stop.store(true, Ordering::Relaxed);
                 inner.chat_token.clear();
@@ -1130,6 +1136,20 @@ mod tests{
         let inner=ui.inner.lock().unwrap();
         assert!(inner.chat_token.is_empty());
         assert_eq!(inner.chat_cursor,0);
+    }
+    #[test]
+    fn local_skill_output_never_enters_model_chat_history(){
+        let ui=start(Arc::new(Mutex::new(crate::tabs::Tabs::default())),
+            Arc::new(std::sync::RwLock::new(
+                crate::shield::Shield::new(&[crate::shield::STARTER_RULES],true)))).unwrap();
+        {
+            let mut inner=ui.inner.lock().unwrap();
+            inner.skill_output=Some("Private page excerpt".into());
+            assert!(!inner.ai.iter().any(|turn|turn.text.contains("Private page excerpt")));
+        }
+        assert!(sidebar(&ui).0.contains("Private page excerpt"));
+        ui.page_changed("https://another.example");
+        assert!(ui.inner.lock().unwrap().skill_output.is_none());
     }
     #[test]
     fn tab_change_invalidates_pending_browser_authority(){
