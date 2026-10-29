@@ -38,6 +38,7 @@ adblock = { version = "=0.13.3", default-features = false, features = ["embedded
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+base64 = "0.22"
 url = "2"
 axum = { version = "0.7", features = ["form"] }
 tokio = { version = "1.42", features = ["rt", "macros", "net"] }
