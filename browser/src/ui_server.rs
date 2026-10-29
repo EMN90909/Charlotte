@@ -1795,6 +1795,29 @@ mod tests{
         assert!(!page.contains("<script>"));
     }
     #[test]
+    fn page_to_app_authority_is_exact_tab_and_exact_url(){
+        let tabs=Arc::new(Mutex::new(crate::tabs::Tabs::default()));
+        {
+            let mut t=tabs.lock().unwrap();
+            t.open(55);
+            t.navigate(55,"https://example.org/page");
+        }
+        let ui=start(tabs.clone(),Arc::new(std::sync::RwLock::new(
+            crate::shield::Shield::new(&[crate::shield::STARTER_RULES],true)))).unwrap();
+        let source=(55,"https://example.org/page".to_owned());
+        assert!(source_page_still_active(&ui,&source));
+        assert!(!source_page_still_active(&ui,&(56,source.1.clone())));
+        tabs.lock().unwrap().navigate(55,"https://example.org/changed");
+        assert!(!source_page_still_active(&ui,&source));
+    }
+    #[test]
+    fn multi_surface_routes_are_announced_without_private_content(){
+        assert!(route_label(&AutoRoute::McpTask{server_id:"notion".into()}).contains("MCP"));
+        assert!(route_label(&AutoRoute::BrowserThenMcp{server_id:"github".into()}).contains("Chromium"));
+        assert!(!route_needs_page(&AutoRoute::LocalSkill{name:"links".into()}));
+        assert!(route_needs_page(&AutoRoute::BrowserThenMcp{server_id:"github".into()}));
+    }
+    #[test]
     fn auto_consent_is_invalidated_on_navigation_or_tab_change(){
         let ui=start(Arc::new(Mutex::new(crate::tabs::Tabs::default())),
             Arc::new(std::sync::RwLock::new(
