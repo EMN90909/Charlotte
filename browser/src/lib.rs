@@ -21,6 +21,7 @@ pub mod mcp;
 pub mod agent;
 pub mod browser_automation;
 pub mod advanced_automation;
+pub mod automation_semantics;
 pub mod browser_agent;
 pub mod main;
 pub mod renderer;
