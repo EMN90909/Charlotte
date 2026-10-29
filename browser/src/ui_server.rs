@@ -56,6 +56,7 @@ struct UiInner {
     ai: Vec<Turn>,
     skill_output:Option<String>,
     skill_source:Option<(i32,String)>,
+    provider_status:Option<String>,
     chat: Vec<(String,String)>,
     chat_base: String,
     chat_token: String,
@@ -161,8 +162,11 @@ fn sidebar(ui:&Ui)->Html<String>{
     html.push_str(&token);
     html.push_str(r#"<label for="provider">Provider</label><select name="provider" id="provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Ollama</option></select><label for="mode">Charlotte mode</label><select id="mode" name="mode"><option value="auto">Auto — Charlotte chooses AI / Chromium / MCP</option><option value="chat">Chat + MCP tools (manual mode)</option><option value="browser">Automate this Chromium tab</option><option value="visual">Visual automation (shares a screenshot)</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask Charlotte a question or give Charlotte a task…"></textarea><button class="primary">Send</button></form>"#);
     html.push_str("<section><h2>AI provider connection</h2><p class=\"muted\">Use your own API key (or a local Ollama installation) and choose a compatible model. Keys stay in the operating-system credential store, never in Charlotte's browser pages or database.</p>");
-    html.push_str(&format!(r#"<form action="/ai/provider" method="post" style="display:flex;flex-wrap:wrap;gap:6px">{token}<select name="provider" aria-label="Configure AI provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Local Ollama</option></select><input type="password" name="api_key" maxlength="4096" autocomplete="new-password" placeholder="API key (optional when changing model)"><input name="model" maxlength="100" placeholder="Model ID (optional)"><button class="primary" name="command" value="save">Save configuration</button><button name="command" value="remove">Remove provider key</button></form>"#));
-    html.push_str("<small class=\"muted\">Saving doesn't verify billing, model availability or API access. API providers may charge for usage; Ollama needs a separately running local server.</small></section>");
+    html.push_str(&format!(r#"<form action="/ai/provider" method="post" style="display:flex;flex-wrap:wrap;gap:6px">{token}<select name="provider" aria-label="Configure AI provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Local Ollama</option></select><input type="password" name="api_key" maxlength="4096" autocomplete="new-password" placeholder="API key (optional when changing model)"><input name="model" maxlength="100" placeholder="Model ID (optional)"><button class="primary" name="command" value="save">Save configuration</button><button name="command" value="test">Test saved model</button><button name="command" value="remove">Remove provider key</button></form>"#));
+    html.push_str("<small class=\"muted\">Saving doesn't verify billing, model availability or API access. Testing uses a small, user-requested model call that may incur provider charges. Ollama needs a separately running local server.</small></section>");
+    if let Some(status)=&inner.provider_status{
+        html.push_str(&format!("<p class=\"muted\">AI provider check: {}</p>",escape(status)));
+    }
     // Listing a catalog never opens a vendor session, fetches tools, or
     // installs local executables. Connecting is a separate explicit action.
     html.push_str("<section><h2>MCP integrations directory</h2><p class=\"muted\">Choose from 43 catalog profiles. Enabling saves a connection template only; account authorization, local package installation and any paid vendor usage remain separate.</p>");
@@ -892,6 +896,32 @@ async fn ai_provider_config(
     if ui.inner.lock().is_ok_and(|i|i.working||i.pending_tool.is_some()||i.pending_browser.is_some()||i.pending_auto.is_some()){
         return (StatusCode::CONFLICT,"Finish the active task before changing the AI provider").into_response()
     }
+    if form.command.as_deref()==Some("test"){
+        if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is already working").into_response()}
+        let state=ui.clone();
+        let provider_name=name.to_owned();
+        tokio::task::spawn_blocking(move||{
+            let status=(||->Result<String,String>{
+                let (provider,model)=provider_model(&provider_name)
+                    .ok_or("Unknown AI provider")?;
+                let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
+                let reply=services::send_agent(provider,None,key.as_deref(),&model,
+                    "Reply with one short sentence confirming this AI model connection. Do not use external tools.",
+                    &[],"Respond with: Charlotte model connection test passed.")
+                    .map_err(|e|e.to_string())?;
+                if reply.trim().is_empty(){return Err("AI model replied with an empty result".into())}
+                Ok(format!("{} / {} responded (not a billing or quota guarantee)",
+                    provider_name,model))
+            })();
+            if let Ok(mut inner)=state.inner.lock(){
+                inner.provider_status=Some(match status{
+                    Ok(message)=>message,Err(error)=>format!("Provider test failed: {error}"),
+                });
+            }
+            finish(&state,None);
+        });
+        return reply("/sidebar")
+    }
     let result=(||->Result<(),String>{
         match form.command.as_deref(){
             Some("remove")=>{
@@ -1498,7 +1528,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
         port,token,tabs,filter,inner:Arc::new(Mutex::new(UiInner{
-            pending_browser:None,pending_auto:None,auto_handoff:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
+            pending_browser:None,pending_auto:None,auto_handoff:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,provider_status:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
         }))
