@@ -185,7 +185,7 @@ pub fn type_command(selector:&str,text:&str)->Result<(String,Value),String>{
 }
 pub fn scroll_command(direction:ScrollDirection)->(String,Value){
     let amount=match direction{ScrollDirection::Down=>610,ScrollDirection::Up=>-610};
-    runtime_evaluate(format!("(() => {{ window.scrollBy({{top:{amount},behavior:'instant'}});return {{ok:true}}; }})()"))
+    runtime_evaluate(format!("(() => {{ window.scrollBy({{top:{amount},behavior:'auto'}});return {{ok:true}}; }})()"))
 }
 pub fn input_mouse_command(kind:&str,x:i32,y:i32)->(String,Value){
     ("Input.dispatchMouseEvent".into(),json!({
