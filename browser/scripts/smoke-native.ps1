@@ -34,13 +34,20 @@ try {
   if ($chrome.Content -notmatch 'Charlotte' -or $sidebar.Content -notmatch 'Ask AI' -or $chrome.Content -notmatch 'Toggle ad blocker') {
     throw 'CEF native UI HTML is missing'
   }
+  $rendered = $false
+  foreach ($i in 1..100) {
+    $health = Invoke-RestMethod "http://127.0.0.1:$port/health" -TimeoutSec 2
+    if ($health.cef_main_frame_loads -ge 1) { $rendered = $true; break }
+    Start-Sleep -Milliseconds 300
+  }
+  if (!$rendered) { throw 'CEF never completed a main-frame load' }
   try {
     Invoke-WebRequest "http://127.0.0.1:$port/action" -Method POST -Body @{command='new'} | Out-Null
     throw 'CSRF request unexpectedly succeeded'
   } catch {
     if ($_.Exception.Response.StatusCode.value__ -ne 403) { throw }
   }
-  Write-Host 'Native Windows CEF launch and Rust UI smoke passed.'
+  Write-Host 'Native Windows CEF page render and Rust UI smoke passed.'
 } finally {
   if ($process -and !$process.HasExited) {
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
