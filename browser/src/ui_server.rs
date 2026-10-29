@@ -279,6 +279,9 @@ fn plan_browser_next(
         },
         BrowserDecision::Action(action)=>{
             browser_automation::ensure_observed_target(&action,&snapshot)?;
+            if let BrowserAction::Navigate{url}=&action {
+                browser_automation::require_same_origin(&context.origin,url)?;
+            }
             let target_label=match &action{
                 BrowserAction::Click{selector}|BrowserAction::Type{selector,..}=>{
                     snapshot.get("controls").and_then(serde_json::Value::as_array)
@@ -327,6 +330,7 @@ async fn browser_approve(
     }
     let state=ui.clone();
     tokio::task::spawn_blocking(move||{
+        let mut attempted=false;
         let outcome=(||->Result<(),String>{
             // Check the actual live Chromium URL before executing a selector
             // generated from an earlier DOM snapshot.
@@ -335,6 +339,7 @@ async fn browser_approve(
                 return Err("Page changed since Charlotte proposed this action. Nothing was clicked or typed; start a new task.".into())
             }
             browser_automation::ensure_observed_target(&pending.action,&current)?;
+            attempted=true;
             let action_outcome=pending.context.act(&pending.action)?;
             if let BrowserAction::Navigate{url}= &pending.action {
                 pending.context.wait_for_navigation(url)?;
@@ -344,7 +349,12 @@ async fn browser_approve(
             plan_browser_next(&state,pending.context,pending.goal,
                 pending.provider,pending.step+1,&action_outcome.to_string())
         })();
-        if let Err(error)=outcome {finish(&state,Some(error));}
+        if let Err(error)=outcome {
+            let message=if attempted {
+                format!("Charlotte attempted the approved browser action, but verification failed. It may have changed the page: {error}")
+            }else{error};
+            finish(&state,Some(message));
+        }
     });
     reply("/sidebar")
 }
