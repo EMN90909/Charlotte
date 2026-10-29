@@ -47,3 +47,11 @@ keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync
 
 [build-dependencies]
 embed-resource = "3.0.2"
+
+# Optimise the Rust host, not the Chromium renderer: keep GPU acceleration,
+# site isolation, TLS validation and CEF sandboxing intact.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+panic = "abort"
