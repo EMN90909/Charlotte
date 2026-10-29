@@ -34,6 +34,7 @@ struct PendingTool {
 struct PendingBrowser {
     context:BrowserContext, action:BrowserAction, goal:String,
     provider:String, step:u8, observed_url:String, target_label:String, visual:bool,
+    screenshot_fingerprint:Option<u64>,
 }
 struct UiInner {
     pending_browser:Option<PendingBrowser>,
@@ -262,6 +263,13 @@ fn browser_answer(state:&Ui,goal:&str,answer:String){
     }
     finish(state,None);
 }
+/// Fingerprint only: screenshots are never stored in persistent browser state.
+fn screenshot_fingerprint(jpeg:&str)->u64{
+    use std::hash::{Hash,Hasher};
+    let mut hash=std::collections::hash_map::DefaultHasher::new();
+    jpeg.hash(&mut hash);
+    hash.finish()
+}
 fn plan_browser_next(
     state:&Ui,context:BrowserContext,goal:String,provider_name:String,
     step:u8,previous:&str,visual:bool,
@@ -312,8 +320,12 @@ fn plan_browser_next(
             let observed_url=snapshot.get("url").and_then(serde_json::Value::as_str)
                 .ok_or("Chromium observation has no page URL")?.to_owned();
             if let Ok(mut inner)=state.inner.lock(){
+                let screenshot_fingerprint=if matches!(action,BrowserAction::ClickAt{..}){
+                    screenshot.as_ref().map(|(jpeg,_)|screenshot_fingerprint(jpeg))
+                }else{None};
                 inner.pending_browser=Some(PendingBrowser{
-                    context,action,goal,provider:provider_name,step,observed_url,target_label,visual,
+                    context,action,goal,provider:provider_name,step,observed_url,target_label,
+                    visual,screenshot_fingerprint,
                 });
             }else{return Err("Automation state lock failed".into())}
             finish(state,None);
@@ -356,6 +368,12 @@ async fn browser_approve(
                 return Err("Page changed since Charlotte proposed this action. Nothing was clicked or typed; start a new task.".into())
             }
             browser_automation::ensure_observed_target(&pending.action,&current)?;
+            if matches!(pending.action,BrowserAction::ClickAt{..}){
+                let (new_image,_)=pending.context.screenshot()?;
+                if pending.screenshot_fingerprint!=Some(screenshot_fingerprint(&new_image)){
+                    return Err("The visual page changed since Charlotte proposed the click; nothing was clicked. Re-plan this step.".into())
+                }
+            }
             attempted=true;
             let action_outcome=pending.context.act(&pending.action)?;
             if let BrowserAction::Navigate{url}= &pending.action {
@@ -807,7 +825,7 @@ mod tests{
                     selector:"html > body > button".into()},
                 goal:"Open settings".into(),provider:"ollama".into(),
                 step:0,observed_url:"https://example.org/page".into(),
-                target_label:"Settings".into(),visual:false
+                target_label:"Settings".into(),visual:false,screenshot_fingerprint:None
             });
         }
         let html=sidebar(&ui).0;
