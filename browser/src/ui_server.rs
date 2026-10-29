@@ -1041,6 +1041,23 @@ mod tests{
         assert!(!page.contains("<script>"));
     }
     #[test]
+    fn agent_task_authority_is_scoped_to_run_id_and_pause_flag(){
+        let tabs=Arc::new(Mutex::new(crate::tabs::Tabs::default()));
+        let shield=Arc::new(std::sync::RwLock::new(
+            crate::shield::Shield::new(&[crate::shield::STARTER_RULES],true)));
+        let ui=start(tabs,shield).unwrap();
+        assert!(!run_is_authorized(&ui,"old"));
+        {
+            let mut inner=ui.inner.lock().unwrap();
+            inner.active_run_id=Some("new".into());
+            inner.cancel_automation.store(false,Ordering::SeqCst);
+        }
+        assert!(run_is_authorized(&ui,"new"));
+        assert!(!run_is_authorized(&ui,"old"));
+        ui.inner.lock().unwrap().cancel_automation.store(true,Ordering::SeqCst);
+        assert!(!run_is_authorized(&ui,"new"));
+    }
+    #[test]
     fn browser_automation_requires_explicit_action_approval(){
         let tabs=Arc::new(Mutex::new(crate::tabs::Tabs::default()));
         let shield=Arc::new(std::sync::RwLock::new(
