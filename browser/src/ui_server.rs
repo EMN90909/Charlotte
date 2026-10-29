@@ -5,7 +5,7 @@
 use std::{net::TcpListener, sync::{Arc,Mutex,atomic::{AtomicBool,Ordering}}, thread};
 use axum::{extract::{State,Form},http::{HeaderMap,StatusCode,header},response::{Html,IntoResponse,Redirect,Response},routing::{get,post},Json,Router};
 use serde::Deserialize;
-use crate::{agent::{self,Plan},browser_agent::{self,Decision as BrowserDecision},browser_automation::{self,Action as BrowserAction,Context as BrowserContext},automation_semantics,cef_bridge::{Filter,TabState}, mcp, permissions::{self,Capability,Decision}, services::{self, ChatIdentity, Provider, Turn}};
+use crate::{agent::{self,Plan},orchestrator::{self,Route as AutoRoute,Capabilities},browser_agent::{self,Decision as BrowserDecision},browser_automation::{self,Action as BrowserAction,Context as BrowserContext},automation_semantics,cef_bridge::{Filter,TabState}, mcp, permissions::{self,Capability,Decision}, services::{self, ChatIdentity, Provider, Turn}};
 #[derive(Clone, Debug)]
 pub enum Command {
     Sync, New(String), Select(i32), Close(i32), Navigate(String),
@@ -283,14 +283,23 @@ fn finish(ui:&Ui,error:Option<String>){
     if let Ok(mut i)=ui.inner.lock(){i.working=false;i.error=error.unwrap_or_default()}
     crate::app::post_ui_command(Command::Sync);
 }
-fn provider_model(name:&str)->Option<(Provider,&'static str)>{
-    match name {
-        "openai"=>Some((Provider::OpenAi,"gpt-4o-mini")),
-        "claude"=>Some((Provider::Claude,"claude-sonnet-4-5")),
-        "gemini"=>Some((Provider::Gemini,"gemini-2.5-flash")),
-        "ollama"=>Some((Provider::Ollama,"llama3.2")),
-        _=>None,
-    }
+fn valid_model(value:&str)->bool{
+    !value.is_empty()&&value.len()<=100&&value.bytes().all(|c|
+        c.is_ascii_alphanumeric()||matches!(c,b'.'|b'/'|b':'|b'-'|b'_'))
+}
+fn provider_model(name:&str)->Option<(Provider,String)>{
+    let (provider,default)=match name {
+        "openai"=>(Provider::OpenAi,"gpt-4o-mini"),
+        "claude"=>(Provider::Claude,"claude-sonnet-4-5"),
+        "gemini"=>(Provider::Gemini,"gemini-2.5-flash"),
+        "ollama"=>(Provider::Ollama,"llama3.2"),
+        _=>return None,
+    };
+    let configured=crate::storage::Storage::open(
+        &crate::profile::profile_root().join("charlotte.sqlite"))
+        .ok().and_then(|db|db.setting(&format!("ai:model:{name}")).ok().flatten());
+    let model=configured.filter(|m|valid_model(m)).unwrap_or_else(||default.into());
+    Some((provider,model))
 }
 fn checkpoint_status(id:&str,status:&str,summary:&str,step:u8){
     if let Ok(db)=crate::storage::Storage::open(
@@ -372,7 +381,7 @@ fn plan_browser_next(
     }
     checkpoint_status(&run_id,"observing","Reading current page",step);
     let (provider,default_model)=provider_model(&provider_name).ok_or("Unknown AI provider")?;
-    let model=if visual&&provider_name=="ollama"{"llava"}else{default_model};
+    let model=if visual&&provider_name=="ollama"{"llava".to_owned()}else{default_model};
     let mut snapshot=context.observe_settled()?;
     automation_semantics::index_snapshot(&mut snapshot)?;
     if let Ok(ax)=context.accessibility_summary(){
@@ -392,7 +401,7 @@ fn plan_browser_next(
     // The browser task already has its own goal and bounded prior result.
     // Do not send unrelated saved chat history into an automation prompt.
     let history:Vec<Turn>=Vec::new();
-    let proposed=browser_agent::decide(provider,key.as_deref(),model,&history,
+    let proposed=browser_agent::decide(provider,key.as_deref(),&model,&history,
         &goal,step,&snapshot,previous,screenshot.as_ref().map(|(jpeg,_)|jpeg.as_str()))?;
     if !run_is_authorized(state,&run_id){
         checkpoint_status(&run_id,"paused","User paused Charlotte; no further action proposed",step);
@@ -841,7 +850,7 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
             .ok().and_then(|db|mcp::connect_saved_for(&db,&text,5).ok())
             .unwrap_or_else(mcp::Registry::new);
         let tools=registry.tools();
-        let response=agent::plan(provider,key.as_deref(),model,&history,&text,&tools);
+        let response=agent::plan(provider,key.as_deref(),&model,&history,&text,&tools);
         match response{
             Ok(Plan::Answer(reply))=>{
                 if let Ok(mut inner)=state.inner.lock(){
@@ -913,7 +922,7 @@ async fn agent_approve(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<Act
             let key=crate::credentials::retrieve(&format!("ai:{}",pending.provider)).ok();
             // An MCP action may have succeeded even if the model is offline.
             // Never report a completed external mutation as a failed tool.
-            match agent::explain_result(provider,key.as_deref(),model,
+            match agent::explain_result(provider,key.as_deref(),&model,
                 &pending.question,&pending.name,&output) {
                 Ok(summary)=>Ok(summary),
                 Err(error)=>{
