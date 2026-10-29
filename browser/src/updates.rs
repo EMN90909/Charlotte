@@ -22,7 +22,9 @@ fn public_key()->Result<VerifyingKey,String>{
     // Never download the verification key from the same update server.
     let hex=option_env!("CHARLOTTE_RELEASE_PUBKEY_HEX")
         .ok_or("Release verification key is not embedded in this build; updates disabled")?;
-    if hex.len()!=64{return Err("Invalid embedded Ed25519 key".into())}
+    if hex.len()!=64||!hex.bytes().all(|c|c.is_ascii_hexdigit()){
+        return Err("Invalid embedded Ed25519 key".into())
+    }
     let mut bytes=[0u8;32];
     for i in 0..32{
         bytes[i]=u8::from_str_radix(&hex[i*2..i*2+2],16)
