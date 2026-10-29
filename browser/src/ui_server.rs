@@ -17,6 +17,7 @@ pub enum Command {
     },
     AutomationFinished(i32),
     BrowserClosed(i32),
+    BrowserCrashed(i32),
 }
 #[derive(Clone)]
 pub struct Ui {
@@ -1042,6 +1043,14 @@ impl Ui{
             inner.automation_browser_id!=Some(browser_id));
         if wrong{
             self.interrupt_task("Charlotte paused: a different Chromium tab was selected");
+        }
+    }
+    pub fn tab_crashed(&self,browser_id:i32){
+        let affected=self.inner.lock().ok().is_some_and(|inner|
+            inner.active_run_id.is_some() &&
+            inner.automation_browser_id==Some(browser_id));
+        if affected{
+            self.interrupt_task("Charlotte paused: Chromium renderer terminated unexpectedly; inspect the tab before resuming");
         }
     }
     pub fn tab_closed(&self,browser_id:i32){
