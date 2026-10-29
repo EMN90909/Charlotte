@@ -1,1 +1,6 @@
-/target
+node_modules/
+out/
+.vite/
+dist/
+.DS_Store
+npm-debug.log*

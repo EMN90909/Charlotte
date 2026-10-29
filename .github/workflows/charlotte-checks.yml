@@ -3,7 +3,21 @@ name: Charlotte branding and type checks
 on:
   push:
     branches: [main]
+    paths:
+      - 'browser/**'
+      - 'website/**'
+      - 'scripts/check-charlotte-branding.mjs'
+      - 'README.md'
+      - 'LICENSE'
+      - '.github/workflows/charlotte-checks.yml'
   pull_request:
+    paths:
+      - 'browser/**'
+      - 'website/**'
+      - 'scripts/check-charlotte-branding.mjs'
+      - 'README.md'
+      - 'LICENSE'
+      - '.github/workflows/charlotte-checks.yml'
   workflow_dispatch:
 
 permissions:
@@ -33,18 +47,28 @@ jobs:
       - run: go test ./...
       - run: go build ./cmd/server
 
-  website:
+  typecheck:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [browser, website]
     defaults:
       run:
-        working-directory: website
+        working-directory: ${{ matrix.component }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: website/package-lock.json
+          cache-dependency-path: ${{ matrix.component }}/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit
-      - run: npm run build
+      - name: Test network ad blocker
+        if: matrix.component == 'browser'
+        run: npm run test:adblock && npm run test:openshield
+      - name: Verify static website output
+        if: matrix.component == 'website'
+        run: npm run build
+
