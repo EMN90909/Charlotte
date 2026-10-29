@@ -1,42 +1,28 @@
 # Charlotte source languages
 
-Charlotte is a multi-language monorepo. Its runtime components continue to use the languages in which they were written; rebranding does not require rewriting stable application code.
+The active browser and chat-server implementations have been moved to
+Rust. The website remains Next.js/TypeScript.
 
-| Language / syntax | Source locations | Role |
+| Language | Source | Purpose |
 | --- | --- | --- |
-| **TypeScript** (`.ts`, `.tsx`) | `browser/src/`, `browser/forge.config.ts`, `website/src/`, `website/next.config.ts` | Electron main/preload, React interfaces, Next.js application and browser/website configuration |
-| **Go** (`.go`) | `server/cmd/`, `server/internal/`, `server/test/` | HTTP/gRPC chat backend, operations, API handlers and tests |
-| **CSS** (`.css`) | `browser/src/renderer/`, `website/src/` | Browser, chat, marketing-page styling |
-| **JavaScript** (`.js`, `.mjs`) | `browser/scripts/`, `scripts/`, `website/eslint.config.mjs` | Packaging checks, smoke tests, lint configuration |
-| **Shell** (`.sh`) | `scripts/`, `server/deploy/`, `server/test/` | Versioning, releases, deployment and smoke tests |
-| **HTML** (`.html`) | `browser/src/renderer/chrome/`, `browser/src/renderer/chat/` | Electron renderer document entrypoints |
-| **Protocol Buffers** (`.proto`) | `server/proto/` | Backend wire schema; Go bindings are generated into `server/gen/` |
-| **Ruby** (`.rb`) | `browser/packaging/homebrew/` | Homebrew Cask package template |
+| **Rust** | `browser/src/`, `server/src/` | Native desktop/CEF browser, HTTP/gRPC server, chat, accounts, profile and data logic |
+| **TypeScript / TSX** | `website/src/`, `website/next.config.ts` | Static Next.js website |
+| **Protocol Buffers** | `server/proto/` | gRPC chat service definitions |
+| **CSS** | `website/src/` | Website styling; native browser UI CSS is generated in Rust |
+| **JavaScript / MJS** | `scripts/`, `website/` | Repository checks and website tooling |
+| **Shell / PowerShell** | `browser/scripts/`, `server/scripts/` | Native build, package, platform smoke tests |
+| **Python** | `browser/scripts/bump-version.py` | Version metadata updates |
+| **Inno Setup** | `browser/packaging/windows/` | Optional Windows installer |
 
-Other repository formats include `JSON` (package manifests, lockfiles), `YAML` (GitHub Actions), `SVG` (vector artwork) and `Markdown` (documentation). These are not substitutes for the primary application languages.
+Build and test browser with `cd browser && make test && make build`.
+Cross-target rules are listed by `make help`. Build and test the server
+with `cd server && cargo test --all-targets`. Website checks run using
+`cd website && npm ci && npm run build`.
 
-## Why GitHub may show different percentages
+GitHub's language percentages are derived from stored repository source
+and are not a measure of runtime correctness. The removed Electron/TSX
+implementation is still accessible in Git history for reference.
 
-GitHub's **Languages** chart is automatically calculated by GitHub Linguist from eligible repository files. It is not a manually editable list. File sizes and exclusions affect its proportions, and it may take time to recalculate after a push. `.gitattributes` intentionally excludes generated Go protobuf bindings, package lockfiles and exported assets from language statistics without removing them from source control.
-
-## Development commands
-
-```sh
-# TypeScript desktop
-cd browser
-npm ci
-npx tsc --noEmit
-npm start
-
-# Next.js / TypeScript website
-cd ../website
-npm ci
-npx tsc --noEmit
-npm run build
-
-# Go backend
-cd ../server
-go test ./...
-```
-
-The repository contains **no approved full-source language migration**. A move from TypeScript or Go to another programming language would require a separately scoped port, feature parity and regression testing. Preserve the original copyright notices and third-party licences when changing source code. See [LICENSE](LICENSE) and [browser/COMMERCIAL-LICENSE.md](browser/COMMERCIAL-LICENSE.md).
+**Cross-platform status:** no successful native CEF smoke tests have
+been verified. Do not treat the Rust code conversion or file removal as
+proof of complete feature parity.
