@@ -164,7 +164,7 @@ fn sidebar(ui:&Ui)->Html<String>{
     let configured=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
         .ok().and_then(|db|mcp::saved_servers(&db).ok()).unwrap_or_default();
     if configured.is_empty(){
-        html.push_str("<p class=\"muted\">No MCP tools connected. Configure a server with charlotte-settings mcp add.</p>");
+        html.push_str("<p class=\"muted\">No MCP profiles enabled. Select an integration above, then authorize or configure its credentials separately.</p>");
     } else {
         let names=configured.iter().map(|c|escape(&c.id)).collect::<Vec<_>>().join(", ");
         html.push_str(&format!("<p class=\"muted\">MCP profiles enabled (not necessarily authenticated): {names}. Charlotte asks before using any tool.</p>"));
