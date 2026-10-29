@@ -289,6 +289,16 @@ fn create_checkpoint(goal:&str,provider:&str,context:&BrowserContext,visual:bool
     db.save_automation_run(&record).map_err(|e|e.to_string())?;
     Ok(id)
 }
+fn run_is_authorized(ui:&Ui,id:&str)->bool{
+    ui.inner.lock().ok().is_some_and(|inner|
+        inner.active_run_id.as_deref()==Some(id)
+        && !inner.cancel_automation.load(Ordering::SeqCst))
+}
+fn finish_if_current(ui:&Ui,id:&str,error:Option<String>){
+    let belongs=ui.inner.lock().ok().is_some_and(|inner|
+        inner.active_run_id.as_deref()==Some(id));
+    if belongs{finish(ui,error)}
+}
 fn browser_answer(state:&Ui,goal:&str,answer:String,run_id:Option<&str>){
     if let Ok(mut inner)=state.inner.lock(){
         inner.pending_browser=None;
@@ -317,11 +327,9 @@ fn plan_browser_next(
     state:&Ui,context:BrowserContext,goal:String,provider_name:String,
     step:u8,previous:&str,visual:bool,run_id:String,
 )->Result<(),String>{
-    let cancelled=state.inner.lock().ok().map(|inner|
-        inner.cancel_automation.load(Ordering::SeqCst)).unwrap_or(true);
-    if cancelled {
+    if !run_is_authorized(state,&run_id){
         checkpoint_status(&run_id,"paused","Task paused before page inspection",step);
-        finish(state,None);
+        finish_if_current(state,&run_id,None);
         return Ok(())
     }
     checkpoint_status(&run_id,"observing","Reading current page",step);
@@ -346,10 +354,9 @@ fn plan_browser_next(
     let history=state.inner.lock().ok().map(|inner|inner.ai.clone()).unwrap_or_default();
     let proposed=browser_agent::decide(provider,key.as_deref(),model,&history,
         &goal,step,&snapshot,previous,screenshot.as_ref().map(|(jpeg,_)|jpeg.as_str()))?;
-    if state.inner.lock().ok().map(|inner|
-        inner.cancel_automation.load(Ordering::SeqCst)).unwrap_or(true){
+    if !run_is_authorized(state,&run_id){
         checkpoint_status(&run_id,"paused","User paused Charlotte; no further action proposed",step);
-        finish(state,None);
+        finish_if_current(state,&run_id,None);
         return Ok(())
     }
     match proposed{
@@ -481,10 +488,9 @@ async fn browser_approve(
                     }
                 }
             }
-            if state.inner.lock().ok().map(|inner|
-                inner.cancel_automation.load(Ordering::SeqCst)).unwrap_or(true){
+            if !run_is_authorized(&state,&pending.run_id){
                 checkpoint_status(&pending.run_id,"paused","User paused before dispatch",pending.step);
-                finish(&state,None);
+                finish_if_current(&state,&pending.run_id,None);
                 return Ok(())
             }
             checkpoint_status(&pending.run_id,"executing",
