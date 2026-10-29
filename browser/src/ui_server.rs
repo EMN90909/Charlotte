@@ -1082,6 +1082,48 @@ fn run_auto_task(
     execute_auto_route(state,question,provider_name,route,None)
 }
 
+/// Auto capability consent is independent from the later per-click/per-tool
+/// approval. Rejecting it never inspects the DOM or contacts an MCP service.
+async fn auto_route_approve(
+    State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
+)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let approved=match form.command.as_deref(){
+        Some("approve")=>true,Some("reject")=>false,
+        _=>return (StatusCode::BAD_REQUEST,"Invalid route approval").into_response(),
+    };
+    let pending={
+        let Ok(mut inner)=ui.inner.lock() else{
+            return (StatusCode::CONFLICT,"Charlotte is unavailable").into_response()
+        };
+        if inner.working{return (StatusCode::CONFLICT,"Another task is running").into_response()}
+        let Some(pending)=inner.pending_auto.take() else{
+            return (StatusCode::BAD_REQUEST,"No pending Auto capability approval").into_response()
+        };
+        if approved{inner.working=true}
+        pending
+    };
+    if !approved{
+        if let Ok(mut inner)=ui.inner.lock(){
+            inner.ai.push(Turn{role:"assistant".into(),
+                text:"Charlotte stopped before reading or sharing the page.".into()});
+        }
+        return reply("/sidebar")
+    }
+    if !source_page_still_active(&ui,&pending.source){
+        finish(&ui,Some("Chromium page changed since consent was requested. Nothing was inspected.".into()));
+        return reply("/sidebar")
+    }
+    let state=ui.clone();
+    tokio::task::spawn_blocking(move||{
+        if let Err(error)=execute_auto_route(
+            &state,pending.question,pending.provider_name,
+            pending.route,Some(pending.source)){
+            finish(&state,Some(error));
+        }
+    });
+    reply("/sidebar")
+}
 async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response{
     if !check(&ui,&headers,&form.token){return forbidden()}
     let Some(text)=form.value.map(|s|s.trim().to_string()).filter(|s|!s.is_empty()&&s.len()<=4000)
@@ -1395,6 +1437,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/action",post(action))
                 .route("/ai",post(ai))
                 .route("/ai/provider",post(ai_provider_config))
+                .route("/ai/route-approve",post(auto_route_approve))
                 .route("/agent/approve",post(agent_approve))
                 .route("/browser/approve",post(browser_approve))
                 .route("/browser/resume",post(browser_resume))
