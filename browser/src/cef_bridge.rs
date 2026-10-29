@@ -1,8 +1,12 @@
 //! CEF browser-process handlers. No Electron IPC, Node, or renderer privileges.
 //! CEF invokes resource handlers on its IO thread; DB writes occur on the UI thread.
 use cef::*;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock, atomic::{AtomicU64,Ordering}};
 use crate::{profile, shield::{Decision, Shield, STARTER_RULES}, shield_lists, storage::Storage, tabs::Tabs};
+
+// Incremented only by a real CEF page-frame load callback, not the local UI.
+static CEF_MAIN_FRAME_LOADS:AtomicU64=AtomicU64::new(0);
+pub fn main_frame_loads()->u64{CEF_MAIN_FRAME_LOADS.load(Ordering::Relaxed)}
 
 /// Shared rule engine compiled once, not once per network request.
 pub type Filter = Arc<RwLock<Shield>>;
@@ -385,6 +389,7 @@ wrap_load_handler! {
             frame: Option<&mut Frame>, _http_status_code: i32,
         ) {
             let Some(frame) = frame else { return };
+            if frame.is_main()!=0 {CEF_MAIN_FRAME_LOADS.fetch_add(1,Ordering::Relaxed);}
             // A page can display ads in subframes too; apply scoped cosmetic
             // selectors to each loaded frame, not just the main document.
             let url = frame.url().to_string();
