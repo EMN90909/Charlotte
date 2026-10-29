@@ -7,7 +7,12 @@ compilation, application smoke tests and feature-parity verification.
 ## Native features implemented in this branch
 - CEF Chrome-style window, browser UI, popup lifecycle and browser-process callbacks
 - Network request filtering and preliminary CSS selector hiding via the Rust ABP engine
-- Rust SQLite storage for settings, bookmarks, folders, history and messages
+- Rust SQLite storage for settings, bookmarks, folders, history, messages and completed downloads
+- Browser lifecycle/tab state and ordered multi-tab session snapshots (full tab UI/restore pending)
+- Native shortcuts: Ctrl/Cmd+D bookmarking, Alt+Left/Right, Ctrl/Cmd+R, F5 and hard reload
+- CEF native Save dialog and terminal download tracking; graphical downloads panel pending
+- Per-origin microphone/camera permission policy (default deny, explicit grants only)
+- Local Rust settings CLI for site media permissions, shield preferences, bookmarks, history and downloads
 - OS credential-store integration for AI service keys
 - AI provider adapters (OpenAI, Claude, Gemini, Ollama)
 - Rust chat connect, send, poll and SSE transport clients
@@ -22,6 +27,19 @@ From browser/native run:
 
     cargo test --lib
     cargo build --release --bins
+
+Native settings and permissions utility (run from browser/native):
+
+    cargo run --bin charlotte-settings -- --help
+    cargo run --bin charlotte-settings -- permission allow camera https://meet.example
+    cargo run --bin charlotte-settings -- permission allow microphone https://meet.example
+    cargo run --bin charlotte-settings -- bookmark list
+    cargo run --bin charlotte-settings -- downloads list
+    cargo run --bin charlotte-settings -- shields off
+
+Remembered media grants apply only to matching secure origins; browser camera and
+microphone requests are denied by default. Reload/restart the native app after
+changing the shield preference.
 
 For packaging, install the appropriate CEF bundler:
 
@@ -39,7 +57,10 @@ Passwords, cookies and API credentials must be re-authorized in the new app.
 - Charlotte custom toolbar, chat sidebar and AI UI wired to typed CEF process messages
 - Full provider streaming, multimodal chat, voice and MCP workflows
 - Complete cosmetic/scriptlet compatibility and dynamic filter subscriptions
-- Downloads, browser permissions, translations, screenshots and settings parity
+- Native permission prompts/settings UI (media CLI works; geolocation and
+  other Chrome permission prompts remain native), translation, screenshots and
+  full graphical downloads/bookmarks/settings interfaces
+- Multi-tab CEF view switching and complete startup restoration of the saved tab list
 - Platform-specific macOS menu/event loop, Windows installer/sandbox, Linux lifecycle
 - Reproducible release builds, security regression tests, visual/browser E2E tests
 
