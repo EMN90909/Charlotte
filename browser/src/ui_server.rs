@@ -39,7 +39,7 @@ struct UiInner {
 #[derive(Deserialize)]
 struct ActionForm {
     token: String,
-    command: String,
+    command: Option<String>,
     id: Option<i32>,
     value: Option<String>,
     server: Option<String>,
@@ -175,7 +175,7 @@ fn forbidden()->Response{(StatusCode::FORBIDDEN,"Invalid local origin or form to
 fn reply(path:&'static str)->Response {Redirect::to(path).into_response()}
 async fn action(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response{
     if !check(&ui,&headers,&form.token){return forbidden()}
-    let cmd=match form.command.as_str(){
+    let cmd=match form.command.as_deref().unwrap_or(""){
         "new"=>Some(Command::New("".into())),
         "select"=>form.id.map(Command::Select),
         "close"=>form.id.map(Command::Close),
@@ -265,7 +265,7 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
 /// Tool execution is only reachable from the explicit signed local form.
 async fn agent_approve(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response{
     if !check(&ui,&headers,&form.token){return forbidden()}
-    let approved=match form.command.as_str(){
+    let approved=match form.command.as_deref().unwrap_or(""){
         "approve"=>true,"reject"=>false,
         _=>return (StatusCode::BAD_REQUEST,"Invalid approval action").into_response(),
     };
@@ -328,7 +328,7 @@ async fn notification_permission(State(ui):State<Ui>,headers:HeaderMap,Form(form
     let db=match crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
         Ok(db)=>db,Err(_)=>return (StatusCode::INTERNAL_SERVER_ERROR,"Storage error").into_response(),
     };
-    let result=match form.command.as_str(){
+    let result=match form.command.as_deref().unwrap_or(""){
         "allow"=>permissions::set(&db,&origin,Capability::Notifications,Decision::Allow),
         "deny"=>permissions::set(&db,&origin,Capability::Notifications,Decision::Deny),
         "reset"=>permissions::reset(&db,&origin,Capability::Notifications),
