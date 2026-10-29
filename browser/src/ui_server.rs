@@ -352,6 +352,8 @@ fn plan_browser_next(
             };
             let observed_url=snapshot.get("url").and_then(serde_json::Value::as_str)
                 .ok_or("Chromium observation has no page URL")?.to_owned();
+            checkpoint_status(&run_id,"awaiting_approval",
+                &format!("{}: {}",risk_label,action.description()),step);
             if let Ok(mut inner)=state.inner.lock(){
                 let screenshot_fingerprint=if matches!(action,BrowserAction::ClickAt{..}){
                     screenshot.as_ref().map(|(jpeg,_)|screenshot_fingerprint(jpeg))
@@ -361,8 +363,6 @@ fn plan_browser_next(
                     visual,screenshot_fingerprint,risk_label,run_id:run_id.clone(),
                 });
             }else{return Err("Automation state lock failed".into())}
-            checkpoint_status(&run_id,"awaiting_approval",
-                &format!("{}: {}",risk_label,action.description()),step);
             finish(state,None);
         },
     }
@@ -388,8 +388,9 @@ async fn browser_approve(
         pending
     };
     if !approve {
+        checkpoint_status(&pending.run_id,"stopped","User denied action",pending.step);
         browser_answer(&ui,&pending.goal,
-            "Charlotte stopped browser automation at your request. No further actions were executed.".into());
+            "Charlotte stopped browser automation at your request. No further actions were executed.".into(),None);
         return reply("/sidebar")
     }
     let state=ui.clone();
@@ -419,20 +420,26 @@ async fn browser_approve(
                     }
                 }
             }
+            checkpoint_status(&pending.run_id,"executing",
+                "Executing explicitly approved action",pending.step);
             attempted=true;
             let action_outcome=pending.context.act(&pending.action)?;
+            checkpoint_status(&pending.run_id,"verifying",
+                "Checking Chromium result",pending.step+1);
             if let BrowserAction::Navigate{url}= &pending.action {
                 pending.context.wait_for_navigation(url)?;
             } else {
                 std::thread::sleep(std::time::Duration::from_millis(350));
             }
             plan_browser_next(&state,pending.context,pending.goal,
-                pending.provider,pending.step+1,&action_outcome.to_string(),pending.visual)
+                pending.provider,pending.step+1,&action_outcome.to_string(),
+                pending.visual,pending.run_id.clone())
         })();
         if let Err(error)=outcome {
             let message=if attempted {
                 format!("Charlotte attempted the approved browser action, but verification failed. It may have changed the page: {error}")
             }else{error};
+            checkpoint_status(&pending.run_id,"interrupted",&message,pending.step);
             finish(&state,Some(message));
         }
     });
@@ -503,9 +510,14 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
         };
         if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is already working").into_response()}
         let visual=mode=="visual";
+        let run_id=match create_checkpoint(&text,&provider_name,&context,visual){
+            Ok(id)=>id,
+            Err(e)=>{finish(&ui,Some(e));return reply("/sidebar")}
+        };
         let state=ui.clone();
         tokio::task::spawn_blocking(move||{
-            if let Err(error)=plan_browser_next(&state,context,text,provider_name,0,"Started task",visual){
+            if let Err(error)=plan_browser_next(&state,context,text,provider_name,0,"Started task",visual,run_id.clone()){
+                checkpoint_status(&run_id,"interrupted",&error,0);
                 finish(&state,Some(error));
             }
         });
