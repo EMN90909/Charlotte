@@ -24,6 +24,7 @@ struct Controller {
     restore_urls: Vec<String>,
     pending_restore: HashMap<i32,String>,
     devtools_observers: HashMap<i32,Registration>,
+    devtools_browsers: HashMap<i32,i32>,
 }
 fn browser_id(view:&BrowserView)->Option<i32> {
     view.browser().map(|browser| browser.identifier())
@@ -142,9 +143,19 @@ impl Controller {
         };
         let message=serde_json::json!({"id":id,"method":method,"params":params}).to_string();
         self.devtools_observers.insert(id,registration);
+        self.devtools_browsers.insert(id,browser_id);
         if host.send_dev_tools_message(Some(message.as_bytes()))!=1 {
             self.devtools_observers.remove(&id);
+            self.devtools_browsers.remove(&id);
             let _=reply.send(Err("CEF refused DevTools method".into()));
+        }
+    }
+    fn close_browser_observers(&mut self,browser_id:i32){
+        let ids:Vec<i32>=self.devtools_browsers.iter()
+            .filter(|(_,id)|**id==browser_id).map(|(request,_)|*request).collect();
+        for id in ids{
+            self.devtools_observers.remove(&id);
+            self.devtools_browsers.remove(&id);
         }
     }
     fn apply(&mut self,command:Command){
@@ -152,14 +163,17 @@ impl Controller {
             Command::Sync=>self.sync(),
             Command::Automation{request_id,browser_id,expected_origin,method,params,reply}=>
                 self.automation_request(request_id,browser_id,expected_origin,method,params,reply),
-            Command::AutomationFinished(id)=>{self.devtools_observers.remove(&id);},
+            Command::AutomationFinished(id)=>{
+                self.devtools_observers.remove(&id);
+                self.devtools_browsers.remove(&id);
+            },
             Command::BrowserClosed(id)=>{
                 self._ui.tab_closed(id);
-                self.devtools_observers.clear();
+                self.close_browser_observers(id);
             },
             Command::BrowserCrashed(id)=>{
                 self._ui.tab_crashed(id);
-                self.devtools_observers.clear();
+                self.close_browser_observers(id);
             },
             Command::Shields(enabled)=>{
                 let was_enabled=self.filter.read().map(|s|s.is_enabled()).unwrap_or(false);
@@ -373,6 +387,7 @@ wrap_browser_process_handler! {
                 _sidebar:sidebar.clone(),client,restore_index:restore.active_index,
                 restore_pending:true,restore_urls,pending_restore:HashMap::new(),
                 devtools_observers:HashMap::new(),
+                devtools_browsers:HashMap::new(),
             };
             CONTROLLER.with(|cell|{cell.replace(Some(control));});
             let mut delegate=CharlotteWindowDelegate::new(toolbar,panel,sidebar,self.windows.clone());
