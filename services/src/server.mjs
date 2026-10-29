@@ -30,7 +30,8 @@ export async function verifySupabaseToken(token,{env=process.env,fetchImpl=fetch
   if(!token||token.length>6000||!env.SUPABASE_URL||!env.SUPABASE_PUBLISHABLE_KEY)
     throw new GatewayError(401,"Valid account authentication required");
   const base=new URL(env.SUPABASE_URL);
-  if(base.protocol!=="https:"&&!(base.protocol==="http:"&&["localhost","127.0.0.1"].includes(base.hostname)))
+  if(base.username||base.password||base.search||base.hash||
+    (base.protocol!=="https:"&&!(base.protocol==="http:"&&["localhost","127.0.0.1"].includes(base.hostname))))
     throw new GatewayError(503,"Identity provider is misconfigured");
   const address=new URL("/auth/v1/user",base);
   const controller=new AbortController();
