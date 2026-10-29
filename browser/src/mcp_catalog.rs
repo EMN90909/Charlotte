@@ -60,16 +60,16 @@ pub static PRESETS:&[Preset]=&[
 pub fn get(id:&str)->Option<&'static Preset>{PRESETS.iter().find(|p|p.id==id)}
 pub fn local_command(id:&str)->Option<(&'static str,&'static [&'static str])>{
     match id {
-        "google-workspace"=>Some(("uvx",&["google-workspace-mcp"])) ,
-        "playwright"=>Some(("npx",&["@playwright/mcp@latest"])) ,
-        "postgres"=>Some(("npx",&["@modelcontextprotocol/server-postgres"])) ,
-        "brave-search"=>Some(("npx",&["brave-search-mcp-server"])) ,
-        "shopify-dev"=>Some(("npx",&["@shopify/dev-mcp@latest"])) ,
-        "grafana"=>Some(("uvx",&["mcp-grafana"])) ,
-        "memory"=>Some(("npx",&["@modelcontextprotocol/server-memory"])) ,
-        "sequential-thinking"=>Some(("npx",&["@modelcontextprotocol/server-sequential-thinking"])) ,
-        "git"=>Some(("uvx",&["mcp-server-git"])) ,
-        "filesystem"=>Some(("npx",&["@modelcontextprotocol/server-filesystem"])) ,
+        "google-workspace"=>Some(("uvx",&["--offline","google-workspace-mcp"])) ,
+        "playwright"=>Some(("npx",&["--offline","--no-install","@playwright/mcp"])) ,
+        "postgres"=>Some(("npx",&["--offline","--no-install","@modelcontextprotocol/server-postgres"])) ,
+        "brave-search"=>Some(("npx",&["--offline","--no-install","brave-search-mcp-server"])) ,
+        "shopify-dev"=>Some(("npx",&["--offline","--no-install","@shopify/dev-mcp"])) ,
+        "grafana"=>Some(("uvx",&["--offline","mcp-grafana"])) ,
+        "memory"=>Some(("npx",&["--offline","--no-install","@modelcontextprotocol/server-memory"])) ,
+        "sequential-thinking"=>Some(("npx",&["--offline","--no-install","@modelcontextprotocol/server-sequential-thinking"])) ,
+        "git"=>Some(("uvx",&["--offline","mcp-server-git"])) ,
+        "filesystem"=>Some(("npx",&["--offline","--no-install","@modelcontextprotocol/server-filesystem"])) ,
         _=>None,
     }
 }
