@@ -82,6 +82,13 @@ impl SupabaseAuth {
         }
         Ok(Some(session))
     }
+    /// Returns a refreshed, signed-in user's short-lived access token for
+    /// Charlotte's own cloud gateway. Call only from the native Rust host.
+    /// Never serialize this token into page HTML, settings, chat or logs.
+    pub fn access_token(&self)->Result<String,String>{
+        self.fresh()?.map(|session|session.access_token)
+            .ok_or("Sign in to your Charlotte account before using cloud AI".into())
+    }
     pub fn status(&self)->AccountStatus{
         let base=AccountStatus{configured:true,authenticated:false,email:None,
             persistent:true,message:None};
