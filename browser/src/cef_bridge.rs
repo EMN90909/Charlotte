@@ -375,29 +375,26 @@ wrap_load_handler! {
                 Err(_) => return,
             };
             if selectors.is_empty() { return }
-            // JSON-encode CSS selectors as data, never interpolate them as JS code.
+            // JSON-encode selectors as data, never interpolate rule text into
+            // JavaScript. CSS handles dynamically inserted elements without
+            // a costly document-wide MutationObserver.
+            let mut selectors=selectors;
+            selectors.truncate(4096); // Bound per-frame setup work.
             let Ok(values) = serde_json::to_string(&selectors) else { return };
-            // DOM style changes avoid evaluating any scripts from third-party lists.
             let script = format!(r#"
                 (() => {{
-                    const selectors = {values};
-                    const hide = () => {{
-                        for (const selector of selectors) {{
-                            try {{
-                                document.querySelectorAll(selector).forEach(el => {{
-                                    el.style.setProperty('display', 'none', 'important');
-                                }});
-                            }} catch (_) {{}}
-                        }}
-                    }};
-                    hide();
-                    let queued = false;
-                    new MutationObserver(() => {{
-                        if (!queued) {{
-                            queued = true;
-                            requestAnimationFrame(() => {{ queued = false; hide(); }});
-                        }}
-                    }}).observe(document.documentElement, {{childList: true, subtree: true}});
+                    const rules = {values};
+                    const style = document.createElement('style');
+                    style.setAttribute('data-charlotte-shields', '');
+                    (document.head || document.documentElement).appendChild(style);
+                    const sheet = style.sheet;
+                    if (!sheet) return;
+                    for (const selector of rules) {{
+                        try {{
+                            // insertRule rejects multiple CSS rules.
+                            sheet.insertRule(selector + ' {{ display: none !important; }}', sheet.cssRules.length);
+                        }} catch (_) {{}}
+                    }}
                 }})();
             "#);
             frame.execute_java_script(
