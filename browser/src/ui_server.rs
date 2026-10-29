@@ -58,6 +58,7 @@ struct ActionForm {
     username: Option<String>,
     provider: Option<String>,
     mode: Option<String>,
+    prompt_text: Option<String>,
 }
 fn escape(s: &str) -> String {
     s.replace('&',"&amp;").replace('<',"&lt;").replace('>',"&gt;")
@@ -152,6 +153,9 @@ fn sidebar(ui:&Ui)->Html<String>{
         html.push_str(&format!(r#"<form action="/browser/approve" method="post">{token}<button name="command" class="primary" value="approve">Approve this browser step</button><button name="command" value="reject">Stop automation</button></form>"#));
         html.push_str("</div>");
     }
+    html.push_str("<section><h2>JavaScript dialogs</h2><p class=\"muted\">If an alert, confirm or prompt is open in the current tab, you can respond explicitly. File pickers and OS permission dialogs stay user-controlled.</p>");
+    html.push_str(&format!(r#"<form action="/browser/dialog" method="post">{token}<input type="text" name="prompt_text" maxlength="500" placeholder="Prompt reply (optional)"><button name="command" value="accept">Accept open dialog</button><button name="command" value="dismiss">Dismiss open dialog</button></form>"#));
+    html.push_str("</section>");
     html.push_str("<p class=\"muted\">Browser mode shares page text with your selected AI provider. Visual mode additionally sends a JPEG screenshot of the visible Chromium viewport. Charlotte omits raw form values, password/file inputs and cookies, but visible page text can contain personal information. Every website-changing step requires approval.</p>");
     if let Some(pending)=&inner.pending_tool {
         html.push_str("<div class=\"bubble\"><strong>Charlotte requests approval to use an MCP tool</strong>");
@@ -359,6 +363,46 @@ async fn browser_approve(
                 format!("Charlotte attempted the approved browser action, but verification failed. It may have changed the page: {error}")
             }else{error};
             finish(&state,Some(message));
+        }
+    });
+    reply("/sidebar")
+}
+/// User-directed handling for Chromium JS alert/confirm/prompt. Does not
+/// bypass native OS file pickers, login, permission or payment dialogs.
+async fn browser_dialog(
+    State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
+)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let accept=match form.command.as_deref(){
+        Some("accept")=>true,Some("dismiss")=>false,
+        _=>return (StatusCode::BAD_REQUEST,"Invalid dialog action").into_response(),
+    };
+    let url=ui.tabs.lock().ok().and_then(|tabs|
+        tabs.active().map(|t|(t.id,t.url.clone())));
+    let Some((id,url))=url else {
+        return (StatusCode::BAD_REQUEST,"No active Chromium tab").into_response()
+    };
+    let Ok(context)=BrowserContext::new(id,&url) else {
+        return (StatusCode::BAD_REQUEST,"Open an HTTPS site first").into_response()
+    };
+    let prompt_text=form.prompt_text.unwrap_or_default();
+    if prompt_text.len()>500{return (StatusCode::BAD_REQUEST,"Dialog response too long").into_response()}
+    if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is working").into_response()}
+    let state=ui.clone();
+    tokio::task::spawn_blocking(move||{
+        let action=BrowserAction::Dialog{
+            accept,prompt_text:if prompt_text.is_empty(){None}else{Some(prompt_text)}
+        };
+        let result=context.act(&action);
+        match result{
+            Ok(_)=>{
+                if let Ok(mut inner)=state.inner.lock(){
+                    inner.ai.push(Turn{role:"assistant".into(),
+                        text:format!("Charlotte {} the active Chromium JavaScript dialog.",if accept{"accepted"}else{"dismissed"})});
+                }
+                finish(&state,None);
+            },
+            Err(error)=>finish(&state,Some(format!("Could not resolve the active JavaScript dialog: {error}"))),
         }
     });
     reply("/sidebar")
@@ -637,6 +681,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/ai",post(ai))
                 .route("/agent/approve",post(agent_approve))
                 .route("/browser/approve",post(browser_approve))
+                .route("/browser/dialog",post(browser_dialog))
                 .route("/notifications",post(notification_permission))
                 .route("/connect",post(connect))
                 .route("/send",post(send))
