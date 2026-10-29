@@ -155,6 +155,11 @@ pub fn input_mouse_command(kind:&str,x:i32,y:i32)->(String,Value){
         "clickCount":if kind=="mouseMoved" {0}else{1}
     }))
 }
+pub fn held_mouse_move(x:i32,y:i32)->(String,Value){
+    ("Input.dispatchMouseEvent".into(),json!({
+        "type":"mouseMoved","x":x,"y":y,"button":"left","buttons":1
+    }))
+}
 pub fn extract_result(raw:&Value)->Result<Value,String>{
     if let Some(e)=raw.get("exceptionDetails"){return Err(format!("Chromium JavaScript exception: {e}"))}
     let result=raw.get("result").ok_or("CDP Runtime.evaluate returned no result")?;
@@ -246,6 +251,28 @@ impl Context {
         }
         Err("Navigation did not complete on the approved origin".into())
     }
+    /// Captured only with explicit visual-mode consent. Never persisted.
+    pub fn screenshot(&self)->Result<String,String>{
+        let (method,params)=crate::advanced_automation::screenshot_command();
+        let reply=self.cdp(&method,params)?;
+        let text=reply.get("data").and_then(Value::as_str)
+            .ok_or("Chromium returned no screenshot data")?;
+        if text.len()>1_600_000{return Err("Screenshot exceeds 1.2 MB limit".into())}
+        use base64::Engine as _;
+        let data=base64::engine::general_purpose::STANDARD.decode(text)
+            .map_err(|_|"Invalid screenshot encoding")?;
+        if data.len()<4||data.len()>1_200_000||!data.starts_with(&[0xff,0xd8,0xff]){
+            return Err("Invalid or oversized JPEG screenshot".into())
+        }
+        Ok(text.to_owned())
+    }
+    fn mouse_click(&self,x:i32,y:i32)->Result<(),String>{
+        for kind in ["mouseMoved","mousePressed","mouseReleased"]{
+            let (method,params)=input_mouse_command(kind,x,y);
+            self.cdp(&method,params)?;
+        }
+        Ok(())
+    }
     pub fn act(&self,action:&Action)->Result<Value,String>{
         action.validate()?;
         match action {
@@ -264,14 +291,41 @@ impl Context {
                 let (method,params)=scroll_command(*direction);
                 extract_result(&self.cdp(&method,params)?)
             },
+            Action::ClickAt{x,y}=>{
+                self.mouse_click(*x as i32,*y as i32)?;
+                Ok(json!({"clicked":true,"x":x,"y":y}))
+            },
+            Action::Dialog{accept,prompt_text}=>{
+                let (method,params)=crate::advanced_automation::dialog_command(
+                    *accept,prompt_text.as_deref())?;
+                self.cdp(&method,params)
+            },
+            Action::Drag{from,to}=>{
+                let (method,params)=click_point_command(from)?;
+                let src=extract_result(&self.cdp(&method,params)?)?;
+                let (x,y)=click_coordinates(&src)?;
+                let (method,params)=click_point_command(to)?;
+                let target=extract_result(&self.cdp(&method,params)?)?;
+                let (tx,ty)=click_coordinates(&target)?;
+                let (method,params)=input_mouse_command("mouseMoved",x,y);
+                self.cdp(&method,params)?;
+                let (method,params)=input_mouse_command("mousePressed",x,y);
+                self.cdp(&method,params)?;
+                for i in 1..=9{
+                    let px=x+(tx-x)*i/9;
+                    let py=y+(ty-y)*i/9;
+                    let (method,params)=held_mouse_move(px,py);
+                    self.cdp(&method,params)?;
+                }
+                let (method,params)=input_mouse_command("mouseReleased",tx,ty);
+                self.cdp(&method,params)?;
+                Ok(json!({"dragged":true}))
+            },
             Action::Click{selector}=>{
                 let (method,params)=click_point_command(selector)?;
                 let position=extract_result(&self.cdp(&method,params)?)?;
                 let (x,y)=click_coordinates(&position)?;
-                for kind in ["mouseMoved","mousePressed","mouseReleased"] {
-                    let (method,params)=input_mouse_command(kind,x,y);
-                    self.cdp(&method,params)?;
-                }
+                self.mouse_click(x,y)?;
                 Ok(json!({"clicked":true,"selector":selector}))
             },
         }
