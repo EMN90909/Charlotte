@@ -65,17 +65,41 @@ setup commands and release caveats.
 
 ## Build and test
 
+The simplest host-native entry points are directly inside `browser/`:
+
+**Windows (CMD):**
+
+```bat
+cd browser
+set "CEF_PATH=C:\\path\\to\\cef_binary_distribution"
+build.bat
+build.bat --verify
+```
+
+**Linux / macOS (shell):**
+
 ```sh
 cd browser
+export CEF_PATH="/path/to/cef_binary_distribution"
+sh build.sh
+sh build.sh --verify
+```
+
+Both launchers support `--check`, `--test`, `--compile-only`,
+`--bundle` (default), `--verify` and `--help`. Their default produces
+a native CEF bundle under `browser/target/bundle` and checks that
+`CEF_PATH` and `bundle-cef-app` are present. The raw Rust executable alone
+is not a runnable browser without the Chromium distribution.
+
+[Full build prerequisites and troubleshooting](BUILDING.md).
+
+Power users can also use the existing `Makefile` targets:
+
+```sh
 make check
 make test
 make build
-make linux-x64
-make linux-arm64
-make windows-x64
-make windows-arm64
-make macos-x64
-make macos-arm64
+make package
 ```
 
 Cross-OS compilation requires the appropriate native linker, Rust targets
