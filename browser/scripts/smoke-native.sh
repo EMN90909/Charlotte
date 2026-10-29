@@ -45,6 +45,12 @@ done
 curl --silent --fail "http://127.0.0.1:$port/chrome" | grep -q "Charlotte"
 curl --silent --fail "http://127.0.0.1:$port/chrome" | grep -q "Toggle ad blocker"
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Ask Charlotte"
+curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q 'value="auto"'
+curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q 'AI provider connection'
+for protected_path in /ai/provider /ai/route-approve; do
+  unsigned="$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST "http://127.0.0.1:$port$protected_path" -d 'command=approve')"
+  [[ "$unsigned" == 403 ]] || { echo "Unsigned AI authority endpoint exposed: $protected_path HTTP $unsigned" >&2; exit 1; }
+done
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Automate this Chromium tab"
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Visual automation (shares a screenshot)"
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Accept open dialog"
