@@ -1,0 +1,198 @@
+//! Charlotte's typed Chromium automation protocol.
+//! Only fixed, reviewed scripts may be sent to the active CEF page via CDP.
+//! Remote websites can never access the host's automation IPC or native OS.
+use serde::{Deserialize,Serialize};
+use serde_json::{json,Value};
+
+pub const MAX_STEPS:u8=8;
+pub const MAX_ELEMENTS:usize=70;
+pub const MAX_SELECTOR:usize=512;
+pub const MAX_TEXT:usize=2000;
+
+#[derive(Debug,Clone,PartialEq,Serialize,Deserialize)]
+#[serde(tag="action",rename_all="snake_case",deny_unknown_fields)]
+pub enum Action {
+    Observe,
+    Navigate {url:String},
+    Click {selector:String},
+    Type {selector:String,text:String},
+    Scroll {direction:ScrollDirection},
+}
+#[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize)]
+#[serde(rename_all="snake_case")]
+pub enum ScrollDirection {Up,Down}
+impl Action {
+    pub fn validate(&self)->Result<(),String>{
+        match self {
+            Self::Observe|Self::Scroll{..}=>Ok(()),
+            Self::Navigate{url} if crate::session::valid_page_url(url)=>Ok(()),
+            Self::Navigate{..}=>Err("Only normal HTTP/HTTPS URLs may be opened".into()),
+            Self::Click{selector}|Self::Type{selector,..} if selector.is_empty()||
+                selector.len()>MAX_SELECTOR||selector.contains('\0') =>
+                Err("Invalid element selector".into()),
+            Self::Type{text,..} if text.len()>MAX_TEXT || text.contains('\0')=>
+                Err("Text exceeds automation input limit".into()),
+            _=>Ok(()),
+        }
+    }
+    pub fn needs_approval(&self)->bool{
+        !matches!(self,Self::Observe)
+    }
+    pub fn description(&self)->String{
+        match self {
+            Self::Observe=>"Inspect current page".into(),
+            Self::Navigate{url}=>format!("Navigate Chromium to {url}"),
+            Self::Click{selector}=>format!("Click page element {selector}"),
+            Self::Type{selector,text}=>format!("Type {} characters into {selector}",text.chars().count()),
+            Self::Scroll{direction}=>format!("Scroll page {:?}",direction),
+        }
+    }
+}
+pub fn require_same_origin(current:&str,target:&str)->Result<(),String>{
+    let source=crate::permissions::canonical_origin(current)
+        .ok_or("Browser automation requires an active HTTPS/loopback page")?;
+    let target=crate::permissions::canonical_origin(target)
+        .ok_or("Automation target must be HTTPS or loopback HTTP")?;
+    if source!=target {return Err("Cross-origin navigation needs a new user-authorized task".into())}
+    Ok(())
+}
+
+/// Commands are bound to a specific CEF browser and verified on the CEF UI
+/// thread. This module never accepts arbitrary Runtime.evaluate expressions.
+pub fn runtime_evaluate(expression:String)->(String,Value){
+    ("Runtime.evaluate".to_owned(),json!({
+        "expression":expression,"returnByValue":true,"awaitPromise":false,
+        "userGesture":false
+    }))
+}
+fn serialized(value:&str)->Result<String,String>{
+    serde_json::to_string(value).map_err(|e|e.to_string())
+}
+pub fn observation_command()->(String,Value){
+    let script=String::from(r#"(() => {
+        const selectable='a[href],button,input:not([type=hidden]),textarea,select,[role=button],[contenteditable=true]';
+        const short=s=>String(s||'').replace(/\s+/g,' ').trim().slice(0,180);
+        const path=el=>{
+            const parts=[];
+            for(let node=el;node&&node.nodeType===1&&parts.length<12;node=node.parentElement){
+                const tag=node.localName;
+                if(!tag)break;
+                let ordinal=1;
+                for(let sibling=node.previousElementSibling;sibling;sibling=sibling.previousElementSibling)
+                    if(sibling.localName===tag)ordinal++;
+                parts.unshift(tag+':nth-of-type('+ordinal+')');
+                if(tag==='html')break;
+            }
+            return parts.join(' > ');
+        };
+        const controls=Array.from(document.querySelectorAll(selectable)).slice(0,300)
+            .filter(el=>{
+                const r=el.getBoundingClientRect();
+                return r.width>0&&r.height>0&&!el.disabled;
+            }).slice(0,70).map(el=>({
+                selector:path(el),tag:el.localName,
+                role:short(el.getAttribute('role')),
+                label:short(el.getAttribute('aria-label')||el.labels?.[0]?.innerText||el.innerText||el.placeholder||el.name||el.value),
+                type:short(el.getAttribute('type')),href:el.localName==='a'?short(el.href):'',
+                editable:el.matches('input,textarea,[contenteditable=true]'),
+                password:el.matches('input[type=password]')
+            }));
+        return {url:location.href,title:document.title,
+            text:short(document.body?.innerText).slice(0,180),
+            excerpt:String(document.body?.innerText||'').slice(0,5000),
+            controls};
+    })()"#);
+    runtime_evaluate(script)
+}
+pub fn click_point_command(selector:&str)->Result<(String,Value),String>{
+    Action::Click{selector:selector.to_owned()}.validate()?;
+    let quoted=serialized(selector)?;
+    let expr=format!(r#"(() => {{
+      const el=document.querySelector({quoted});
+      if(!el) return {{error:"Element not found"}};
+      if(el.matches('input[type=password]')) return {{error:"Password control not actionable"}};
+      el.scrollIntoView({{block:"center",inline:"center"}});
+      const r=el.getBoundingClientRect();
+      if(r.width<1||r.height<1) return {{error:"Element hidden"}};
+      return {{x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2),tag:el.localName,
+        text:String(el.innerText||el.getAttribute("aria-label")||"").slice(0,120)}};
+    }})()"#);
+    Ok(runtime_evaluate(expr))
+}
+pub fn type_command(selector:&str,text:&str)->Result<(String,Value),String>{
+    Action::Type{selector:selector.into(),text:text.into()}.validate()?;
+    let selector=serialized(selector)?;
+    let value=serialized(text)?;
+    // Native Chromium DOM value setter + input/change events for common SPA
+    // frameworks; no arbitrary JS from the model can be injected.
+    let expr=format!(r#"(() => {{
+        const el=document.querySelector({selector});
+        if(!el||!el.matches("input,textarea,[contenteditable=true]"))
+            return {{error:"Editable field not found"}};
+        if(el.matches("input[type=password],input[type=file]"))
+            return {{error:"Sensitive input requires manual user interaction"}};
+        if(el.matches("[contenteditable=true]")) {{
+            el.focus();el.textContent={value};
+        }} else {{
+            const proto=el.localName==="textarea"?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+            const setter=Object.getOwnPropertyDescriptor(proto,"value")?.set;
+            if(!setter)return {{error:"Value setter unavailable"}};
+            setter.call(el,{value});el.focus();
+        }}
+        el.dispatchEvent(new Event("input",{{bubbles:true}}));
+        el.dispatchEvent(new Event("change",{{bubbles:true}}));
+        return {{ok:true}};
+    }})()"#);
+    Ok(runtime_evaluate(expr))
+}
+pub fn scroll_command(direction:ScrollDirection)->(String,Value){
+    let amount=match direction{ScrollDirection::Down=>610,ScrollDirection::Up=>-610};
+    runtime_evaluate(format!("(() => {{ window.scrollBy({{top:{amount},behavior:'instant'}});return {{ok:true}}; }})()"))
+}
+pub fn input_mouse_command(kind:&str,x:i32,y:i32,button:bool)->(String,Value){
+    ("Input.dispatchMouseEvent".into(),json!({
+        "type":kind,"x":x,"y":y,
+        "button":if button {"left"}else{"none"},
+        "clickCount":if button {1}else{0}
+    }))
+}
+pub fn extract_result(raw:&Value)->Result<Value,String>{
+    if let Some(e)=raw.get("exceptionDetails"){return Err(format!("Chromium JavaScript exception: {e}"))}
+    let result=raw.get("result").ok_or("CDP Runtime.evaluate returned no result")?;
+    let value=result.get("value").cloned().ok_or("Chromium returned no serializable value")?;
+    if let Some(message)=value.get("error").and_then(Value::as_str){return Err(message.to_owned())}
+    Ok(value)
+}
+pub fn click_coordinates(value:&Value)->Result<(i32,i32),String>{
+    let x=value.get("x").and_then(Value::as_i64).ok_or("Element has no x position")?;
+    let y=value.get("y").and_then(Value::as_i64).ok_or("Element has no y position")?;
+    if !(0..=20000).contains(&x)||!(0..=20000).contains(&y) {
+        return Err("Element coordinates out of browser bounds".into())
+    }
+    Ok((x as i32,y as i32))
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]fn rejects_invalid_navigation_and_inputs(){
+        assert!(Action::Navigate{url:"javascript:alert(1)".into()}.validate().is_err());
+        assert!(Action::Type{selector:"input".into(),text:"a".repeat(MAX_TEXT+1)}.validate().is_err());
+        assert!(Action::Click{selector:"button".into()}.needs_approval());
+        assert!(!Action::Observe.needs_approval());
+    }
+    #[test]fn origin_scope_rejects_unapproved_new_sites(){
+        assert!(require_same_origin("https://site.example/path","https://site.example/next").is_ok());
+        assert!(require_same_origin("https://site.example","https://other.example").is_err());
+    }
+    #[test]fn scripts_encode_untrusted_values_as_json_literals(){
+        let (method,params)=type_command("input[title='\";evil()']","hello \"world\"").unwrap();
+        assert_eq!(method,"Runtime.evaluate");
+        let expr=params["expression"].as_str().unwrap();
+        assert!(expr.contains(r#"hello \"world\""#));
+        assert!(!expr.contains("eval("));
+    }
+    #[test]fn validates_chromium_reply(){
+        assert_eq!(extract_result(&json!({"result":{"value":{"ok":true}}})).unwrap(),json!({"ok":true}));
+        assert!(extract_result(&json!({"exceptionDetails":{"text":"bad"}})).is_err());
+    }
+}
