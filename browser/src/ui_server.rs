@@ -5,7 +5,7 @@
 use std::{net::TcpListener, sync::{Arc,Mutex,atomic::{AtomicBool,Ordering}}, thread};
 use axum::{extract::{State,Form},http::{HeaderMap,StatusCode,header},response::{Html,IntoResponse,Redirect,Response},routing::{get,post},Json,Router};
 use serde::Deserialize;
-use crate::{agent::{self,Plan},cef_bridge::{Filter,TabState}, mcp, permissions::{self,Capability,Decision}, services::{self, ChatIdentity, Provider, Turn}};
+use crate::{agent::{self,Plan},browser_agent::{self,Decision as BrowserDecision},browser_automation::{self,Action as BrowserAction,Context as BrowserContext},cef_bridge::{Filter,TabState}, mcp, permissions::{self,Capability,Decision}, services::{self, ChatIdentity, Provider, Turn}};
 #[derive(Clone, Debug)]
 pub enum Command {
     Sync, New(String), Select(i32), Close(i32), Navigate(String),
@@ -30,7 +30,13 @@ struct PendingTool {
     name:String, server_id:String, args:serde_json::Value,
     question:String, provider:String,
 }
+#[derive(Clone)]
+struct PendingBrowser {
+    context:BrowserContext, action:BrowserAction, goal:String,
+    provider:String, step:u8, observed_url:String,
+}
 struct UiInner {
+    pending_browser:Option<PendingBrowser>,
     pending_tool:Option<PendingTool>,
     ai: Vec<Turn>,
     chat: Vec<(String,String)>,
@@ -51,6 +57,7 @@ struct ActionForm {
     server: Option<String>,
     username: Option<String>,
     provider: Option<String>,
+    mode: Option<String>,
 }
 fn escape(s: &str) -> String {
     s.replace('&',"&amp;").replace('<',"&lt;").replace('>',"&gt;")
@@ -128,7 +135,7 @@ fn sidebar(ui:&Ui)->Html<String>{
     let Ok(inner)=ui.inner.lock() else {return Html("Sidebar unavailable".into())};
     html.push_str(r#"<section><h2>Ask Charlotte</h2><div class="stack"><form action="/ai" method="post" style="display:flex;flex-direction:column;align-items:stretch">"#);
     html.push_str(&token);
-    html.push_str(r#"<label for="provider">Provider</label><select name="provider" id="provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Ollama</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask Charlotte a question or give Charlotte a task…"></textarea><button class="primary">Send</button></form>"#);
+    html.push_str(r#"<label for="provider">Provider</label><select name="provider" id="provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Ollama</option></select><label for="mode">Charlotte mode</label><select id="mode" name="mode"><option value="chat">Chat + MCP tools</option><option value="browser">Automate this Chromium tab</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask Charlotte a question or give Charlotte a task…"></textarea><button class="primary">Send</button></form>"#);
     let configured=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
         .ok().and_then(|db|mcp::saved_servers(&db).ok()).unwrap_or_default();
     if configured.is_empty(){
@@ -137,6 +144,15 @@ fn sidebar(ui:&Ui)->Html<String>{
         let names=configured.iter().map(|c|escape(&c.id)).collect::<Vec<_>>().join(", ");
         html.push_str(&format!("<p class=\"muted\">MCP servers configured: {names}. Charlotte asks before using any tool.</p>"));
     }
+    if let Some(pending)=&inner.pending_browser {
+        html.push_str("<div class=\"bubble\"><strong>Charlotte wants to interact with this page</strong>");
+        html.push_str(&format!("<p class=\"muted\">Site: {} | Step {}/{}</p><p>{}</p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
+            escape(&pending.context.origin),pending.step+1,browser_automation::MAX_STEPS,
+            escape(&pending.action.description()),escape(&serde_json::to_string(&pending.action).unwrap_or_default())));
+        html.push_str(&format!(r#"<form action="/browser/approve" method="post">{token}<button name="command" class="primary" value="approve">Approve this browser step</button><button name="command" value="reject">Stop automation</button></form>"#));
+        html.push_str("</div>");
+    }
+    html.push_str("<p class=\"muted\">Browser mode shares a bounded snapshot of the active page with your selected AI provider. No passwords or cookies are included in the snapshot. Each website-changing step requires approval.</p>");
     if let Some(pending)=&inner.pending_tool {
         html.push_str("<div class=\"bubble\"><strong>Charlotte requests approval to use an MCP tool</strong>");
         html.push_str(&format!("<p>Tool: <code>{}</code></p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
@@ -459,7 +475,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
         port,token,tabs,filter,inner:Arc::new(Mutex::new(UiInner{
-            pending_tool:None,ai:history,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
+            pending_browser:None,pending_tool:None,ai:history,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
         }))
@@ -477,6 +493,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/action",post(action))
                 .route("/ai",post(ai))
                 .route("/agent/approve",post(agent_approve))
+                .route("/browser/approve",post(browser_approve))
                 .route("/notifications",post(notification_permission))
                 .route("/connect",post(connect))
                 .route("/send",post(send))
