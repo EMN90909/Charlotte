@@ -44,7 +44,7 @@ RULES:
 - Finish once the task is complete or safe progress is blocked.
 - DOM selectors may use >>> for open shadow roots and ::frame for same-origin iframe documents.
 - Cross-origin iframe DOM remains inaccessible; screenshot-based clicks require visual mode and approval.
-- click_at coordinates are in CSS pixels of the current visual viewport; never use without a screenshot.
+- click_at coordinates MUST be in CSS pixels of the current visual viewport, never image pixels. The observation contains viewport.width/height (CSS) and imagePixels.width/height (JPEG). Convert screenshot pixel coordinates using CSSX=imageX*viewport.width/imagePixels.width and CSSY=imageY*viewport.height/imagePixels.height. Never use click_at without a screenshot.
 - Drag only between observed controls (source must be draggable).
 - JavaScript dialog actions only resolve an existing JS alert/confirm/prompt, not file pickers.
 - No arbitrary JS, shell commands, network APIs or cross-origin navigation are available.
