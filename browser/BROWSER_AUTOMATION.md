@@ -31,6 +31,32 @@ The Rust CEF bindings already used by this repo implement the observer
 registration pattern; no sidecar Chrome, Selenium server, browser extension,
 external debugging port, Electron process or Node.js is needed.
 
+## Research update: accessibility-first agents and durable approval state
+
+The user-supplied browser automation / Strawberry-style agentic browser study
+has now been incorporated into the native Charlotte implementation:
+
+- Real Chromium Accessibility.getFullAXTree results are filtered to compact
+  semantic roles/names; current DOM controls are numbered [1], [2], etc.
+- The planner prefers click_index, type_index and drag_index, which Rust
+  resolves to verified current selectors; indexes are never durable IDs.
+- When a target selector is stale, exactly one matching role/name may be
+  offered as a **new approval**, not silently clicked.
+- Each run has a bounded SQLite/WAL checkpoint with a distinct run ID and
+  states observing, planning, awaiting_approval, executing, verifying, done,
+  paused, stopped or interrupted.
+- The sidebar exposes Pause / Take Over, Inspect and re-plan saved task,
+  and Discard saved task. Nothing is replayed after a crash/restart.
+- The model gets a compact role/name/index snapshot, the current goal and
+  the previous step result, rather than unrelated saved conversations.
+- Consequential actions receive a stronger approval warning; all site
+  mutations still require explicit user approval.
+
+See [AUTOMATION_RESEARCH_INTEGRATION.md](AUTOMATION_RESEARCH_INTEGRATION.md)
+for the full research comparison and outstanding capabilities. Composite
+OOPIF node handles, long-term semantic memory, Skills/Routines, and global
+DevTools event multiplexing remain **future work**, not completed features.
+
 ## User workflow
 
 1. Open a normal HTTPS webpage in Charlotte.
