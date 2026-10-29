@@ -45,12 +45,35 @@ the OS keychain; profile settings and browsing history use SQLite.
 feature-by-feature parity with the previous Electron application and
 successful Linux/macOS/Windows native compilation and runtime verification
 have **not** been established. See [MIGRATION.md](MIGRATION.md).
-In particular, voice capture, screenshots, advanced MCP, subtitle and
+In particular, voice capture, screenshots, autonomous multi-step MCP, subtitle and
 translation UI, and additional settings features are not fully connected.
 
 The source history retains the prior Electron implementation for reference;
 a Git revert remains possible. No legacy Node runtime ships through this
 Cargo-based browser build.
+
+## Charlotte AI Agent, MCP and site notifications
+
+Charlotte's native Rust assistant is called **Charlotte**. The sidebar can
+connect to explicitly registered MCP servers, propose a tool use and ask the
+user to **Approve once** or **Deny** the exact call before execution. Responses
+from external tools are treated as untrusted data. MCP credentials are kept
+in the OS keychain, not webpage JavaScript.
+
+Inactive tabs enter **eco sleep** (native view occlusion); their pages remain
+alive so music, media and service-worker contexts are not deliberately cut off.
+Deep page discard is intentionally disabled because it would break
+uninterrupted background activity. ☾ identifies inactive eco-sleep tabs.
+
+Site-by-site **Notifications** Allow/Block/Reset controls are available in the
+sidebar and the native settings CLI. These decisions are enforced through
+CEF's permission callback. Full remote **Web Push delivery and OS display**
+are **not yet certified**: upstream CEF issue #4138 describes GCM/PushManager
+subscription failures, and native platform popup integration still needs
+end-to-end verification.
+
+See [CHARLOTTE_AGENT.md](CHARLOTTE_AGENT.md) for setup commands, scope,
+security design, and the outstanding Web Push limitation.
 
 ## Charlotte Shields (native Rust ad blocker)
 
