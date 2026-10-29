@@ -82,7 +82,8 @@ impl SqliteConnection{
                     }
                     values.push(Value::Object(record));
                 }
-                let output=json!({"columns":names,"rows":values,"truncated":values.len()==100});
+                let truncated=values.len()==100;
+                let output=json!({"columns":names,"rows":values,"truncated":truncated});
                 if output.to_string().len()>80_000{return Err("Read-only SQLite result exceeds 80 KB".into())}
                 Ok(output)
             },
