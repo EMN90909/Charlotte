@@ -69,6 +69,31 @@ fn run(args: &[String]) -> Result<(), String> {
             mcp::remove_server(&db,id)?;
             println!("Removed MCP profile {id}. Stored keys can be removed via mcp token remove {id}.");
         },
+        ["mcp","oauth","authorize",id]=>{
+            let server=mcp::saved_servers(&db)?.into_iter().find(|p|p.id==*id)
+                .ok_or("Enable this catalog or custom MCP server before authorization")?;
+            let client_id=charlotte_native::credentials::retrieve(&format!("mcp-client:{id}")).ok();
+            charlotte_native::mcp_oauth::authorize(id,&server.url,client_id.as_deref())?;
+            println!("Run: charlotte-settings mcp verify {id}");
+        },
+        ["mcp","oauth","client-id","set",id]=>{
+            if !mcp::saved_servers(&db)?.iter().any(|server|server.id==*id){
+                return Err("Enable this MCP server first".into())
+            }
+            eprintln!("Enter your registered OAuth public client ID (hidden input):");
+            let client_id=rpassword::read_password().map_err(|e|e.to_string())?;
+            if client_id.is_empty()||client_id.len()>1024{
+                return Err("Invalid OAuth client ID".into())
+            }
+            charlotte_native::credentials::store(&format!("mcp-client:{id}"),&client_id)
+                .map_err(|e|e.to_string())?;
+            println!("Saved MCP public client ID in the OS credential store");
+        },
+        ["mcp","oauth","client-id","remove",id]=>{
+            charlotte_native::credentials::remove(&format!("mcp-client:{id}"))
+                .map_err(|e|e.to_string())?;
+            println!("Cleared MCP OAuth client ID for {id}");
+        },
         ["mcp","verify",id]=>{
             let registry=mcp::connect_selected(&db,id)?;
             let tools=registry.tools();
