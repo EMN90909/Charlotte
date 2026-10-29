@@ -7,34 +7,53 @@ use crate::{profile, shield::{Decision, Shield, STARTER_RULES}, shield_lists, st
 /// Shared rule engine compiled once, not once per network request.
 pub type Filter = Arc<RwLock<Shield>>;
 pub type TabState = Arc<Mutex<Tabs>>;
-pub fn default_filter() -> Filter {
-    let enabled = Storage::open(&profile::profile_root().join("charlotte.sqlite"))
-        .ok().and_then(|db| db.setting("shields").ok().flatten())
-        .as_deref() != Some("off");
-    let filter=Arc::new(RwLock::new(Shield::new(&[STARTER_RULES], enabled)));
-    let background=filter.clone();
-    // Never download/compile lists on CEF's UI or IO threads. Start with
-    // dependable offline rules; atomically swap the full engine when ready.
-    let _=std::thread::Builder::new().name("charlotte-shield-lists".into()).spawn(move||{
+static REFRESH_IN_PROGRESS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Compile and update subscription lists outside CEF's UI/IO callbacks.
+pub fn schedule_filter_refresh(filter:Filter) {
+    use std::sync::atomic::Ordering;
+    if REFRESH_IN_PROGRESS.compare_exchange(false,true,Ordering::AcqRel,Ordering::Relaxed).is_err(){
+        return;
+    }
+    let worker=std::thread::Builder::new().name("charlotte-shield-lists".into()).spawn(move||{
+        struct ResetRefresh;
+        impl Drop for ResetRefresh {
+            fn drop(&mut self) {
+                REFRESH_IN_PROGRESS.store(false,std::sync::atomic::Ordering::Release);
+            }
+        }
+        let _reset=ResetRefresh;
         let profile=profile::profile_root();
         let Ok(db)=Storage::open(&profile.join("charlotte.sqlite")) else {return};
-        let install=|new:Shield|{
-            if let Ok(mut current)=background.write(){
-                let mut new=new;
-                new.set_enabled(current.is_enabled());
-                *current=new;
+        let install=|mut fresh:Shield|{
+            if let Ok(mut current)=filter.write(){
+                fresh.set_enabled(current.is_enabled());
+                fresh.set_blocked_count(current.blocked_count());
+                *current=fresh;
             }
         };
         install(shield_lists::load_cached(&db,&profile));
-        // Respect the user's global privacy setting: Shields OFF must not
-        // trigger automatic subscription downloads on startup.
-        if db.setting("shields").ok().flatten().as_deref()==Some("off"){return}
+        if filter.read().map(|f|!f.is_enabled()).unwrap_or(true) {return}
         match shield_lists::update(&db,&profile,false){
             Ok(changed) if changed>0=>install(shield_lists::load_cached(&db,&profile)),
             Ok(_)=>{},
             Err(error)=>eprintln!("Could not update native adblock lists: {error}"),
         }
     });
+    if let Err(error)=worker {
+        REFRESH_IN_PROGRESS.store(false,Ordering::Release);
+        eprintln!("Unable to start Shields background worker: {error}");
+    }
+}
+
+/// Start with the offline starter rules immediately; load larger lists later.
+pub fn default_filter() -> Filter {
+    let enabled = Storage::open(&profile::profile_root().join("charlotte.sqlite"))
+        .ok().and_then(|db| db.setting("shields").ok().flatten())
+        .as_deref() != Some("off");
+    let filter=Arc::new(RwLock::new(Shield::new(&[STARTER_RULES], enabled)));
+    if enabled {schedule_filter_refresh(filter.clone())}
     filter
 }
 
