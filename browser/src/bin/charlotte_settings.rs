@@ -27,6 +27,8 @@ Usage:
   charlotte-settings mcp enable <catalog-id>
   charlotte-settings mcp disable <catalog-id>
   charlotte-settings mcp verify <configured-id>
+  charlotte-settings mcp oauth authorize <id>
+  charlotte-settings mcp oauth client-id set|remove <id>
   charlotte-settings mcp add <id> <https-url>
   charlotte-settings mcp remove <id>
   charlotte-settings mcp token set|remove <id>
