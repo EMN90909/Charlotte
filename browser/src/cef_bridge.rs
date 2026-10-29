@@ -1,17 +1,17 @@
 //! CEF browser-process handlers. No Electron IPC, Node, or renderer privileges.
 //! CEF invokes resource handlers on its IO thread; DB writes occur on the UI thread.
 use cef::*;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use crate::{profile, shield::{Decision, Shield, STARTER_RULES}, shield_lists, storage::Storage, tabs::Tabs};
 
 /// Shared rule engine compiled once, not once per network request.
-pub type Filter = Arc<Mutex<Shield>>;
+pub type Filter = Arc<RwLock<Shield>>;
 pub type TabState = Arc<Mutex<Tabs>>;
 pub fn default_filter() -> Filter {
     let enabled = Storage::open(&profile::profile_root().join("charlotte.sqlite"))
         .ok().and_then(|db| db.setting("shields").ok().flatten())
         .as_deref() != Some("off");
-    let filter=Arc::new(Mutex::new(Shield::new(&[STARTER_RULES], enabled)));
+    let filter=Arc::new(RwLock::new(Shield::new(&[STARTER_RULES], enabled)));
     let background=filter.clone();
     // Never download/compile lists on CEF's UI or IO threads. Start with
     // dependable offline rules; atomically swap the full engine when ready.
@@ -19,7 +19,7 @@ pub fn default_filter() -> Filter {
         let profile=profile::profile_root();
         let Ok(db)=Storage::open(&profile.join("charlotte.sqlite")) else {return};
         let install=|new:Shield|{
-            if let Ok(mut current)=background.lock(){
+            if let Ok(mut current)=background.write(){
                 let mut new=new;
                 new.set_enabled(current.is_enabled());
                 *current=new;
@@ -275,7 +275,7 @@ wrap_resource_request_handler! {
                 else if t.contains("sub_frame") { "subdocument" }
                 else if t.contains("main_frame") { "document" }
                 else { "other" };
-            let decision = match self.filter.lock() {
+            let decision = match self.filter.read() {
                 Ok(filter) => filter.check(&url, &source, kind, &method),
                 Err(_) => return ReturnValue::CANCEL,
             };
@@ -314,7 +314,8 @@ wrap_display_handler! {
                 if let Ok(mut tabs) = self.tabs.lock() {
                     tabs.title(id, &title.to_string());
                 }
-                persist_tabs(&self.tabs);
+                // Titles are not stored in session snapshots; avoid a disk write
+                // for every transient title update.
             }
         }
         fn on_address_change(
@@ -369,7 +370,7 @@ wrap_load_handler! {
             // selectors to each loaded frame, not just the main document.
             let url = frame.url().to_string();
             if !(url.starts_with("https://") || url.starts_with("http://")) { return }
-            let selectors = match self.filter.lock() {
+            let selectors = match self.filter.read() {
                 Ok(shield) => shield.cosmetics(&url).hide_selectors.into_iter().collect::<Vec<_>>(),
                 Err(_) => return,
             };
