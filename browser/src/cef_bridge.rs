@@ -26,6 +26,9 @@ pub fn default_filter() -> Filter {
             }
         };
         install(shield_lists::load_cached(&db,&profile));
+        // Respect the user's global privacy setting: Shields OFF must not
+        // trigger automatic subscription downloads on startup.
+        if db.setting("shields").ok().flatten().as_deref()==Some("off"){return}
         match shield_lists::update(&db,&profile,false){
             Ok(changed) if changed>0=>install(shield_lists::load_cached(&db,&profile)),
             Ok(_)=>{},
