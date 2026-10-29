@@ -113,7 +113,7 @@ impl Controller {
     fn automation_request(&mut self,request_id:i32,browser_id:i32,expected_origin:String,
         method:String,params:Value,reply:mpsc::Sender<Result<Value,String>>){
         // CEF references never leave the UI thread. Prevent stale tab actions.
-        if !matches!(method.as_str(),"Runtime.evaluate"|"Page.navigate"|"Input.dispatchMouseEvent"|"Page.captureScreenshot"|"Page.handleJavaScriptDialog"|"Page.getFrameTree")
+        if !matches!(method.as_str(),"Runtime.evaluate"|"Page.navigate"|"Input.dispatchMouseEvent"|"Page.captureScreenshot"|"Page.handleJavaScriptDialog"|"Page.getFrameTree"|"Accessibility.getFullAXTree")
             || params.to_string().len()>64*1024 {
             let _=reply.send(Err("Unsupported or oversized Charlotte CDP method".into()));return
         }
