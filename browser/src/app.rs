@@ -206,6 +206,10 @@ wrap_dev_tools_message_observer! {
         reply:mpsc::Sender<Result<Value,String>>,
     }
     impl DevToolsMessageObserver {
+        fn on_dev_tools_agent_detached(&self,_browser:Option<&mut Browser>){
+            let _=self.reply.send(Err("Chromium DevTools agent detached; automation must be re-planned".into()));
+            post_ui_command(Command::AutomationFinished(self.message_id));
+        }
         fn on_dev_tools_method_result(
             &self,_browser:Option<&mut Browser>,message_id:i32,
             success:i32,result:Option<&[u8]>,
