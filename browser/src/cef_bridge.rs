@@ -280,6 +280,16 @@ wrap_request_handler! {
             ))
         }
 
+        fn on_render_process_terminated(
+            &self, browser: Option<&mut Browser>, _status: TerminationStatus,
+            _error_code: i32, _error_string: Option<&CefString>,
+        ){
+            if let Some(browser)=browser{
+                crate::app::post_ui_command(
+                    crate::ui_server::Command::BrowserCrashed(browser.identifier()));
+            }
+            // Never auto-reload or replay a previously approved action.
+        }
         fn on_certificate_error(
             &self, _browser: Option<&mut Browser>, _error: Errorcode,
             _url: Option<&CefString>, _ssl: Option<&mut Sslinfo>,
