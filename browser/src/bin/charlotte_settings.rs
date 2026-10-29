@@ -1,7 +1,7 @@
 //! Local, user-directed settings administration for native Charlotte.
 //! Changes persist to the same profile as the CEF browser; no browser
 //! process restart is required for future resource permission requests.
-use charlotte_native::{permissions::{self, Capability, Decision}, profile, storage::Storage};
+use charlotte_native::{permissions::{self, Capability, Decision}, profile, storage::Storage, shield_lists};
 use std::{env, process};
 
 const HELP: &str = "\
@@ -9,6 +9,9 @@ Charlotte native settings
 Usage:
   charlotte-settings permission allow|deny|reset|show camera|microphone|geolocation <origin>
   charlotte-settings shields on|off|show
+  charlotte-settings shields lists
+  charlotte-settings shields list on|off <list-id>
+  charlotte-settings shields update
   charlotte-settings bookmark add <https-url> <title>
   charlotte-settings bookmark remove <https-url>
   charlotte-settings bookmark list
@@ -22,7 +25,8 @@ Usage:
   charlotte-settings mcp tools <https-url>
   charlotte-settings mcp call <https-url> <namespaced-tool> <JSON-arguments>
   charlotte-settings profile
-The browser must be restarted for changes to ad blocking; media permissions
+Toolbar changes to Shields apply immediately; settings CLI list changes and
+manual filter-list updates apply when the browser is next launched. Media permissions
 are checked on every CEF media request. Only HTTPS origins or loopback HTTP
 origins are permitted for remembered permissions.
 ";
@@ -90,6 +94,20 @@ fn run(args: &[String]) -> Result<(), String> {
             println!("Shields {} (restart Charlotte to apply)", args[1]);
         }
         ["shields", "show"] => println!("{}", db.setting("shields").map_err(|e|e.to_string())?.unwrap_or_else(||"on".into())),
+        ["shields","lists"] => for item in shield_lists::LISTS {
+            let on=shield_lists::enabled(&db,item);
+            let cache=shield_lists::list_file(&profile::profile_root(),item.id)?;
+            println!("{}\t{}\t{}\t{}",item.id,if on {"on"}else{"off"},
+                if cache.exists() {"cached"}else{"not downloaded"},item.name);
+        },
+        ["shields","list",action,id] if *action=="on" || *action=="off" => {
+            shield_lists::set_enabled(&db,id,*action=="on")?;
+            println!("Shield list {id}: {action} (restart Charlotte to apply)");
+        },
+        ["shields","update"] => {
+            let updated=shield_lists::update(&db,&profile::profile_root(),true)?;
+            println!("Refreshed {updated} subscription files (restart Charlotte to load)");
+        },
         ["permission", action, capability, origin] => {
             let cap = Capability::from_name(capability).ok_or("Expected camera, microphone or geolocation")?;
             match *action {
