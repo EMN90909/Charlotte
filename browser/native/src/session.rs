@@ -4,7 +4,6 @@ use url::Url;
 const KEY: &str = "last_page_url";
 const TABS_KEY: &str = "tabs.v2";
 const MAX_SESSION: usize = 64;
-const DEFAULT_URL: &str = "https://www.google.com/";
 pub fn valid_page_url(value: &str) -> bool {
     value.len() <= 8192 &&
     Url::parse(value).ok().is_some_and(|url|
@@ -59,7 +58,7 @@ pub fn start_page(store: &Storage) -> String {
     let saved = store.setting(KEY).ok().flatten();
     requested.into_iter().chain(selected).chain(saved)
         .find(|url| valid_page_url(url))
-        .unwrap_or_else(|| DEFAULT_URL.to_string())
+        .unwrap_or_else(|| crate::newtab::start_url(store))
 }
 #[cfg(test)]
 mod tests {
