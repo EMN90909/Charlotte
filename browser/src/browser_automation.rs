@@ -17,6 +17,9 @@ pub enum Action {
     Click {selector:String},
     Type {selector:String,text:String},
     Scroll {direction:ScrollDirection},
+    ClickAt {x:u32,y:u32},
+    Drag {from:String,to:String},
+    Dialog {accept:bool,#[serde(default)] prompt_text:Option<String>},
 }
 #[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize)]
 #[serde(rename_all="snake_case")]
@@ -25,6 +28,14 @@ impl Action {
     pub fn validate(&self)->Result<(),String>{
         match self {
             Self::Observe|Self::Scroll{..}=>Ok(()),
+            Self::ClickAt{x,y} if *x<=10000 && *y<=10000=>Ok(()),
+            Self::ClickAt{..}=>Err("Visual click outside allowed viewport".into()),
+            Self::Drag{from,to} if from.is_empty()||to.is_empty()||
+                from.len()>MAX_SELECTOR||to.len()>MAX_SELECTOR=>Err("Invalid drag selectors".into()),
+            Self::Drag{..}=>Ok(()),
+            Self::Dialog{prompt_text,..} if prompt_text.as_ref().is_some_and(|v|v.len()>500)=>
+                Err("Dialog text too long".into()),
+            Self::Dialog{..}=>Ok(()),
             Self::Navigate{url} if crate::session::valid_page_url(url)=>Ok(()),
             Self::Navigate{..}=>Err("Only normal HTTP/HTTPS URLs may be opened".into()),
             Self::Click{selector}|Self::Type{selector,..} if selector.is_empty()||
@@ -45,6 +56,9 @@ impl Action {
             Self::Click{selector}=>format!("Click page element {selector}"),
             Self::Type{selector,text}=>format!("Type {} characters into {selector}",text.chars().count()),
             Self::Scroll{direction}=>format!("Scroll page {:?}",direction),
+            Self::ClickAt{x,y}=>format!("Click screenshot position ({x},{y})"),
+            Self::Drag{from,to}=>format!("Drag {from} onto {to}"),
+            Self::Dialog{accept,..}=>format!("{} JavaScript dialog",if *accept{"Accept"}else{"Dismiss"}),
         }
     }
 }
