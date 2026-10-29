@@ -23,6 +23,10 @@ Usage:
   charlotte-settings account status|signout
   charlotte-settings account signin|signup <email>
   charlotte-settings mcp servers
+  charlotte-settings mcp catalog
+  charlotte-settings mcp enable <catalog-id>
+  charlotte-settings mcp disable <catalog-id>
+  charlotte-settings mcp verify <configured-id>
   charlotte-settings mcp add <id> <https-url>
   charlotte-settings mcp remove <id>
   charlotte-settings mcp token set|remove <id>
@@ -43,6 +47,34 @@ fn run(args: &[String]) -> Result<(), String> {
     let db = Storage::open(&profile::profile_root().join("charlotte.sqlite")).map_err(|e|e.to_string())?;
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["profile"] => println!("{}", profile::profile_root().display()),
+        ["mcp","catalog"]=>{
+            let selected=mcp::saved_servers(&db)?;
+            for p in charlotte_native::mcp_catalog::PRESETS {
+                let enabled=selected.iter().any(|s|s.id==p.id);
+                let supported=charlotte_native::mcp_catalog::supported(p);
+                println!("{}\t{}\t{}\t{}\t{}\t{}",
+                    p.id,if enabled{"configured"}else{"not configured"},
+                    if supported{"setup available"}else{"requires manual endpoint"},
+                    p.category,p.name,p.auth);
+            }
+            println!("Catalog entries are templates, not verified live OAuth connections.");
+        },
+        ["mcp","enable",id]=>{
+            mcp::save_preset(&db,id)?;
+            println!("Registered MCP profile {id}; authenticate separately before use.");
+        },
+        ["mcp","disable",id]=>{
+            mcp::remove_server(&db,id)?;
+            println!("Removed MCP profile {id}. Stored keys can be removed via mcp token remove {id}.");
+        },
+        ["mcp","verify",id]=>{
+            let registry=mcp::connect_selected(&db,id)?;
+            let tools=registry.tools();
+            println!("MCP profile {id}: {} tools advertised",tools.len());
+            for tool in tools.iter().take(40){
+                println!("{}\t{}",tool.name,tool.description.chars().take(100).collect::<String>());
+            }
+        },
         ["mcp","servers"] => for server in mcp::saved_servers(&db)?{
             println!("{}\t{}",server.id,server.url);
         },
