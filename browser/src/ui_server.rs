@@ -5,7 +5,7 @@
 use std::{net::TcpListener, sync::{Arc,Mutex,atomic::{AtomicBool,Ordering}}, thread};
 use axum::{extract::{State,Form},http::{HeaderMap,StatusCode,header},response::{Html,IntoResponse,Redirect,Response},routing::{get,post},Json,Router};
 use serde::Deserialize;
-use crate::{cef_bridge::{Filter,TabState}, services::{self, ChatIdentity, Provider, Turn}};
+use crate::{agent::{self,Plan},cef_bridge::{Filter,TabState}, mcp, permissions::{self,Capability,Decision}, services::{self, ChatIdentity, Provider, Turn}};
 #[derive(Clone, Debug)]
 pub enum Command {
     Sync, New(String), Select(i32), Close(i32), Navigate(String),
@@ -19,7 +19,13 @@ pub struct Ui {
     pub filter: Filter,
     inner: Arc<Mutex<UiInner>>,
 }
+#[derive(Clone)]
+struct PendingTool {
+    name:String, args:serde_json::Value,
+    question:String, provider:String,
+}
 struct UiInner {
+    pending_tool:Option<PendingTool>,
     ai: Vec<Turn>,
     chat: Vec<(String,String)>,
     chat_base: String,
@@ -99,7 +105,8 @@ fn chrome(ui:&Ui)->Html<String>{
     if let Some(tabs)=tabs{
         for tab in tabs.all(){
             let a=if Some(tab.id)==active_id{" active"}else{""};
-            html.push_str(&format!(r#"<form method="post" action="/action">{tok}<input type="hidden" name="id" value="{}"><button class="tab{}" title="{}" name="command" value="select">{}</button><button name="command" value="close" aria-label="Close tab">×</button></form>"#,tab.id,a,escape(&tab.url),escape(&tab.title)));
+            let state=if tab.sleeping{"☾ "}else{""};
+            html.push_str(&format!(r#"<form method="post" action="/action">{tok}<input type="hidden" name="id" value="{}"><button class="tab{}" title="{}" name="command" value="select">{}{}</button><button name="command" value="close" aria-label="Close tab">×</button></form>"#,tab.id,a,escape(&tab.url),state,escape(&tab.title)));
         }
     }
     html.push_str(r#"</nav></main>"#);
@@ -107,17 +114,40 @@ fn chrome(ui:&Ui)->Html<String>{
     Html(html)
 }
 fn sidebar(ui:&Ui)->Html<String>{
-    let mut html=header_html("Charlotte | Chat and AI",true);
-    html.push_str(r#"<header style="padding:18px 14px"><strong style="font-size:17px;color:var(--accent)">Charlotte</strong><p class="muted">Page chat and AI assistance — native Rust</p></header>"#);
+    let mut html=header_html("Charlotte | Charlotte AI Agent",true);
+    let active_url=ui.tabs.lock().ok().and_then(|tabs|tabs.active().map(|t|t.url.clone()));
+    let active_origin=active_url.as_deref().and_then(permissions::canonical_origin);
+    html.push_str(r#"<header style="padding:18px 14px"><strong style="font-size:17px;color:var(--accent)">Charlotte</strong><p class="muted">Charlotte AI Agent + MCP tools — native Rust</p></header>"#);
     let token=input("token",&ui.token);
     let Ok(inner)=ui.inner.lock() else {return Html("Sidebar unavailable".into())};
-    html.push_str(r#"<section><h2>Ask AI</h2><div class="stack"><form action="/ai" method="post" style="display:flex;flex-direction:column;align-items:stretch">"#);
+    html.push_str(r#"<section><h2>Ask Charlotte</h2><div class="stack"><form action="/ai" method="post" style="display:flex;flex-direction:column;align-items:stretch">"#);
     html.push_str(&token);
-    html.push_str(r#"<label for="provider">Provider</label><select name="provider" id="provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Ollama</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask a question…"></textarea><button class="primary">Send</button></form>"#);
+    html.push_str(r#"<label for="provider">Provider</label><select name="provider" id="provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Ollama</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask Charlotte a question or give Charlotte a task…"></textarea><button class="primary">Send</button></form>"#);
+    if let Some(pending)=&inner.pending_tool {
+        html.push_str("<div class=\"bubble\"><strong>Charlotte requests approval to use an MCP tool</strong>");
+        html.push_str(&format!("<p>Tool: <code>{}</code></p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
+            escape(&pending.name),escape(&pending.args.to_string())));
+        html.push_str(&format!(r#"<form action="/agent/approve" method="post">{token}<button class="primary" name="command" value="approve">Approve once</button><button name="command" value="reject">Deny</button></form>"#));
+        html.push_str("</div>");
+    }
     for turn in inner.ai.iter().rev().take(12).rev(){
         html.push_str(&format!(r#"<div class="bubble"><small>{}</small><div>{}</div></div>"#,escape(&turn.role),escape(&turn.text)));
     }
-    html.push_str("</div></section><section><h2>Page chat</h2>");
+    html.push_str("</div></section>");
+    html.push_str("<section><h2>Website notifications</h2>");
+    if let Some(origin)=&active_origin {
+        let permission=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
+            .ok().and_then(|db|permissions::get(&db,origin,Capability::Notifications).ok().flatten());
+        let status=match permission{
+            Some(Decision::Allow)=>"Allowed",
+            Some(Decision::Deny)=>"Blocked",
+            None=>"Not granted",
+        };
+        html.push_str(&format!("<p class=\"muted\">{} — {}</p>",escape(origin),status));
+        html.push_str(&format!(r#"<form action="/notifications" method="post">{token}<button name="command" value="allow">Allow notifications</button><button name="command" value="deny">Block notifications</button><button name="command" value="reset">Reset</button></form>"#));
+        html.push_str("<p class=\"muted\">Permission is managed locally. Background website push delivery depends on CEF's platform support.</p>");
+    } else {html.push_str("<p class=\"muted\">Visit an HTTPS website to manage its notification permission.</p>");}
+    html.push_str("</section><section><h2>Page chat</h2>");
     if inner.chat_token.is_empty(){
         html.push_str(&format!(r#"<form action="/connect" method="post" style="display:flex;flex-direction:column;align-items:stretch">{token}<label>Chat server</label><input name="server" value="{}" maxlength="300" placeholder="https://chat.example"><label>Username</label><input name="username" minlength="2" maxlength="32" required placeholder="Your name"><button class="primary">Connect</button></form>"#,escape(&inner.chat_base)));
     }else{
@@ -310,7 +340,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
         port,token,tabs,filter,inner:Arc::new(Mutex::new(UiInner{
-            ai:history,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
+            pending_tool:None,ai:history,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
         }))
