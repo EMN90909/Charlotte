@@ -97,6 +97,75 @@ pub fn send_agent(provider: Provider, base: Option<&str>, key: Option<&str>, mod
     body.pointer(pointer).and_then(Value::as_str).map(str::to_owned).ok_or(ServiceError::InvalidResponse)
 }
 
+/// Multimodal browser-page inspection, called only when the user explicitly
+/// selects "Visual automation". JPEG bytes stay in memory and are not logged.
+/// The image is sent to the chosen AI provider, with a 1.6 MB encoded cap.
+pub fn send_visual_agent(
+    provider:Provider,key:Option<&str>,model:&str,system:&str,
+    history:&[Turn],text:&str,jpeg:&str
+)->Result<String,ServiceError>{
+    if jpeg.len()>1_600_000||jpeg.is_empty() {
+        return Err(ServiceError::InvalidResponse)
+    }
+    let http=client()?;
+    let key=match provider{
+        Provider::Ollama=>key.unwrap_or(""),
+        _=>key.filter(|v|!v.is_empty()).ok_or(ServiceError::MissingCredential)?,
+    };
+    let (request,pointer)=match provider{
+        Provider::OpenAi=>{
+            let mut messages=vec![json!({"role":"system","content":system})];
+            messages.extend(history.iter().rev().take(10).rev().map(|turn|
+                json!({"role":turn.role,"content":turn.text})));
+            messages.push(json!({"role":"user","content":[
+                {"type":"text","text":text},
+                {"type":"image_url","image_url":{
+                    "url":format!("data:image/jpeg;base64,{jpeg}"),"detail":"low"
+                }}
+            ]}));
+            (http.post(endpoint("https://api.openai.com","/v1/chat/completions")?)
+                .bearer_auth(key).json(&json!({"model":model,"messages":messages,
+                "max_tokens":1200,"stream":false})), "/choices/0/message/content")
+        },
+        Provider::Claude=>{
+            let mut messages:Vec<Value>=history.iter().rev().take(10).rev().map(|turn|
+                json!({"role":turn.role,"content":turn.text})).collect();
+            messages.push(json!({"role":"user","content":[
+                {"type":"text","text":text},
+                {"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":jpeg}}
+            ]}));
+            (http.post(endpoint("https://api.anthropic.com","/v1/messages")?)
+                .header("x-api-key",key).header("anthropic-version","2023-06-01")
+                .json(&json!({"model":model,"max_tokens":1200,"system":system,
+                    "messages":messages,"stream":false})), "/content/0/text")
+        },
+        Provider::Gemini=>{
+            let contents=vec![json!({"role":"user","parts":[
+                {"text":text},
+                {"inline_data":{"mime_type":"image/jpeg","data":jpeg}}
+            ]})];
+            let mut url=endpoint("https://generativelanguage.googleapis.com","/v1beta/models")?;
+            url.path_segments_mut().map_err(|_|ServiceError::InvalidEndpoint)?
+                .push(&format!("{model}:generateContent"));
+            (http.post(url).header("x-goog-api-key",key)
+                .json(&json!({"systemInstruction":{"parts":[{"text":system}]},
+                    "contents":contents})), "/candidates/0/content/parts/0/text")
+        },
+        Provider::Ollama=>{
+            let messages=vec![
+                json!({"role":"system","content":system}),
+                json!({"role":"user","content":text,"images":[jpeg]})
+            ];
+            (http.post(endpoint("http://localhost:11434","/api/chat")?)
+                .json(&json!({"model":model,"messages":messages,"stream":false})),
+                "/message/content")
+        },
+    };
+    let response:Value=checked(request.send()?)?.json()?;
+    response.pointer(pointer).and_then(Value::as_str)
+        .map(str::to_owned).ok_or(ServiceError::InvalidResponse)
+}
+
 #[derive(Debug, Serialize)]
 pub struct ChatIdentity<'a> { pub url: &'a str, pub browser: &'a str, pub session_id: &'a str, pub region: &'a str, #[serde(skip_serializing_if = "Option::is_none")] pub username: Option<&'a str>, #[serde(skip_serializing_if = "Option::is_none")] pub token: Option<&'a str> }
 #[derive(Debug, Deserialize)]
