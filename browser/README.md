@@ -39,7 +39,8 @@ Charlotte now supports two user-selected AI connection modes:
   Gemini, xAI, Mistral, DeepSeek, Groq, Cohere, OpenRouter, Together,
   Fireworks, Cerebras or Perplexity), enter your own API key and model ID,
   and keep the key in the OS credential store. Native Rust sends AI requests
-  directly to that provider; it never places the key in a website.
+  directly to that provider; it never injects the key into a third-party website. The secret is entered
+through Charlotte's protected local settings form and saved to the OS keychain.
 - **Charlotte Cloud:** Sign in to your Charlotte account, enter your own
   deployed `services/` gateway's HTTPS URL in the native sidebar, and select
   **Charlotte Cloud** as the AI source. The Rust host sends a refreshed
