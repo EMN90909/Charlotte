@@ -63,6 +63,18 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: scripts\build.bat
+      - name: Native CEF runtime smoke (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash scripts/smoke-native.sh
+      - name: Native CEF runtime smoke (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash scripts/smoke-native-macos.sh
+      - name: Native CEF runtime smoke (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/smoke-native.ps1
       - name: Archive POSIX bundle preserving file modes and symlinks
         if: runner.os != 'Windows'
         shell: bash

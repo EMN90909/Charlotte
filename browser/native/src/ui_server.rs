@@ -317,6 +317,12 @@ pub fn start(tabs:TabState)->Result<Ui,String>{
             }
         });
     }).map_err(|e|e.to_string())?;
+    if let Some(path)=std::env::var_os("CHARLOTTE_UI_PORT_FILE") {
+        // Used only by the native desktop smoke harness; contains no secrets.
+        if let Err(e)=std::fs::write(&path,ui.port.to_string()){
+            eprintln!("Unable to publish native test port: {e}");
+        }
+    }
     Ok(ui)
 }
 impl Ui{
@@ -340,6 +346,49 @@ mod tests{
     use super::*;
     #[test]fn escapes_untrusted_text(){
         assert_eq!(escape("<script>\"&"),"&lt;script&gt;&quot;&amp;");
+    }
+    #[test]
+    fn csrf_denies_cross_origin_and_missing_tokens() {
+        let tabs=Arc::new(Mutex::new(crate::tabs::Tabs::default()));
+        let ui=start(tabs).unwrap();
+        let mut headers=HeaderMap::new();
+        headers.insert(header::ORIGIN,format!("http://127.0.0.1:{}",ui.port).parse().unwrap());
+        headers.insert(header::HOST,format!("127.0.0.1:{}",ui.port).parse().unwrap());
+        assert!(check(&ui,&headers,&ui.token));
+        assert!(!check(&ui,&headers,"wrong"));
+        headers.insert(header::ORIGIN,"https://evil.example".parse().unwrap());
+        assert!(!check(&ui,&headers,&ui.token));
+        headers.remove(header::ORIGIN);
+        assert!(!check(&ui,&headers,&ui.token));
+    }
+    #[test]
+    fn html_escapes_tab_titles_and_uses_html_forms() {
+        let tabs=Arc::new(Mutex::new(crate::tabs::Tabs::default()));
+        {
+            let mut t=tabs.lock().unwrap();
+            t.open(42);
+            t.title(42,"<img src=x onerror=alert(1)>");
+            t.navigate(42,"https://example.org");
+        }
+        let ui=start(tabs).unwrap();
+        let page=chrome(&ui).0;
+        assert!(page.contains("&lt;img"));
+        assert!(!page.contains("<img src=x"));
+        assert!(page.contains("method=\"post\""));
+        assert!(page.contains("https://example.org"));
+    }
+    #[test]
+    fn resets_page_chat_credentials_on_navigation() {
+        let ui=start(Arc::new(Mutex::new(crate::tabs::Tabs::default()))).unwrap();
+        {
+            let mut inner=ui.inner.lock().unwrap();
+            inner.chat_token="secret".into();
+            inner.room_url="https://first.example".into();
+        }
+        ui.page_changed("https://other.example");
+        let inner=ui.inner.lock().unwrap();
+        assert!(inner.chat_token.is_empty());
+        assert_eq!(inner.chat_cursor,0);
     }
     #[test]fn address_search_sanitizes_scheme(){
         assert!(resolve_address("file:///etc/passwd").is_none());
