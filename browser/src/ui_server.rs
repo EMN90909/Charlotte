@@ -72,6 +72,8 @@ struct ActionForm {
     catalog: Option<String>,
     custom_id: Option<String>,
     endpoint: Option<String>,
+    api_key: Option<String>,
+    model: Option<String>,
 }
 fn escape(s: &str) -> String {
     s.replace('&',"&amp;").replace('<',"&lt;").replace('>',"&gt;")
@@ -149,7 +151,10 @@ fn sidebar(ui:&Ui)->Html<String>{
     let Ok(inner)=ui.inner.lock() else {return Html("Sidebar unavailable".into())};
     html.push_str(r#"<section><h2>Ask Charlotte</h2><div class="stack"><form action="/ai" method="post" style="display:flex;flex-direction:column;align-items:stretch">"#);
     html.push_str(&token);
-    html.push_str(r#"<label for="provider">Provider</label><select name="provider" id="provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Ollama</option></select><label for="mode">Charlotte mode</label><select id="mode" name="mode"><option value="chat">Chat + MCP tools</option><option value="browser">Automate this Chromium tab</option><option value="visual">Visual automation (shares a screenshot)</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask Charlotte a question or give Charlotte a task…"></textarea><button class="primary">Send</button></form>"#);
+    html.push_str(r#"<label for="provider">Provider</label><select name="provider" id="provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Ollama</option></select><label for="mode">Charlotte mode</label><select id="mode" name="mode"><option value="auto">Auto — Charlotte chooses AI / Chromium / MCP</option><option value="chat">Chat + MCP tools (manual mode)</option><option value="browser">Automate this Chromium tab</option><option value="visual">Visual automation (shares a screenshot)</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask Charlotte a question or give Charlotte a task…"></textarea><button class="primary">Send</button></form>"#);
+    html.push_str("<section><h2>AI provider connection</h2><p class=\"muted\">Use your own API key (or a local Ollama installation) and choose a compatible model. Keys stay in the operating-system credential store, never in Charlotte's browser pages or database.</p>");
+    html.push_str(&format!(r#"<form action="/ai/provider" method="post" style="display:flex;flex-wrap:wrap;gap:6px">{token}<select name="provider" aria-label="Configure AI provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Local Ollama</option></select><input type="password" name="api_key" maxlength="4096" autocomplete="new-password" placeholder="API key (optional when changing model)"><input name="model" maxlength="100" placeholder="Model ID (optional)"><button class="primary" name="command" value="save">Save configuration</button><button name="command" value="remove">Remove provider key</button></form>"#));
+    html.push_str("<small class=\"muted\">Saving doesn't verify billing, model availability or API access. API providers may charge for usage; Ollama needs a separately running local server.</small></section>");
     // Listing a catalog never opens a vendor session, fetches tools, or
     // installs local executables. Connecting is a separate explicit action.
     html.push_str("<section><h2>MCP integrations directory</h2><p class=\"muted\">Choose from 43 catalog profiles. Enabling saves a connection template only; account authorization, local package installation and any paid vendor usage remain separate.</p>");
@@ -201,7 +206,7 @@ fn sidebar(ui:&Ui)->Html<String>{
     html.push_str("<section><h2>JavaScript dialogs</h2><p class=\"muted\">If an alert, confirm or prompt is open in the current tab, you can respond explicitly. File pickers and OS permission dialogs stay user-controlled.</p>");
     html.push_str(&format!(r#"<form action="/browser/dialog" method="post">{token}<input type="text" name="prompt_text" maxlength="500" placeholder="Prompt reply (optional)"><button name="command" value="accept">Accept open dialog</button><button name="command" value="dismiss">Dismiss open dialog</button></form>"#));
     html.push_str("</section>");
-    html.push_str("<p class=\"muted\">Browser mode shares page text with your selected AI provider. Visual mode additionally sends a JPEG screenshot of the visible Chromium viewport. Charlotte omits raw form values, password/file inputs and cookies, but visible page text can contain personal information. Every website-changing step requires approval.</p>");
+    html.push_str("<p class=\"muted\">Auto mode sends the request to your chosen AI provider to choose a capability. It reads and shares current-page text only when necessary for that route; cross-app handoff requires approval. Browser mode shares page text with your selected AI provider. Visual mode additionally sends a JPEG screenshot of the visible Chromium viewport. Charlotte omits raw form values, password/file inputs and cookies, but visible page text can contain personal information. Every website-changing step requires approval.</p>");
     if let Some(pending)=&inner.pending_tool {
         html.push_str("<div class=\"bubble\"><strong>Charlotte requests approval to use an MCP tool</strong>");
         html.push_str(&format!("<p>Risk: <strong>{}</strong></p><p>Tool: <code>{}</code></p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
@@ -797,6 +802,55 @@ async fn browser_dialog(
     });
     reply("/sidebar")
 }
+/// First-party provider setup: explicit user action and local OS keychain.
+/// Neither provider API keys nor models are exposed to Chromium websites.
+async fn ai_provider_config(
+    State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
+)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let name=form.provider.as_deref().unwrap_or("");
+    if provider_model(name).is_none(){
+        return (StatusCode::BAD_REQUEST,"Unknown AI provider").into_response()
+    }
+    if ui.inner.lock().is_ok_and(|i|i.working||i.pending_tool.is_some()||i.pending_browser.is_some()){
+        return (StatusCode::CONFLICT,"Finish the active task before changing the AI provider").into_response()
+    }
+    let result=(||->Result<(),String>{
+        match form.command.as_deref(){
+            Some("remove")=>{
+                crate::credentials::remove(&format!("ai:{name}"))
+                    .map_err(|e|e.to_string())?;
+                Ok(())
+            },
+            Some("save")=>{
+                let key=form.api_key.as_deref().unwrap_or("").trim();
+                if !key.is_empty(){
+                    if key.len()>4096||key.chars().any(char::is_control){
+                        return Err("Invalid AI API key".into())
+                    }
+                    crate::credentials::store(&format!("ai:{name}"),key)
+                        .map_err(|e|e.to_string())?;
+                }
+                let model=form.model.as_deref().unwrap_or("").trim();
+                if !model.is_empty(){
+                    if !valid_model(model){return Err("Model ID must be 1–100 safe ASCII characters".into())}
+                    let db=crate::storage::Storage::open(
+                        &crate::profile::profile_root().join("charlotte.sqlite"))
+                        .map_err(|e|e.to_string())?;
+                    db.set_setting(&format!("ai:model:{name}"),model)
+                        .map_err(|e|e.to_string())?;
+                }
+                if key.is_empty()&&model.is_empty(){
+                    return Err("Enter an API key or a model ID to save".into())
+                }
+                Ok(())
+            },
+            _=>Err("Unknown AI provider configuration action".into()),
+        }
+    })();
+    if let Ok(mut inner)=ui.inner.lock(){inner.error=result.err().unwrap_or_default();}
+    reply("/sidebar")
+}
 async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response{
     if !check(&ui,&headers,&form.token){return forbidden()}
     let Some(text)=form.value.map(|s|s.trim().to_string()).filter(|s|!s.is_empty()&&s.len()<=4000)
@@ -1084,6 +1138,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/sidebar",get(|State(ui):State<Ui>|async move{sidebar(&ui)}))
                 .route("/action",post(action))
                 .route("/ai",post(ai))
+                .route("/ai/provider",post(ai_provider_config))
                 .route("/agent/approve",post(agent_approve))
                 .route("/browser/approve",post(browser_approve))
                 .route("/browser/resume",post(browser_resume))
@@ -1292,6 +1347,18 @@ mod tests{
         assert!(page.contains("Approve once"));
         assert!(page.contains(r#"name="command" value="reject""#));
         assert!(!page.contains("<script>"));
+    }
+    #[test]
+    fn auto_mode_and_provider_setup_are_explicit(){
+        let ui=start(Arc::new(Mutex::new(crate::tabs::Tabs::default())),
+            Arc::new(std::sync::RwLock::new(
+                crate::shield::Shield::new(&[crate::shield::STARTER_RULES],true)))).unwrap();
+        let html=sidebar(&ui).0;
+        assert!(html.contains(r#"value="auto""#));
+        assert!(html.contains(r#"action="/ai/provider""#));
+        assert!(html.contains("new-password"));
+        assert!(!valid_model("model?key=secret"));
+        assert!(valid_model("gpt-4o-mini"));
     }
     #[test]
     fn sidebar_exposes_bounded_mcp_directory_without_account_tokens(){
