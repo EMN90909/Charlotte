@@ -20,17 +20,18 @@ pub const LOOKUP:&str=r#"
  };
  const resolve=(selector)=>{
    const frames=selector.split(' ::frame ');
-   let scope=document,offsetX=0,offsetY=0,frame=null;
+   let scope=document,offsetX=0,offsetY=0,frame=null,firstFrame=null;
    for(let i=0;i<frames.length-1;i++){
      frame=resolvePart(scope,frames[i]);
      if(!frame||frame.localName!=='iframe')return null;
+     if(!firstFrame)firstFrame=frame;
      try{scope=frame.contentDocument;}catch(e){return null;}
      if(!scope)return null;
      const r=frame.getBoundingClientRect();
      offsetX+=r.left;offsetY+=r.top;
    }
    const el=resolvePart(scope,frames[frames.length-1]);
-   return el?{el,scope,offsetX,offsetY}:null;
+   return el?{el,scope,offsetX,offsetY,firstFrame}:null;
  };
 "#;
 
@@ -128,11 +129,21 @@ pub fn element_command(selector:&str,kind:&str,value:Option<&str>)->Result<(Stri
           const y=Math.round(updated.top+updated.height/2+hit.offsetY);
           const visible=document.elementFromPoint(x,y);
           if(!visible)return {error:'Element offscreen'};
-          // Shadow hosts and iframe elements are valid wrappers for hit tests.
-          if(!(el.contains(visible)||visible.contains(el)||
-             (hit.offsetX!==0||hit.offsetY!==0)||
-             el.getRootNode() instanceof ShadowRoot))
-            return {error:'Target covered'};
+          const shadow=el.getRootNode() instanceof ShadowRoot?el.getRootNode():null;
+          const top=hit.firstFrame||(shadow?shadow.host:el);
+          if(!(visible===top||visible.contains(top)||top.contains(visible)))
+            return {error:'Target covered by another element'};
+          if(shadow&&typeof shadow.elementFromPoint==='function'&&!hit.firstFrame){
+            const inner=shadow.elementFromPoint(x,y);
+            if(!inner||!(inner===el||el.contains(inner)||inner.contains(el)))
+              return {error:'Shadow DOM target covered'};
+          }
+          if(hit.firstFrame){
+            const local=hit.scope.elementFromPoint(x-hit.offsetX,y-hit.offsetY);
+            const expected=shadow?shadow.host:el;
+            if(!local||!(local===expected||local.contains(expected)||expected.contains(local)))
+              return {error:'Iframe target covered'};
+          }
           return {x,y,tag:el.localName};
         "#,
         "fill"=>r#"
