@@ -171,6 +171,70 @@ pub fn click_coordinates(value:&Value)->Result<(i32,i32),String>{
     }
     Ok((x as i32,y as i32))
 }
+/// Browser-specific capability: the browser ID and exact origin are fixed
+/// when the user starts the task. Never use a global remote-debugging port.
+#[derive(Debug,Clone)]
+pub struct Context {pub browser_id:i32,pub origin:String}
+impl Context {
+    pub fn new(browser_id:i32,url:&str)->Result<Self,String>{
+        if browser_id<=0{return Err("No active browser".into())}
+        let origin=crate::permissions::canonical_origin(url)
+            .ok_or("Only active HTTPS/loopback pages can be automated")?;
+        Ok(Self{browser_id,origin})
+    }
+    pub fn cdp(&self,method:&str,params:Value)->Result<Value,String>{
+        use std::sync::mpsc;
+        use std::time::Duration;
+        // All CEF APIs are invoked via post_ui_command, never on this worker.
+        let (reply,receive)=mpsc::channel();
+        crate::app::post_ui_command(crate::ui_server::Command::Automation{
+            browser_id:self.browser_id,expected_origin:self.origin.clone(),
+            method:method.to_owned(),params,reply,
+        });
+        receive.recv_timeout(Duration::from_secs(12))
+            .map_err(|_|"Chromium automation timed out (12 seconds)".to_string())?
+    }
+    pub fn observe(&self)->Result<Value,String>{
+        let (method,params)=observation_command();
+        let result=self.cdp(&method,params)?;
+        let data=extract_result(&result)?;
+        let url=data.get("url").and_then(Value::as_str).ok_or("No page URL")?;
+        if crate::permissions::canonical_origin(url).as_deref()!=Some(self.origin.as_str()){
+            return Err("Page left the authorized origin".into())
+        }
+        Ok(data)
+    }
+    pub fn act(&self,action:&Action)->Result<Value,String>{
+        action.validate()?;
+        match action {
+            Action::Observe=>self.observe(),
+            Action::Navigate{url}=>{
+                require_same_origin(&self.origin,url)?;
+                let result=self.cdp("Page.navigate",json!({"url":url}))?;
+                if result.get("errorText").is_some(){return Err(format!("Navigation failed: {result}"))}
+                Ok(result)
+            },
+            Action::Type{selector,text}=>{
+                let (method,params)=type_command(selector,text)?;
+                extract_result(&self.cdp(&method,params)?)
+            },
+            Action::Scroll{direction}=>{
+                let (method,params)=scroll_command(*direction);
+                extract_result(&self.cdp(&method,params)?)
+            },
+            Action::Click{selector}=>{
+                let (method,params)=click_point_command(selector)?;
+                let position=extract_result(&self.cdp(&method,params)?)?;
+                let (x,y)=click_coordinates(&position)?;
+                for (kind,pressed) in [("mouseMoved",false),("mousePressed",true),("mouseReleased",false)] {
+                    let (method,params)=input_mouse_command(kind,x,y,pressed);
+                    self.cdp(&method,params)?;
+                }
+                Ok(json!({"clicked":true,"selector":selector}))
+            },
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
