@@ -18,7 +18,7 @@ impl Storage {
         let connection = Connection::open(path)?;
         connection.busy_timeout(std::time::Duration::from_secs(5))?;
         let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version > 1 { return Err(rusqlite::Error::InvalidQuery); }
+        if version > 2 { return Err(rusqlite::Error::InvalidQuery); }
         connection.execute_batch(
             "PRAGMA journal_mode=WAL;
              PRAGMA foreign_keys=ON;
@@ -29,9 +29,16 @@ impl Storage {
              CREATE INDEX IF NOT EXISTS history_visited_at ON history(visited_at DESC);
              CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY, room TEXT NOT NULL, sender TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL);
              CREATE INDEX IF NOT EXISTS messages_room_time ON messages(room, created_at);
-             PRAGMA user_version=1;
+             CREATE TABLE IF NOT EXISTS bookmark_folders (id TEXT PRIMARY KEY, name TEXT NOT NULL, parent_id TEXT);
              COMMIT;",
         )?;
+        if version < 2 {
+            let has_folder = connection.prepare("PRAGMA table_info(bookmarks)")?
+                .query_map([], |row| row.get::<_, String>(1))?
+                .filter_map(Result::ok).any(|col| col == "folder_id");
+            if !has_folder { connection.execute_batch("ALTER TABLE bookmarks ADD COLUMN folder_id TEXT;")?; }
+            connection.pragma_update(None, "user_version", 2)?;
+        }
         Ok(Self(connection))
     }
 
@@ -53,6 +60,18 @@ impl Storage {
         Ok(())
     }
 
+    pub fn save_folder(&self, id: &str, name: &str, parent: Option<&str>) -> rusqlite::Result<()> {
+        self.0.execute("INSERT INTO bookmark_folders(id,name,parent_id) VALUES (?1,?2,?3)
+            ON CONFLICT(id) DO UPDATE SET name=excluded.name,parent_id=excluded.parent_id",
+            params![id,name,parent])?;
+        Ok(())
+    }
+    pub fn save_bookmark_folder(&self, url: &str, title: &str, folder: Option<&str>) -> rusqlite::Result<()> {
+        self.0.execute("INSERT INTO bookmarks(url,title,folder_id) VALUES (?1,?2,?3)
+            ON CONFLICT(url) DO UPDATE SET title=excluded.title,folder_id=excluded.folder_id",
+            params![url,title,folder])?;
+        Ok(())
+    }
     pub fn remove_bookmark(&self, url: &str) -> rusqlite::Result<bool> {
         Ok(self.0.execute("DELETE FROM bookmarks WHERE url = ?1", [url])? != 0)
     }
@@ -135,7 +154,7 @@ mod tests {
     fn rejects_future_database_versions() {
         let path = std::env::temp_dir().join(format!("charlotte-future-{}-{}.sqlite", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
         let db = Connection::open(&path).unwrap();
-        db.pragma_update(None, "user_version", 2).unwrap();
+        db.pragma_update(None, "user_version", 3).unwrap();
         drop(db);
         assert!(Storage::open(&path).is_err());
         let _ = std::fs::remove_file(path);

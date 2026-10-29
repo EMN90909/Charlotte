@@ -9,8 +9,15 @@ pub fn run(main_args: &MainArgs, sandbox_info: *mut u8) -> i32 {
     if let Err(error) = crate::profile::ensure_profile_dirs() {
         eprintln!("Unable to create Charlotte profile: {error}"); return 1;
     }
-    if let Err(error) = crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")) {
-        eprintln!("Unable to initialize Charlotte database: {error}"); return 1;
+    let store = match crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")) {
+        Ok(store) => store,
+        Err(error) => { eprintln!("Unable to initialize Charlotte database: {error}"); return 1; }
+    };
+    if let Some(source) = std::env::var_os("CHARLOTTE_IMPORT_ELECTRON_DIR") {
+        match crate::legacy::import_dir(&store, std::path::Path::new(&source)) {
+            Ok(report) => eprintln!("Electron data imported: {report:?}"),
+            Err(error) => { eprintln!("Electron import failed: {error}"); return 1; }
+        }
     }
     let cache_path = crate::profile::profile_root().join("cache");
     let cache = cache_path.to_string_lossy();

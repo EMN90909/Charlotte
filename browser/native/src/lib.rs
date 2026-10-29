@@ -2,6 +2,7 @@
 pub mod app;
 pub mod cef_bridge;
 pub mod profile;
+pub mod legacy;
 pub mod services;
 pub mod shield;
 pub mod storage;
