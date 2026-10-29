@@ -181,6 +181,8 @@ fn sidebar(ui:&Ui)->Html<String>{
         }
     }
     html.push_str("</datalist>");
+    html.push_str(&format!(r#"<form action="/ai/cloud" method="post" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">{token}<input name="endpoint" maxlength="500" aria-label="Charlotte cloud gateway HTTPS URL" placeholder="https://ai.your-charlotte-domain.example"><button class="primary" name="command" value="save">Save Cloud gateway</button><button name="command" value="remove">Disconnect Cloud URL</button></form>"#));
+    html.push_str("<p class=\"muted\">BYOK sends requests directly using your own provider account and a key protected by the OS keychain. Charlotte Cloud uses your signed-in Charlotte account, the selected HTTPS gateway and the service's server-owned provider credentials. Cloud requests and optional visual screenshots leave your device; cloud usage may be metered.</p>");
     html.push_str("<small class=\"muted\">Saving doesn't verify billing, model availability or API access. Testing uses a small, user-requested model call that may incur provider charges. Ollama needs a separately running local server.</small></section>");
     if let Some(status)=&inner.provider_status{
         html.push_str(&format!("<p class=\"muted\">AI provider check: {}</p>",escape(status)));
@@ -911,6 +913,34 @@ async fn browser_dialog(
 }
 /// First-party provider setup: explicit user action and local OS keychain.
 /// Neither provider API keys nor models are exposed to Chromium websites.
+/// Only a service URL is saved in local SQLite; provider credentials
+/// remain in the cloud secret manager and Charlotte account session in OS keychain.
+async fn ai_cloud_config(
+    State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
+)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    if ui.inner.lock().is_ok_and(|i|i.working||i.pending_tool.is_some()||
+        i.pending_browser.is_some()||i.pending_auto.is_some()){
+        return (StatusCode::CONFLICT,"Finish the active task first").into_response()
+    }
+    let result=(||->Result<(),String>{
+        let db=crate::storage::Storage::open(
+            &crate::profile::profile_root().join("charlotte.sqlite"))
+            .map_err(|e|e.to_string())?;
+        match form.command.as_deref(){
+            Some("save")=>{
+                let url=form.endpoint.as_deref().unwrap_or("").trim();
+                let validated=crate::cloud::validate_cloud_url(url)
+                    .map_err(|e|e.to_string())?;
+                db.set_setting("ai:cloud_url",validated.as_str()).map_err(|e|e.to_string())
+            },
+            Some("remove")=>db.set_setting("ai:cloud_url","").map_err(|e|e.to_string()),
+            _=>Err("Unknown cloud connection action".into()),
+        }
+    })();
+    if let Ok(mut i)=ui.inner.lock(){i.error=result.err().unwrap_or_default();}
+    reply("/sidebar")
+}
 async fn ai_provider_config(
     State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
 )->Response{
@@ -951,12 +981,18 @@ async fn ai_provider_config(
     let result=(||->Result<(),String>{
         match form.command.as_deref(){
             Some("remove")=>{
+                if name=="cloud"{
+                    return Err("Cloud uses account sign-in, not a BYOK key. Use Disconnect Cloud URL.".into())
+                }
                 crate::credentials::remove(&format!("ai:{name}"))
                     .map_err(|e|e.to_string())?;
                 Ok(())
             },
             Some("save")=>{
                 let key=form.api_key.as_deref().unwrap_or("").trim();
+                if name=="cloud"&&!key.is_empty(){
+                    return Err("Never enter a provider API key for Charlotte Cloud".into())
+                }
                 if !key.is_empty(){
                     if key.len()>4096||key.chars().any(char::is_control){
                         return Err("Invalid AI API key".into())
@@ -1587,6 +1623,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/action",post(action))
                 .route("/ai",post(ai))
                 .route("/ai/provider",post(ai_provider_config))
+                .route("/ai/cloud",post(ai_cloud_config))
                 .route("/ai/route-approve",post(auto_route_approve))
                 .route("/agent/approve",post(agent_approve))
                 .route("/browser/approve",post(browser_approve))
@@ -1854,6 +1891,13 @@ mod tests{
         ui.inner.lock().unwrap().pending_auto=Some(pending);
         ui.page_changed("https://example.org/other");
         assert!(ui.inner.lock().unwrap().pending_auto.is_none());
+    }
+    #[test]
+    fn provider_directory_exposes_cloud_but_never_cloud_secrets(){
+        let config=crate::ai_providers::get("cloud").unwrap();
+        assert_eq!(config.default_model,"auto");
+        assert!(provider_model("cloud").is_some());
+        assert!(crate::ai_providers::PROVIDERS.len()>=14);
     }
     #[test]
     fn auto_mode_and_provider_setup_are_explicit(){
