@@ -402,6 +402,13 @@ fn plan_browser_next(
             checkpoint_status(&run_id,"awaiting_approval",
                 &format!("{}: {}",risk_label,action.description()),step);
             if let Ok(mut inner)=state.inner.lock(){
+                if inner.active_run_id.as_deref()!=Some(run_id.as_str()) ||
+                    inner.cancel_automation.load(Ordering::SeqCst){
+                    drop(inner);
+                    checkpoint_status(&run_id,"paused","User paused during action planning",step);
+                    finish_if_current(state,&run_id,None);
+                    return Ok(())
+                }
                 let screenshot_fingerprint=if matches!(action,BrowserAction::ClickAt{..}){
                     screenshot.as_ref().map(|(jpeg,_)|screenshot_fingerprint(jpeg))
                 }else{None};
@@ -515,7 +522,7 @@ async fn browser_approve(
             let cancelled=state.inner.lock().ok().map(|inner|
                 inner.cancel_automation.load(Ordering::SeqCst)).unwrap_or(false);
             checkpoint_status(&pending.run_id,if cancelled{"paused"}else{"interrupted"},&message,pending.step);
-            finish(&state,Some(message));
+            finish_if_current(&state,&pending.run_id,Some(message));
         }
     });
     reply("/sidebar")
