@@ -213,7 +213,10 @@ fn sidebar(ui:&Ui)->Html<String>{
         html.push_str(&format!("<p>Risk: <strong>{}</strong></p><p>Tool: <code>{}</code></p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
             escape(&pending.risk_label),escape(&pending.name),escape(&pending.args.to_string())));
         if let Some((_,url))=&pending.source_page{
-            html.push_str(&format!("<p class=\"muted\">Source Chromium page: {}. Switching pages cancels this cross-app handoff.</p>",escape(url)));
+            let public_url=url::Url::parse(url).ok()
+                .map(|page|format!("{}{}",page.origin().ascii_serialization(),page.path()))
+                .unwrap_or_else(||"[authorized page]".into());
+            html.push_str(&format!("<p class=\"muted\">Source Chromium page: {}. Switching pages cancels this cross-app handoff.</p>",escape(&public_url)));
         }
         html.push_str("<small class=\"muted\">Tool output may be sent to your selected AI provider to explain the result.</small>");
         html.push_str(&format!(r#"<form action="/agent/approve" method="post">{token}<button class="primary" name="command" value="approve">Approve once</button><button name="command" value="reject">Deny</button></form>"#));
@@ -915,7 +918,7 @@ fn plan_mcp_goal(
         Plan::Tool{name,args}=>{
             let selected=tools.iter().find(|t|t.name==name)
                 .ok_or("MCP model proposed a tool that was not advertised")?;
-            if requested_server.as_deref().is_some_and(|id|id!=selected.server_id){
+            if requested_server.as_deref().is_some_and(|id|id!=selected.server_id.as_str()){
                 return Err("MCP proposed a tool from another, unauthorized service".into())
             }
             if let Ok(mut inner)=state.inner.lock(){
@@ -951,7 +954,7 @@ fn run_auto_task(
         page_origin:context.as_ref().map(|c|c.origin.clone()),
         enabled_servers:configured.iter().map(|s|s.id.clone()).collect(),
     };
-    let history=state.inner.lock().ok().map(|i|i.ai.iter().rev()
+    let history:Vec<Turn>=state.inner.lock().ok().map(|i|i.ai.iter().rev()
         .take(4).cloned().collect::<Vec<_>>().into_iter().rev().collect())
         .unwrap_or_default();
     let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
@@ -1155,6 +1158,12 @@ async fn agent_approve(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<Act
                 .ok_or("MCP server or tool changed after approval")?;
             if mcp::tool_risk(&verified).label()!=pending.risk_label{
                 return Err("MCP tool risk changed; review a fresh approval".into())
+            }
+            // Recheck immediately before dispatch, after network connection
+            // and tool discovery. Never submit a cross-app write for a stale tab.
+            if pending.source_page.as_ref().is_some_and(|source|
+                !source_page_still_active(&state,source)){
+                return Err("Source page changed before MCP dispatch; no tool executed".into())
             }
             let output=agent::execute_approved(&mut registry,&pending.name,pending.args)?;
             let (provider,model)=provider_model(&pending.provider).ok_or("Invalid AI provider")?;
