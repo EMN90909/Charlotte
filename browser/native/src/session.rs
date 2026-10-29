@@ -5,7 +5,7 @@ const KEY: &str = "last_page_url";
 const TABS_KEY: &str = "tabs.v2";
 const MAX_SESSION: usize = 64;
 const DEFAULT_URL: &str = "https://www.google.com/";
-pub(crate) fn valid_page_url(value: &str) -> bool {
+pub fn valid_page_url(value: &str) -> bool {
     value.len() <= 8192 &&
     Url::parse(value).ok().is_some_and(|url|
         matches!(url.scheme(), "https" | "http") && url.host_str().is_some() &&

@@ -32,6 +32,9 @@ wrap_client! {
         fn load_handler(&self) -> Option<LoadHandler> {
             Some(CharlotteLoadHandler::new(self.filter.clone(), self.tabs.clone()))
         }
+        fn permission_handler(&self) -> Option<PermissionHandler> {
+            Some(CharlottePermissionHandler::new())
+        }
     }
 }
 
@@ -43,6 +46,35 @@ fn persist_tabs(state: &TabState) {
                 eprintln!("Cannot persist native tabs: {error}");
             }
         }
+    }
+}
+
+
+// Permission requests are always resolved in Rust, never by an untrusted
+// renderer. Desktop/screen capture is not implied by webcam/mic permission.
+wrap_permission_handler! {
+    struct CharlottePermissionHandler;
+    impl PermissionHandler {
+        fn on_request_media_access_permission(
+            &self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>,
+            requesting_origin: Option<&CefString>,
+            requested_permissions: u32,
+            callback: Option<&mut MediaAccessCallback>,
+        ) -> i32 {
+            let Some(callback) = callback else { return 1 };
+            let origin = requesting_origin.map(CefString::to_string).unwrap_or_default();
+            let result = Storage::open(&profile::profile_root().join("charlotte.sqlite"))
+                .ok().and_then(|db| crate::permissions::allowed_media_bits(&db, &origin, requested_permissions).ok())
+                .unwrap_or(0);
+            if result == requested_permissions && requested_permissions != 0 {
+                callback.cont(requested_permissions);
+            } else {
+                callback.cancel();
+            }
+            1
+        }
+        // Other permissions (notably geolocation) remain with Chrome's
+        // native permission UI. We do not grant any unrecognized capability.
     }
 }
 

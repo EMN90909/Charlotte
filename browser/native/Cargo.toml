@@ -16,6 +16,10 @@ name = "Charlotte"
 path = "src/main.rs"
 
 [[bin]]
+name = "charlotte-settings"
+path = "src/bin/charlotte_settings.rs"
+
+[[bin]]
 name = "charlotte_helper"
 path = "src/bin/charlotte_helper.rs"
 
