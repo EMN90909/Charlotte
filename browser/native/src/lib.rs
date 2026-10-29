@@ -11,6 +11,7 @@ pub mod session;
 pub mod tabs;
 pub mod permissions;
 pub mod downloads;
+pub mod shortcuts;
 
 #[cfg(target_os = "macos")]
 fn load_cef_library(helper: bool) -> cef::library_loader::LibraryLoader {

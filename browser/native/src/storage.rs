@@ -81,6 +81,21 @@ impl Storage {
             params![url,title,folder])?;
         Ok(())
     }
+    /// Toggle a bookmarked page from native Ctrl/Cmd+D. The browser does
+    /// not store script/file/opaque URLs as bookmarks.
+    pub fn toggle_bookmark(&self, url: &str, title: &str) -> rusqlite::Result<bool> {
+        let exists = self.0.query_row(
+            "SELECT EXISTS(SELECT 1 FROM bookmarks WHERE url = ?1)",
+            [url], |row| row.get::<_, i64>(0),
+        )? != 0;
+        if exists {
+            self.remove_bookmark(url)?;
+            Ok(false)
+        } else {
+            self.save_bookmark(url, title)?;
+            Ok(true)
+        }
+    }
     pub fn remove_bookmark(&self, url: &str) -> rusqlite::Result<bool> {
         Ok(self.0.execute("DELETE FROM bookmarks WHERE url = ?1", [url])? != 0)
     }
@@ -186,6 +201,15 @@ mod tests {
         assert!(!db.delete_message("two", id).unwrap());
         assert!(db.delete_message("one", id).unwrap());
         assert_eq!(db.clear_history().unwrap(), 2);
+    }
+
+    #[test]
+    fn native_bookmark_toggle() {
+        let db = Storage::open(Path::new(":memory:")).unwrap();
+        assert!(db.toggle_bookmark("https://example.org", "Example").unwrap());
+        assert_eq!(db.bookmarks().unwrap().len(), 1);
+        assert!(!db.toggle_bookmark("https://example.org", "Example").unwrap());
+        assert!(db.bookmarks().unwrap().is_empty());
     }
 
     #[test]

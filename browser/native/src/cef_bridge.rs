@@ -38,6 +38,9 @@ wrap_client! {
         fn download_handler(&self) -> Option<DownloadHandler> {
             Some(CharlotteDownloadHandler::new())
         }
+        fn keyboard_handler(&self) -> Option<KeyboardHandler> {
+            Some(CharlotteKeyboardHandler::new())
+        }
     }
 }
 
@@ -53,6 +56,44 @@ fn persist_tabs(state: &TabState) {
 }
 
 
+
+
+// Browser shortcuts are intercepted before webpage JavaScript; only known
+// combinations are consumed, so site keyboard events remain functional.
+wrap_keyboard_handler! {
+    struct CharlotteKeyboardHandler;
+    impl KeyboardHandler {
+        fn on_pre_key_event(
+            &self, browser: Option<&mut Browser>, event: Option<&KeyEvent>,
+            _os_event: Option<&mut XEvent>, _is_keyboard_shortcut: Option<&mut i32>,
+        ) -> i32 {
+            let (Some(browser), Some(event)) = (browser, event) else { return 0 };
+            let action = crate::shortcuts::resolve(
+                event.windows_key_code, event.modifiers, event.type_ == KeyEventType::RAWKEYDOWN
+            );
+            let Some(action) = action else { return 0 };
+            use crate::shortcuts::Shortcut;
+            match action {
+                Shortcut::Back => { if browser.can_go_back() != 0 { browser.go_back(); } }
+                Shortcut::Forward => { if browser.can_go_forward() != 0 { browser.go_forward(); } }
+                Shortcut::Reload => browser.reload(),
+                Shortcut::HardReload => browser.reload_ignore_cache(),
+                Shortcut::Bookmark => {
+                    let Some(frame) = browser.main_frame() else { return 0 };
+                    let url = frame.url().to_string();
+                    if !crate::session::valid_page_url(&url) { return 0 }
+                    let Ok(db) = Storage::open(&profile::profile_root().join("charlotte.sqlite")) else { return 0 };
+                    match db.toggle_bookmark(&url, &url) {
+                        Ok(true) => eprintln!("Bookmarked: {url}"),
+                        Ok(false) => eprintln!("Removed bookmark: {url}"),
+                        Err(error) => eprintln!("Bookmark toggle failed: {error}"),
+                    }
+                }
+            }
+            1
+        }
+    }
+}
 
 // Chromium owns the file-save dialog and downloaded bytes; the Rust host
 // records only terminal outcomes. Never trust server-provided filenames.
