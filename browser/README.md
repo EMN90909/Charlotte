@@ -96,6 +96,20 @@ to Charlotte's implemented features, tradeoffs and outstanding gaps.
 Parallel autonomous tabs, custom skills/routines, OOPIF node handles and
 opt-in long-term semantic memory are **not** completed.
 
+Charlotte also has **built-in read-only browser skills** in the sidebar:
+**Page summary**, **Visible links**, **Interactive controls**, and **Frame
+inventory**. These deterministic Rust recipes inspect the current CEF tab
+without an AI call and display results locally. They never put the resulting
+page text into AI chat history. Results are cleared when you switch tabs or
+navigate away. They are not general-purpose unattended workflow recording.
+
+For the AI automation loop, changing tabs, closing the target tab, leaving
+the authorized origin or a Chromium renderer crash **pauses the task,
+invalidates pending approval, and requires manual inspection and re-planning**.
+CEF reports renderer termination to Rust rather than silently retrying a
+possibly completed action. Native cross-platform verification is still
+required.
+
 See [AGENTIC_BROWSER_RESEARCH.md](AGENTIC_BROWSER_RESEARCH.md) for the implementation gap analysis and release gates derived from the supplied browser automation research.
 
 See [ADVANCED_AUTOMATION.md](ADVANCED_AUTOMATION.md) for scope, consent,
