@@ -45,8 +45,16 @@ done
 curl --silent --fail "http://127.0.0.1:$port/chrome" | grep -q "Charlotte"
 curl --silent --fail "http://127.0.0.1:$port/chrome" | grep -q "Toggle ad blocker"
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Ask AI"
+for _ in $(seq 1 100); do
+  if curl --silent --fail --max-time 2 "http://127.0.0.1:$port/health" | grep -Eq '"cef_main_frame_loads":[1-9][0-9]*'; then break; fi
+  sleep 0.3
+done
+curl --silent --fail --max-time 2 "http://127.0.0.1:$port/health" | grep -Eq '"cef_main_frame_loads":[1-9][0-9]*' || {
+  echo "CEF never completed a main-frame load" >&2; cat "$LOG" >&2; exit 1;
+}
+
 code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
   -X POST "http://127.0.0.1:$port/action" -d 'command=new')"
 [[ "$code" == 403 ]] || { echo "Expected cross-origin rejection, got $code" >&2; exit 1; }
 kill -0 "$pid"
-echo 'Native CEF process, toolbar/sidebar endpoints and CSRF rejection passed.'
+echo 'Native CEF renderer main-frame load, toolbar/sidebar endpoints and CSRF rejection passed.'
