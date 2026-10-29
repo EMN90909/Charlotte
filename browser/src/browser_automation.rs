@@ -252,6 +252,32 @@ impl Context {
         Err("Navigation did not complete on the approved origin".into())
     }
     /// Captured only with explicit visual-mode consent. Never persisted.
+    /// Return only bounded, credential-free frame locations. CDP enumerates
+    /// OOPIF frames without granting access to their isolated document DOM.
+    pub fn frame_inventory(&self)->Result<Vec<Value>,String>{
+        let (method,params)=crate::advanced_automation::frame_tree_command();
+        let tree=self.cdp(&method,params)?;
+        let mut result=Vec::new();
+        let mut stack=vec![&tree["frameTree"]];
+        while let Some(node)=stack.pop(){
+            if result.len()>=24{break}
+            if let Some(frame)=node.get("frame"){
+                let raw=frame["url"].as_str().unwrap_or("");
+                let safe=url::Url::parse(raw).ok()
+                    .filter(|url|crate::permissions::canonical_origin(url.as_str()).is_some())
+                    .map(|url|format!("{}{}",url.origin().ascii_serialization(),url.path()));
+                if let Some(safe)=safe{
+                    result.push(json!({"url":safe,
+                        "crossOrigin":crate::permissions::canonical_origin(raw)
+                            .as_deref()!=Some(self.origin.as_str())}));
+                }
+            }
+            if let Some(children)=node.get("childFrames").and_then(Value::as_array){
+                for item in children.iter().take(24){stack.push(item)}
+            }
+        }
+        Ok(result)
+    }
     pub fn screenshot(&self)->Result<String,String>{
         let (method,params)=crate::advanced_automation::screenshot_command();
         let reply=self.cdp(&method,params)?;
