@@ -253,6 +253,7 @@ wrap_life_span_handler! {
         }
         fn on_before_close(&self, browser: Option<&mut Browser>) {
             let Some(browser) = browser else { return };
+            crate::app::post_ui_command(crate::ui_server::Command::BrowserClosed(browser.identifier()));
             if let Ok(mut tabs) = self.tabs.lock() { tabs.close(browser.identifier()); }
             persist_tabs(&self.tabs);
             crate::app::post_ui_command(crate::ui_server::Command::Sync);
