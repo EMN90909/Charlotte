@@ -1,7 +1,8 @@
 //! Native Charlotte CEF Views host: tab strip, Chromium page viewport, AI/chat
 //! sidebar. There is no Electron and no Node or JS/OS bridge in this process.
 use cef::*;
-use std::{cell::{Cell,RefCell},collections::HashMap,rc::Rc,sync::{Arc,Mutex}};
+use std::{cell::{Cell,RefCell},collections::HashMap,rc::Rc,sync::{Arc,Mutex,mpsc}};
+use serde_json::Value;
 use crate::{
     cef_bridge::{CharlotteClient,default_filter,TabState},
     ui_server::{self,Ui,Command},
@@ -22,6 +23,7 @@ struct Controller {
     restore_pending: bool,
     restore_urls: Vec<String>,
     pending_restore: HashMap<i32,String>,
+    devtools_observers: HashMap<i32,Registration>,
 }
 fn browser_id(view:&BrowserView)->Option<i32> {
     view.browser().map(|browser| browser.identifier())
@@ -108,9 +110,46 @@ impl Controller {
         self.views.push(view);
         self.page_panel.layout();
     }
+    fn automation_request(&mut self,browser_id:i32,expected_origin:String,
+        method:String,params:Value,reply:mpsc::Sender<Result<Value,String>>){
+        // CEF references never leave the UI thread. Prevent stale tab actions.
+        let active=self.tabs.lock().ok().and_then(|tabs|tabs.active_id());
+        if active!=Some(browser_id){
+            let _=reply.send(Err("Automation tab is no longer active".into()));return
+        }
+        let Some(browser)=self.active_browser() else{
+            let _=reply.send(Err("Automation browser has closed".into()));return
+        };
+        let page=browser.main_frame().map(|f|f.url().to_string()).unwrap_or_default();
+        if crate::permissions::canonical_origin(&page)!=Some(expected_origin) {
+            let _=reply.send(Err("Automation paused: page origin changed".into()));return
+        }
+        let Some(host)=browser.host() else{
+            let _=reply.send(Err("CEF browser host unavailable".into()));return
+        };
+        static NEXT_ID:std::sync::atomic::AtomicI32=
+            std::sync::atomic::AtomicI32::new(100_000_000);
+        let id=NEXT_ID.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+        if id>1_900_000_000{
+            let _=reply.send(Err("Automation DevTools IDs exhausted".into()));return
+        }
+        let mut observer=CharlotteAutomationObserver::new(id,reply.clone());
+        let Some(registration)=host.add_dev_tools_message_observer(Some(&mut observer)) else{
+            let _=reply.send(Err("CEF DevTools observer registration failed".into()));return
+        };
+        let message=serde_json::json!({"id":id,"method":method,"params":params}).to_string();
+        self.devtools_observers.insert(id,registration);
+        if host.send_dev_tools_message(Some(message.as_bytes()))!=1 {
+            self.devtools_observers.remove(&id);
+            let _=reply.send(Err("CEF refused DevTools method".into()));
+        }
+    }
     fn apply(&mut self,command:Command){
         match command{
             Command::Sync=>self.sync(),
+            Command::Automation{browser_id,expected_origin,method,params,reply}=>
+                self.automation_request(browser_id,expected_origin,method,params,reply),
+            Command::AutomationFinished(id)=>{self.devtools_observers.remove(&id);},
             Command::Shields(enabled)=>{
                 let was_enabled=self.filter.read().map(|s|s.is_enabled()).unwrap_or(false);
                 if let Ok(db)=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
@@ -156,6 +195,28 @@ impl Controller {
                 // CEF lifespan callback updates the actual registry after close.
                 post_ui_command(Command::Sync);
             }
+        }
+    }
+}
+wrap_dev_tools_message_observer! {
+    struct CharlotteAutomationObserver {
+        message_id:i32,
+        reply:mpsc::Sender<Result<Value,String>>,
+    }
+    impl DevToolsMessageObserver {
+        fn on_dev_tools_method_result(
+            &self,_browser:Option<&mut Browser>,message_id:i32,
+            success:i32,result:Option<&[u8]>,
+        ){
+            if message_id!=self.message_id {return}
+            let response=if success==0{
+                Err("Chromium rejected automation command".to_owned())
+            }else{
+                result.and_then(|bytes|serde_json::from_slice::<Value>(bytes).ok())
+                    .ok_or_else(||"Malformed Chromium DevTools response".to_owned())
+            };
+            let _=self.reply.send(response);
+            post_ui_command(Command::AutomationFinished(message_id));
         }
     }
 }
@@ -286,6 +347,7 @@ wrap_browser_process_handler! {
                 _ui:ui,tabs,filter,windows:self.windows.clone(),views,page_panel:panel.clone(),toolbar:toolbar.clone(),
                 _sidebar:sidebar.clone(),client,restore_index:restore.active_index,
                 restore_pending:true,restore_urls,pending_restore:HashMap::new(),
+                devtools_observers:HashMap::new(),
             };
             CONTROLLER.with(|cell|{cell.replace(Some(control));});
             let mut delegate=CharlotteWindowDelegate::new(toolbar,panel,sidebar,self.windows.clone());
