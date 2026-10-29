@@ -18,6 +18,7 @@ pub mod ui_server;
 pub mod auth;
 pub mod translate;
 pub mod mcp;
+pub mod mcp_catalog;
 pub mod agent;
 pub mod browser_automation;
 pub mod advanced_automation;
