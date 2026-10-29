@@ -47,6 +47,7 @@ struct PendingBrowser {
 struct UiInner {
     pending_browser:Option<PendingBrowser>,
     pending_auto:Option<PendingAuto>,
+    auto_handoff:Option<(String,String)>,
     active_run_id:Option<String>,
     automation_browser_id:Option<i32>,
     automation_origin:Option<String>,
@@ -207,10 +208,11 @@ fn sidebar(ui:&Ui)->Html<String>{
             AutoRoute::PageAnswer=>"Read and explain this page",
             AutoRoute::BrowserTask=>"Use Chromium to complete the task with approval at each action",
             AutoRoute::PageToMcp{..}=>"Read this page and prepare a cross-app MCP request",
+            AutoRoute::BrowserThenMcp{..}=>"Use Chromium first, then propose a cross-app MCP handoff",
             _=>"Inspect the selected page",
         };
         let destination=match &pending.route{
-            AutoRoute::PageToMcp{server_id}=>format!("; destination: {server_id}"),
+            AutoRoute::PageToMcp{server_id}|AutoRoute::BrowserThenMcp{server_id}=>format!("; destination: {server_id}"),
             _=>String::new(),
         };
         let location=url::Url::parse(&pending.source.1).ok()
@@ -374,6 +376,7 @@ fn finish_if_current(ui:&Ui,id:&str,error:Option<String>){
             inner.automation_browser_id=None;
             inner.automation_origin=None;
             inner.pending_browser=None;
+            inner.auto_handoff=None;
             true
         }
     }else{false};
@@ -382,6 +385,7 @@ fn finish_if_current(ui:&Ui,id:&str,error:Option<String>){
 fn browser_answer(state:&Ui,goal:&str,answer:String,run_id:Option<&str>,step:u8){
     if let Ok(mut inner)=state.inner.lock(){
         inner.pending_browser=None;
+        inner.auto_handoff=None;
         inner.active_run_id=None;
         inner.automation_browser_id=None;
         inner.automation_origin=None;
@@ -964,7 +968,7 @@ fn plan_mcp_goal(
 /// executor: answer / inspect Chromium / approved browser action / MCP /
 /// read-page-to-MCP. No screenshot, password or arbitrary JS authority.
 fn route_needs_page(route:&AutoRoute)->bool{
-    matches!(route,AutoRoute::PageAnswer|AutoRoute::BrowserTask|AutoRoute::PageToMcp{..})
+    matches!(route,AutoRoute::PageAnswer|AutoRoute::BrowserTask|AutoRoute::PageToMcp{..}|AutoRoute::BrowserThenMcp{..})
 }
 /// Called only after routing and, for browser-capability routes, after
 /// explicit approval of page inspection. The browser tab/URL is rechecked.
@@ -1434,7 +1438,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
         port,token,tabs,filter,inner:Arc::new(Mutex::new(UiInner{
-            pending_browser:None,pending_auto:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
+            pending_browser:None,pending_auto:None,auto_handoff:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
         }))
@@ -1489,6 +1493,7 @@ impl Ui{
             let step=inner.pending_browser.as_ref().map(|pending|pending.step).unwrap_or(0);
             inner.cancel_automation.store(true,Ordering::SeqCst);
             inner.pending_browser=None;
+            inner.auto_handoff=None;
             inner.error=reason.to_owned();
             if !inner.working{
                 inner.active_run_id=None;
