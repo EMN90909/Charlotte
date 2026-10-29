@@ -117,7 +117,20 @@ pub fn decide(
     let recent=if history.len()>4 {&history[history.len()-4..]}else{history};
     let raw=services::send_agent(provider,None,key,model,SYSTEM,recent,
         &format!("{instructions}\nUser request: {question}")).map_err(|e|e.to_string())?;
-    parse(&raw,capabilities)
+    match parse(&raw,capabilities){
+        Ok(route)=>Ok(route),
+        Err(error)=>{
+            // Some local/small models return prose instead of a JSON route.
+            // A single, bounded corrective attempt is allowed; it does not
+            // run any tool or read the webpage. Never guess on a second failure.
+            let correction=format!(
+                "{instructions}\nUser request: {question}\n                 Your previous routing response was invalid ({error}).                  Return ONE valid JSON route from the allowed capability list,                  without markdown or any unsupported action.");
+            let second=services::send_agent(provider,None,key,model,SYSTEM,&[],
+                &correction).map_err(|e|e.to_string())?;
+            Ok(parse(&second,capabilities).unwrap_or_else(|_|Route::Clarify(
+                "Charlotte could not safely choose a capability. Please use the explicit browser or MCP mode, or select a different AI model.".into())))
+        }
+    }
 }
 #[cfg(test)]
 mod tests{
