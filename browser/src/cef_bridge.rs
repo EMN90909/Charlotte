@@ -2,7 +2,7 @@
 //! CEF invokes resource handlers on its IO thread; DB writes occur on the UI thread.
 use cef::*;
 use std::sync::{Arc, Mutex};
-use crate::{profile, shield::{Decision, Shield, STARTER_RULES}, storage::Storage, tabs::Tabs};
+use crate::{profile, shield::{Decision, Shield, STARTER_RULES}, shield_lists, storage::Storage, tabs::Tabs};
 
 /// Shared rule engine compiled once, not once per network request.
 pub type Filter = Arc<Mutex<Shield>>;
@@ -11,7 +11,28 @@ pub fn default_filter() -> Filter {
     let enabled = Storage::open(&profile::profile_root().join("charlotte.sqlite"))
         .ok().and_then(|db| db.setting("shields").ok().flatten())
         .as_deref() != Some("off");
-    Arc::new(Mutex::new(Shield::new(&[STARTER_RULES], enabled)))
+    let filter=Arc::new(Mutex::new(Shield::new(&[STARTER_RULES], enabled)));
+    let background=filter.clone();
+    // Never download/compile lists on CEF's UI or IO threads. Start with
+    // dependable offline rules; atomically swap the full engine when ready.
+    let _=std::thread::Builder::new().name("charlotte-shield-lists".into()).spawn(move||{
+        let profile=profile::profile_root();
+        let Ok(db)=Storage::open(&profile.join("charlotte.sqlite")) else {return};
+        let install=|new:Shield|{
+            if let Ok(mut current)=background.lock(){
+                let mut new=new;
+                new.set_enabled(current.is_enabled());
+                *current=new;
+            }
+        };
+        install(shield_lists::load_cached(&db,&profile));
+        match shield_lists::update(&db,&profile,false){
+            Ok(changed) if changed>0=>install(shield_lists::load_cached(&db,&profile)),
+            Ok(_)=>{},
+            Err(error)=>eprintln!("Could not update native adblock lists: {error}"),
+        }
+    });
+    filter
 }
 
 wrap_client! {
