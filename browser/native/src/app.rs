@@ -3,8 +3,26 @@ use std::cell::RefCell;
 pub fn run(main_args: &MainArgs, _command_line: &CommandLine) -> i32 {
     let process_result = execute_process(Some(main_args), None, std::ptr::null_mut());
     if process_result >= 0 { return process_result; }
+    if let Err(error) = crate::profile::ensure_profile_dirs() {
+        eprintln!("Unable to create Charlotte profile: {error}");
+        return 1;
+    }
+    let _storage = match crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")) {
+        Ok(storage) => storage,
+        Err(error) => {
+            eprintln!("Unable to open Charlotte database: {error}");
+            return 1;
+        }
+    };
     let mut application = CharlotteApp::new();
-    let settings = Settings { no_sandbox: 0, ..Default::default() };
+    let cache = crate::profile::profile_root().join("cache");
+    let cache_path = cache.to_string_lossy();
+    let settings = Settings {
+        no_sandbox: 0,
+        root_cache_path: CefString::from(cache_path.as_ref()),
+        cache_path: CefString::from(cache_path.as_ref()),
+        ..Default::default()
+    };
     if initialize(Some(main_args), Some(&settings), Some(&mut application), std::ptr::null_mut()) == 0 { return 1; }
     run_message_loop();
     shutdown();

@@ -3,14 +3,14 @@
 mod app;
 mod profile;
 mod storage;
+#[allow(dead_code)]
+mod shield;
+#[allow(dead_code)]
+mod services;
 use cef::args::Args;
 fn main() -> Result<(), String> {
-    profile::ensure_profile_dirs()?;
-    let storage = storage::Storage::open(&profile::profile_root().join("charlotte.sqlite"))
-        .map_err(|error| format!("Unable to open Charlotte's local database: {error}"))?;
-    if storage.setting("shields_enabled").map_err(|error| error.to_string())?.is_none() {
-        storage.set_setting("shields_enabled", "true").map_err(|error| error.to_string())?;
-    }
+    // CEF API compatibility must be selected before any other CEF call.
+    let _ = cef::api_hash(cef::sys::CEF_API_VERSION_LAST, 0);
     let args = Args::new();
     let command_line = args.as_cmd_line().ok_or_else(|| "CEF could not parse the process command line".to_owned())?;
     let exit_code = app::run(args.as_main_args(), &command_line);

@@ -18,6 +18,11 @@ sandbox = ["cef/sandbox"]
 [dependencies]
 cef = "=156.2.0+156.0.14"
 rusqlite = { version = "0.32", features = ["bundled"] }
+adblock = "=0.13.3"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
 
 [build-dependencies]
 embed-resource = "3.0.2"
