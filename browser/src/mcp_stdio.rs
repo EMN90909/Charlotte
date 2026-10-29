@@ -28,8 +28,18 @@ impl LocalConnection {
         // npm_config_yes=false prevents silent npx package installation.
         // A local process may see the user's environment; only install
         // trusted packages before enabling a preset.
-        let mut child=Command::new(program).args(args)
-            .env("npm_config_yes","false")
+        let filesystem_root=if id=="filesystem"{
+            let stored=crate::credentials::retrieve("mcp-root:filesystem")
+                .map_err(|_|"Configure an explicit filesystem root using charlotte-settings mcp filesystem root set <directory>")?;
+            let path=std::fs::canonicalize(&stored).map_err(|e|e.to_string())?;
+            if !path.is_dir(){return Err("MCP filesystem root is not a directory".into())}
+            Some(path)
+        }else{None};
+        let mut command=Command::new(program);
+        command.args(args).env("npm_config_yes","false");
+        if let Some(root)=&filesystem_root{command.arg(root);}
+        let mut child=command
+
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null())
             .spawn().map_err(|e|format!("Cannot run preinstalled local MCP preset {id}: {e}"))?;
         let stdin=child.stdin.take().ok_or("Local MCP stdin unavailable")?;
