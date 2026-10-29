@@ -1,5 +1,6 @@
 //! Network services used by Charlotte. Credentials stay in the host process.
-//! Streaming, images, and MCP execution are not yet implemented.
+//! Media attachments and model streaming are not yet implemented here.
+//! User-approved MCP execution lives in the native agent.rs and mcp.rs modules.
 use reqwest::blocking::{Client, Response};
 use reqwest::{redirect::Policy, StatusCode};
 use serde::{Deserialize, Serialize};
