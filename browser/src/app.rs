@@ -11,7 +11,7 @@ thread_local! {
     static CONTROLLER: RefCell<Option<Controller>> = const { RefCell::new(None) };
 }
 struct Controller {
-    _ui: Ui, tabs: TabState,
+    _ui: Ui, tabs: TabState, filter: crate::cef_bridge::Filter,
     windows: Rc<Cell<usize>>,
     views: Vec<BrowserView>,
     page_panel: Panel,
@@ -89,6 +89,16 @@ impl Controller {
     fn apply(&mut self,command:Command){
         match command{
             Command::Sync=>self.sync(),
+            Command::Shields(enabled)=>{
+                if let Ok(db)=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
+                    if let Err(error)=db.set_setting("shields",if enabled{"on"}else{"off"}){
+                        eprintln!("Unable to save Shields setting: {error}");
+                        return;
+                    }
+                }else{return}
+                if let Ok(mut shield)=self.filter.lock(){shield.set_enabled(enabled)}
+                self.refresh_chrome();
+            },
             Command::New(url)=>self.add(url),
             Command::Select(id)=>self.select(id),
             Command::Navigate(url)=>{
@@ -199,10 +209,11 @@ wrap_browser_process_handler! {
     impl BrowserProcessHandler {
         fn on_context_initialized(&self){
             let tabs:TabState=Arc::new(Mutex::new(crate::tabs::Tabs::default()));
-            let ui=match ui_server::start(tabs.clone()){
+            let filter=default_filter();
+            let ui=match ui_server::start(tabs.clone(),filter.clone()){
                 Ok(ui)=>ui,Err(e)=>{eprintln!("Native UI server: {e}");quit_message_loop();return}
             };
-            let client=CharlotteClient::new(default_filter(),tabs.clone());
+            let client=CharlotteClient::new(filter.clone(),tabs.clone());
             let settings=BrowserSettings::default();
             let mut ui_client=CharlotteLocalClient::new();
             let mut chrome_delegate=CharlotteUiViewDelegate::new(1);
@@ -241,7 +252,7 @@ wrap_browser_process_handler! {
             }
             if views.is_empty(){quit_message_loop();return;}
             let control=Controller{
-                _ui:ui,tabs,windows:self.windows.clone(),views,page_panel:panel.clone(),toolbar:toolbar.clone(),
+                _ui:ui,tabs,filter,windows:self.windows.clone(),views,page_panel:panel.clone(),toolbar:toolbar.clone(),
                 _sidebar:sidebar.clone(),client,restore_index:restore.active_index,
                 restore_pending:true,
             };
