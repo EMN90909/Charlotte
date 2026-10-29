@@ -62,6 +62,7 @@ struct ActionForm {
     provider: Option<String>,
     mode: Option<String>,
     prompt_text: Option<String>,
+    skill: Option<String>,
 }
 fn escape(s: &str) -> String {
     s.replace('&',"&amp;").replace('<',"&lt;").replace('>',"&gt;")
@@ -148,6 +149,9 @@ fn sidebar(ui:&Ui)->Html<String>{
         let names=configured.iter().map(|c|escape(&c.id)).collect::<Vec<_>>().join(", ");
         html.push_str(&format!("<p class=\"muted\">MCP servers configured: {names}. Charlotte asks before using any tool.</p>"));
     }
+    html.push_str("<section><h2>Browser skills</h2><p class=\"muted\">Repeatable read-only inspections of the current Chromium tab. No AI provider, screenshot sharing or autonomous clicks required.</p>");
+    html.push_str(&format!(r#"<form action="/browser/skill" method="post">{token}<select name="skill" aria-label="Read-only browser skill"><option value="summary">Summarize visible page text</option><option value="links">List visible links</option><option value="controls">List interactive controls</option><option value="frames">List page frames</option></select><button class="primary">Run skill</button></form>"#));
+    html.push_str("</section>");
     if inner.working && inner.active_run_id.is_some(){
         html.push_str(&format!(r#"<div class="bubble"><strong>Charlotte is working</strong><p class="muted">You can pause future steps and take manual control. An already-dispatched Chromium action might still finish.</p><form action="/browser/control" method="post">{token}<button name="command" value="pause">Pause / Take Over</button></form></div>"#));
     }
@@ -613,6 +617,47 @@ async fn browser_resume(
     });
     reply("/sidebar")
 }
+/// Skills are finite, host-owned, read-only recipes. No provider call,
+/// saved screenshot, model-generated selector, network download or mutation.
+async fn browser_skill(
+    State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
+)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let skill=match form.skill.as_deref().map(crate::browser_skills::Skill::parse){
+        Some(Ok(skill))=>skill,
+        _=>return (StatusCode::BAD_REQUEST,"Unknown browser skill").into_response(),
+    };
+    if ui.inner.lock().is_ok_and(|inner|
+        inner.pending_browser.is_some()||inner.pending_tool.is_some()){
+        return (StatusCode::CONFLICT,"Resolve Charlotte's pending action first").into_response()
+    }
+    let current=ui.tabs.lock().ok()
+        .and_then(|tabs|tabs.active().map(|t|(t.id,t.url.clone())));
+    let Some((id,url))=current else{
+        return (StatusCode::BAD_REQUEST,"Open an active Chromium page first").into_response()
+    };
+    let context=match BrowserContext::new(id,&url){
+        Ok(context)=>context,
+        Err(error)=>return (StatusCode::BAD_REQUEST,error).into_response(),
+    };
+    if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is working").into_response()}
+    let state=ui.clone();
+    tokio::task::spawn_blocking(move||{
+        match crate::browser_skills::execute(skill,&context){
+            Ok(result)=>{
+                if let Ok(mut inner)=state.inner.lock(){
+                    inner.ai.push(Turn{role:"assistant".into(),text:result});
+                    if inner.ai.len()>100{
+                        let count=inner.ai.len()-100;inner.ai.drain(0..count);
+                    }
+                }
+                finish(&state,None);
+            },
+            Err(error)=>finish(&state,Some(error)),
+        }
+    });
+    reply("/sidebar")
+}
 async fn browser_dialog(
     State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
 )->Response{
@@ -937,6 +982,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/browser/resume",post(browser_resume))
                 .route("/browser/control",post(browser_control))
                 .route("/browser/dialog",post(browser_dialog))
+                .route("/browser/skill",post(browser_skill))
                 .route("/notifications",post(notification_permission))
                 .route("/connect",post(connect))
                 .route("/send",post(send))
@@ -1039,6 +1085,16 @@ mod tests{
         assert!(page.contains("Approve once"));
         assert!(page.contains(r#"name="command" value="reject""#));
         assert!(!page.contains("<script>"));
+    }
+    #[test]
+    fn sidebar_exposes_read_only_browser_skills(){
+        let ui=start(Arc::new(Mutex::new(crate::tabs::Tabs::default())),
+            Arc::new(std::sync::RwLock::new(
+                crate::shield::Shield::new(&[crate::shield::STARTER_RULES],true)))).unwrap();
+        let page=sidebar(&ui).0;
+        assert!(page.contains("Browser skills"));
+        assert!(page.contains(r#"action="/browser/skill""#));
+        assert!(page.contains(r#"value="summary""#));
     }
     #[test]
     fn agent_task_authority_is_scoped_to_run_id_and_pause_flag(){
