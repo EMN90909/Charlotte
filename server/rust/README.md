@@ -1,34 +1,22 @@
-# Charlotte Rust migration (in progress)
+# Charlotte native Rust replacement
+This directory is the active migration workbench for the Go server; **do not deploy until CI succeeds and functional parity is verified**.
 
-This is a **native Rust** implementation being developed alongside the original Go server.
-Do not replace the Go deployment yet: feature parity has not been established.
-
-## Implemented
-- HTTP `/healthz`, `/connect`, `/send`, `/poll`, `/custom-metrics`
-- HS256 JWT wire shape and MD5 URL room IDs compatible with existing Go clients
-- Case-insensitive durable username claims, including reserved `system` name
-- Bounded per-room message history, cursor polling, HTTP port selection, narrow CORS
-- Rust unit tests for URL normalization and JWT round trip
-
-## Not yet ported
-- `/events` SSE streaming and its subscriber cap/reconnect semantics
-- gRPC chat server and protobuf bindings on port 50051
-- `/auth/me` Supabase access-token verification
-- Exact Go HyperLogLog metrics and its file persistence (currently Rust uses exact in-memory counts)
-- Graceful restart broadcast, TLS-ALPN autocert, and room garbage collection
-- Ops manager, launcher, deploy token tool, release packaging, scripts, integration parity tests
-
-The original `server/` Go files and deployment stay untouched until the above are
-reimplemented, cross-tested and explicitly cut over.
-
-## Build and test
+Run locally from `server/rust`:
 ```sh
-cd server/rust
-cargo fmt --check
+cargo fmt --all
 cargo test
 cargo build --release
 CHAT_JWT_SECRET="$(openssl rand -hex 32)" ./target/release/charlotte-server
 ```
 
-This branch's Rust code has not yet been compiled in CI. Avoid deploying it
-as a drop-in production replacement.
+HTTP listens on `HTTP_PORT` / `PORT` (default 8080); gRPC Chat on 50051. Protobuf definitions are shared with the original Go implementation under `server/proto/chat/chat.proto`.
+
+Endpoints: POST /connect, POST /send, GET /poll, GET /events (SSE), GET /custom-metrics, GET /auth/me, GET /healthz. The chat protocol uses HS256 JWTs and MD5 URL-derived room IDs. Legacy Charlotte HLL v2 files and append-only username claims are read in place.
+
+Docker from repo root:
+```sh
+docker build -f server/rust/Dockerfile -t charlotte-rust .
+docker run --rm -p 8080:8080 -p 50051:50051 --env CHAT_JWT_SECRET -v charlotte-data:/app/data charlotte-rust
+```
+
+Still requires: Rust native ops manager and deploy token utilities, complete migration of standalone release/upgrade scripts, TLS/autocert, full behavioral parity tests for all Go integration cases, review of edge-case concurrency and restart semantics, and successful CI. The existing Go deployment remains unchanged.
