@@ -39,7 +39,6 @@ impl LocalConnection {
         command.args(args).env("npm_config_yes","false");
         if let Some(root)=&filesystem_root{command.arg(root);}
         let mut child=command
-
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null())
             .spawn().map_err(|e|format!("Cannot run preinstalled local MCP preset {id}: {e}"))?;
         let stdin=child.stdin.take().ok_or("Local MCP stdin unavailable")?;
@@ -47,15 +46,30 @@ impl LocalConnection {
         let (tx,rx)=mpsc::sync_channel(16);
         std::thread::Builder::new().name(format!("charlotte-mcp-{id}"))
             .spawn(move||{
-                let mut lines=BufReader::new(stdout);
-                let mut line=String::new();
-                loop{
-                    line.clear();
-                    let Ok(n)=lines.read_line(&mut line) else{break};
-                    if n==0{break}
-                    if n>2*1024*1024{break}
-                    if let Ok(message)=serde_json::from_str::<Value>(&line){
-                        if message.get("id").is_some()&&tx.send(message).is_err(){break}
+                let mut reader=BufReader::new(stdout);
+                'messages: loop{
+                    // Enforce the 2 MB cap BEFORE allocating an unbounded
+                    // server-supplied line; a compromised local tool cannot
+                    // force the Rust browser to buffer arbitrarily large JSON.
+                    let mut packet=Vec::<u8>::new();
+                    loop{
+                        let available=match reader.fill_buf(){
+                            Ok(bytes)=>bytes,Err(_)=>break 'messages,
+                        };
+                        if available.is_empty(){break 'messages}
+                        let newline=available.iter().position(|byte|*byte==b'\n');
+                        let count=newline.map(|i|i+1).unwrap_or(available.len());
+                        if packet.len().saturating_add(count)>2*1024*1024{
+                            break 'messages
+                        }
+                        packet.extend_from_slice(&available[..count]);
+                        reader.consume(count);
+                        if newline.is_some(){break}
+                    }
+                    if let Ok(message)=serde_json::from_slice::<Value>(&packet){
+                        if message.get("id").is_some()&&tx.send(message).is_err(){
+                            break 'messages
+                        }
                     }
                 }
             }).map_err(|e|e.to_string())?;
