@@ -243,6 +243,95 @@ fn provider_model(name:&str)->Option<(Provider,&'static str)>{
         _=>None,
     }
 }
+fn browser_answer(state:&Ui,goal:&str,answer:String){
+    if let Ok(mut inner)=state.inner.lock(){
+        inner.pending_browser=None;
+        inner.ai.push(Turn{role:"user".into(),text:goal.into()});
+        inner.ai.push(Turn{role:"assistant".into(),text:answer.clone()});
+        if inner.ai.len()>100 {let excess=inner.ai.len()-100;inner.ai.drain(0..excess);}
+    }
+    if let Ok(db)=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
+        let time=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default().as_millis() as i64;
+        let _=db.add_message("ai","user",goal,time);
+        let _=db.add_message("ai","assistant",&answer,time+1);
+    }
+    finish(state,None);
+}
+fn plan_browser_next(
+    state:&Ui,context:BrowserContext,goal:String,provider_name:String,
+    step:u8,previous:&str,
+)->Result<(),String>{
+    let (provider,model)=provider_model(&provider_name).ok_or("Unknown AI provider")?;
+    let snapshot=context.observe()?;
+    let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
+    let history=state.inner.lock().ok().map(|inner|inner.ai.clone()).unwrap_or_default();
+    match browser_agent::decide(provider,key.as_deref(),model,&history,
+        &goal,step,&snapshot,previous)?{
+        BrowserDecision::Answer(text)=>{
+            browser_answer(state,&goal,text);
+        },
+        BrowserDecision::Action(BrowserAction::Observe)=>{
+            // Observation is performed before every planning step; letting
+            // the model repeatedly request it would create an infinite loop.
+            browser_answer(state,&goal,
+                "Charlotte has inspected this page but needs a more specific next action. You can refine your task.".into());
+        },
+        BrowserDecision::Action(action)=>{
+            let observed_url=snapshot.get("url").and_then(serde_json::Value::as_str)
+                .ok_or("Chromium observation has no page URL")?.to_owned();
+            if let Ok(mut inner)=state.inner.lock(){
+                inner.pending_browser=Some(PendingBrowser{
+                    context,action,goal,provider:provider_name,step,observed_url,
+                });
+            }else{return Err("Automation state lock failed".into())}
+            finish(state,None);
+        },
+    }
+    Ok(())
+}
+async fn browser_approve(
+    State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
+)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let approve=match form.command.as_deref(){
+        Some("approve")=>true,Some("reject")=>false,
+        _=>return (StatusCode::BAD_REQUEST,"Invalid browser approval").into_response(),
+    };
+    let pending={
+        let Ok(mut inner)=ui.inner.lock() else{
+            return (StatusCode::CONFLICT,"Automation busy").into_response()
+        };
+        if inner.working{return (StatusCode::CONFLICT,"Charlotte is already working").into_response()}
+        let Some(pending)=inner.pending_browser.take() else {
+            return (StatusCode::BAD_REQUEST,"No browser action awaiting approval").into_response()
+        };
+        if approve {inner.working=true;}
+        pending
+    };
+    if !approve {
+        browser_answer(&ui,&pending.goal,
+            "Charlotte stopped browser automation at your request. No further actions were executed.".into());
+        return reply("/sidebar")
+    }
+    let state=ui.clone();
+    tokio::task::spawn_blocking(move||{
+        let outcome=(||->Result<(),String>{
+            // Check the actual live Chromium URL before executing a selector
+            // generated from an earlier DOM snapshot.
+            let current=pending.context.observe()?;
+            if current.get("url").and_then(serde_json::Value::as_str)!=Some(&pending.observed_url){
+                return Err("Page changed since Charlotte proposed this action. Nothing was clicked or typed; start a new task.".into())
+            }
+            let action_outcome=pending.context.act(&pending.action)?;
+            std::thread::sleep(std::time::Duration::from_millis(350));
+            plan_browser_next(&state,pending.context,pending.goal,
+                pending.provider,pending.step+1,&action_outcome.to_string())
+        })();
+        if let Err(error)=outcome {finish(&state,Some(error));}
+    });
+    reply("/sidebar")
+}
 async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response{
     if !check(&ui,&headers,&form.token){return forbidden()}
     let Some(text)=form.value.map(|s|s.trim().to_string()).filter(|s|!s.is_empty()&&s.len()<=4000)
@@ -250,8 +339,30 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
     let provider_name=form.provider.unwrap_or_else(||"openai".into());
     let Some((provider,model))=provider_model(&provider_name)
         else{return (StatusCode::BAD_REQUEST,"Unknown provider").into_response()};
-    if ui.inner.lock().is_ok_and(|g|g.pending_tool.is_some()){
+    if ui.inner.lock().is_ok_and(|g|g.pending_tool.is_some()||g.pending_browser.is_some()){
         return (StatusCode::CONFLICT,"Approve or deny Charlotte's pending MCP tool first").into_response()
+    }
+    let mode=form.mode.as_deref().unwrap_or("chat");
+    if !["chat","browser"].contains(&mode){
+        return (StatusCode::BAD_REQUEST,"Unknown Charlotte mode").into_response()
+    }
+    if mode=="browser" {
+        let current=ui.tabs.lock().ok()
+            .and_then(|tabs|tabs.active().map(|t|(t.id,t.url.clone())));
+        let Some((id,url))=current else {
+            return (StatusCode::BAD_REQUEST,"Open a website in an active tab first").into_response()
+        };
+        let Ok(context)=BrowserContext::new(id,&url) else {
+            return (StatusCode::BAD_REQUEST,"Automation requires an active HTTPS or loopback webpage").into_response()
+        };
+        if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is already working").into_response()}
+        let state=ui.clone();
+        tokio::task::spawn_blocking(move||{
+            if let Err(error)=plan_browser_next(&state,context,text,provider_name,0,"Started task"){
+                finish(&state,Some(error));
+            }
+        });
+        return reply("/sidebar")
     }
     if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is already working").into_response()}
     let state=ui.clone();
