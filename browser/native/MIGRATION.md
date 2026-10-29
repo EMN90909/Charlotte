@@ -1,11 +1,19 @@
-# Electron → Rust migration map
+# Electron to Rust + CEF — PR #4 migration tracker
 
-| Electron area | Rust/CEF owner |
+| Former Electron subsystem | Native Rust / CEF status |
 | --- | --- |
-| `index.ts`, `windowManager.ts` | `src/app.rs` and CEF Views |
-| `tabManager.ts` | Not yet ported |
-| Electron IPC/preloads | CEF process messages behind typed Rust handlers |
-| session/profile stores | `src/profile.rs`, future `charlotte-core` |
-| request interception / OpenShield | future `charlotte-shield` CEF request handler |
+| Browser process and rendering | CEF Views Chrome runtime integrated, not yet smoke-tested |
+| Browser UI, navigation and tabs | CEF Chrome-style UI, Charlotte custom chrome pending |
+| Popup/browser lifecycle | Rust window delegates connected |
+| OpenShield network rules | CEF resource handler connected |
+| Cosmetic filters and scriptlets | Not wired |
+| Bookmarks, folders, history | SQLite storage, legacy JSON import |
+| Chat transport | Rust connect/send/poll/SSE client modules; UI pending |
+| AI providers | Rust HTTP adapters; UI and streaming pending |
+| API credential storage | OS keyring module; UI pending |
+| Custom toolbar/chat/sidebar/settings | Not ported |
+| Downloads, account login, voice, MCP, page translation | Not ported |
+| Platform packaging | Scaffolding present; smoke/installer validation pending |
 
-The Electron implementation is preserved on the draft branch until feature parity and migration tests pass. The prototype must not be merged as a replacement yet.
+Do not delete the existing Electron implementation or merge PR #4 until
+full native functionality is demonstrably equivalent and tested.

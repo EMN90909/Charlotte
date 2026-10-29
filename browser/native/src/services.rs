@@ -4,7 +4,7 @@ use reqwest::blocking::{Client, Response};
 use reqwest::{redirect::Policy, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::time::Duration;
+use std::{time::Duration, io::{BufRead, BufReader}, sync::atomic::{AtomicBool, Ordering}};
 use url::Url;
 
 #[derive(Debug)]
@@ -122,6 +122,33 @@ pub fn chat_poll(base: &str, token: &str, cursor: u64) -> Result<PollResult, Ser
         return Ok(PollResult { messages: vec![], cursor, next_poll_ms: delay });
     }
     Ok(checked(response)?.json()?)
+}
+
+
+/// Continuously consumes Charlotte SSE events on a background thread.
+/// This function is synchronous and MUST NOT be called on the CEF UI thread.
+/// At most one buffered event is delivered per server data line, with cursor
+/// deduplication for reconnecting clients. Closing the connection ends the call.
+pub fn chat_events<F>(
+    base: &str, token: &str, cursor: u64, stopped: &AtomicBool, mut receive: F,
+) -> Result<u64, ServiceError>
+where F: FnMut(ChatMessage) {
+    let mut url = endpoint(base, "/events")?;
+    url.query_pairs_mut().append_pair("cursor", &cursor.to_string());
+    let response = checked(client()?.get(url).bearer_auth(token).send()?)?;
+    let mut last = cursor;
+    for line in BufReader::new(response).lines() {
+        if stopped.load(Ordering::Relaxed) { break; }
+        let line = line.map_err(|_| ServiceError::InvalidResponse)?;
+        let Some(payload) = line.strip_prefix("data: ") else { continue };
+        if let Ok(message) = serde_json::from_str::<ChatMessage>(payload) {
+            if message.seq > last {
+                last = message.seq;
+                receive(message);
+            }
+        }
+    }
+    Ok(last)
 }
 
 #[cfg(test)]
