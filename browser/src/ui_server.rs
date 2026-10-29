@@ -38,6 +38,8 @@ struct PendingBrowser {
 }
 struct UiInner {
     pending_browser:Option<PendingBrowser>,
+    active_run_id:Option<String>,
+    cancel_automation:Arc<AtomicBool>,
     pending_tool:Option<PendingTool>,
     ai: Vec<Turn>,
     chat: Vec<(String,String)>,
@@ -145,6 +147,9 @@ fn sidebar(ui:&Ui)->Html<String>{
     } else {
         let names=configured.iter().map(|c|escape(&c.id)).collect::<Vec<_>>().join(", ");
         html.push_str(&format!("<p class=\"muted\">MCP servers configured: {names}. Charlotte asks before using any tool.</p>"));
+    }
+    if inner.working && inner.active_run_id.is_some(){
+        html.push_str(&format!(r#"<div class="bubble"><strong>Charlotte is working</strong><p class="muted">You can pause future steps and take manual control. An already-dispatched Chromium action might still finish.</p><form action="/browser/control" method="post">{token}<button name="command" value="pause">Pause / Take Over</button></form></div>"#));
     }
     if inner.pending_browser.is_none() && !inner.working {
         let paused=crate::storage::Storage::open(
@@ -287,6 +292,7 @@ fn create_checkpoint(goal:&str,provider:&str,context:&BrowserContext,visual:bool
 fn browser_answer(state:&Ui,goal:&str,answer:String,run_id:Option<&str>){
     if let Ok(mut inner)=state.inner.lock(){
         inner.pending_browser=None;
+        inner.active_run_id=None;
         inner.ai.push(Turn{role:"user".into(),text:goal.into()});
         inner.ai.push(Turn{role:"assistant".into(),text:answer.clone()});
         if inner.ai.len()>100 {let excess=inner.ai.len()-100;inner.ai.drain(0..excess);}
@@ -461,6 +467,31 @@ async fn browser_approve(
 /// bypass native OS file pickers, login, permission or payment dialogs.
 /// Never resume a mutation itself. Resume only the read-only planning
 /// phase after rechecking the current top-level origin and step limit.
+async fn browser_control(
+    State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
+)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    if form.command.as_deref()!=Some("pause"){
+        return (StatusCode::BAD_REQUEST,"Unknown automation control").into_response()
+    }
+    let (run_id,step,working)={
+        let Ok(mut inner)=ui.inner.lock() else {
+            return (StatusCode::CONFLICT,"Automation state unavailable").into_response()
+        };
+        let id=inner.active_run_id.clone();
+        let step=inner.pending_browser.as_ref().map(|p|p.step).unwrap_or(0);
+        let working=inner.working;
+        inner.cancel_automation.store(true,Ordering::SeqCst);
+        inner.pending_browser=None;
+        if !working{inner.active_run_id=None}
+        (id,step,working)
+    };
+    if let Some(id)=run_id{
+        checkpoint_status(&id,"paused","User took manual control; re-plan to resume",step);
+    }
+    if !working{finish(&ui,None)}
+    reply("/sidebar")
+}
 async fn browser_resume(
     State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
 )->Response{
@@ -810,7 +841,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
         port,token,tabs,filter,inner:Arc::new(Mutex::new(UiInner{
-            pending_browser:None,pending_tool:None,ai:history,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
+            pending_browser:None,active_run_id:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
         }))
@@ -830,6 +861,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/agent/approve",post(agent_approve))
                 .route("/browser/approve",post(browser_approve))
                 .route("/browser/resume",post(browser_resume))
+                .route("/browser/control",post(browser_control))
                 .route("/browser/dialog",post(browser_dialog))
                 .route("/notifications",post(notification_permission))
                 .route("/connect",post(connect))
