@@ -21,6 +21,10 @@ in the PDF were not independently audited.
   client ID. The user opens the printed authorization URL and explicitly
   signs in; tokens are stored in the **OS credential store**, never SQLite.
   OAuth is provider-dependent; this is not a universal working sign-in claim.
+- The allowlisted local `npx`/`uvx` commands run in **offline,
+  no-install mode**. Missing packages cause a connection error; Charlotte
+  does not silently download them or execute a shell pipeline. Install or
+  vet package versions yourself before choosing to enable them.
 - **Local STDIO MCP** support for allowlisted presets using a directly
   launched program (no shell string); JSON-RPC messages over newline-separated
   UTF-8 stdin/stdout, tool discovery and tool calls. The user must separately
