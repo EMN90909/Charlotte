@@ -69,6 +69,7 @@ struct ActionForm {
     mode: Option<String>,
     prompt_text: Option<String>,
     skill: Option<String>,
+    catalog: Option<String>,
 }
 fn escape(s: &str) -> String {
     s.replace('&',"&amp;").replace('<',"&lt;").replace('>',"&gt;")
@@ -147,6 +148,16 @@ fn sidebar(ui:&Ui)->Html<String>{
     html.push_str(r#"<section><h2>Ask Charlotte</h2><div class="stack"><form action="/ai" method="post" style="display:flex;flex-direction:column;align-items:stretch">"#);
     html.push_str(&token);
     html.push_str(r#"<label for="provider">Provider</label><select name="provider" id="provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Ollama</option></select><label for="mode">Charlotte mode</label><select id="mode" name="mode"><option value="chat">Chat + MCP tools</option><option value="browser">Automate this Chromium tab</option><option value="visual">Visual automation (shares a screenshot)</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask Charlotte a question or give Charlotte a task…"></textarea><button class="primary">Send</button></form>"#);
+    // Listing a catalog never opens a vendor session, fetches tools, or
+    // installs local executables. Connecting is a separate explicit action.
+    html.push_str("<section><h2>MCP integrations directory</h2><p class=\"muted\">Choose from 43 catalog profiles. Enabling saves a connection template only; account authorization, local package installation and any paid vendor usage remain separate.</p>");
+    html.push_str(&format!(r#"<form action="/mcp/catalog" method="post">{token}<select name="catalog" aria-label="MCP provider" style="max-width:200px">"#));
+    for item in crate::mcp_catalog::PRESETS{
+        html.push_str(&format!(r#"<option value="{}">{} — {}</option>"#,
+            escape(item.id),escape(item.category),escape(item.name)));
+    }
+    html.push_str(r#"</select><button name="command" class="primary" value="enable">Enable profile</button><button name="command" value="disable">Disable</button></form>"#);
+    html.push_str("<small class=\"muted\">OAuth services need user sign-in and compatible OAuth support; locally installed STDIO packages are never installed automatically. Unsupported vendor-specific entries require the actual MCP URL.</small></section>");
     let configured=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
         .ok().and_then(|db|mcp::saved_servers(&db).ok()).unwrap_or_default();
     if configured.is_empty(){
@@ -645,6 +656,39 @@ async fn browser_resume(
 }
 /// Skills are finite, host-owned, read-only recipes. No provider call,
 /// saved screenshot, model-generated selector, network download or mutation.
+/// User-selected profile registration only. No connection, OAuth grant,
+/// package install, stdout pipes, subprocess, or tool execution happens here.
+async fn mcp_catalog_action(
+    State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
+)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let Some(id)=form.catalog.as_deref() else {
+        return (StatusCode::BAD_REQUEST,"Select an MCP catalog profile").into_response()
+    };
+    if crate::mcp_catalog::get(id).is_none(){
+        return (StatusCode::BAD_REQUEST,"Unknown MCP catalog profile").into_response()
+    }
+    if ui.inner.lock().is_ok_and(|inner|inner.pending_tool.is_some()||inner.working){
+        return (StatusCode::CONFLICT,"Resolve the active tool request first").into_response()
+    }
+    let database=crate::storage::Storage::open(
+        &crate::profile::profile_root().join("charlotte.sqlite"));
+    let result=match database {
+        Ok(db)=>match form.command.as_deref(){
+            Some("enable")=>crate::mcp::save_preset(&db,id),
+            Some("disable")=>crate::mcp::remove_server(&db,id),
+            _=>Err("Unknown catalog action".into()),
+        },
+        Err(error)=>Err(error.to_string()),
+    };
+    if let Ok(mut inner)=ui.inner.lock(){
+        inner.error=match result{
+            Ok(())=>String::new(),
+            Err(error)=>error,
+        };
+    }
+    reply("/sidebar")
+}
 async fn browser_skill(
     State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
 )->Response{
@@ -772,7 +816,7 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
         let history=state.inner.lock().ok().map(|i|i.ai.clone()).unwrap_or_default();
         let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
         let mut registry=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
-            .ok().and_then(|db|mcp::connect_saved(&db).ok())
+            .ok().and_then(|db|mcp::connect_saved_for(&db,&text,5).ok())
             .unwrap_or_else(mcp::Registry::new);
         let tools=registry.tools();
         let response=agent::plan(provider,key.as_deref(),model,&history,&text,&tools);
@@ -834,7 +878,7 @@ async fn agent_approve(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<Act
         let result=(||->Result<String,String>{
             let db=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
                 .map_err(|e|e.to_string())?;
-            let mut registry=mcp::connect_saved(&db)?;
+            let mut registry=mcp::connect_selected(&db,&pending.server_id)?;
             let verified=registry.tools().iter().any(|tool|
                 tool.name==pending.name && tool.server_id==pending.server_id);
             if !verified{return Err("MCP server or tool changed after approval".into())}
@@ -1011,6 +1055,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/browser/control",post(browser_control))
                 .route("/browser/dialog",post(browser_dialog))
                 .route("/browser/skill",post(browser_skill))
+                .route("/mcp/catalog",post(mcp_catalog_action))
                 .route("/notifications",post(notification_permission))
                 .route("/connect",post(connect))
                 .route("/send",post(send))
@@ -1211,6 +1256,17 @@ mod tests{
         assert!(page.contains("Approve once"));
         assert!(page.contains(r#"name="command" value="reject""#));
         assert!(!page.contains("<script>"));
+    }
+    #[test]
+    fn sidebar_exposes_bounded_mcp_directory_without_account_tokens(){
+        let ui=start(Arc::new(Mutex::new(crate::tabs::Tabs::default())),
+            Arc::new(std::sync::RwLock::new(crate::shield::Shield::new(
+                &[crate::shield::STARTER_RULES],true)))).unwrap();
+        let html=sidebar(&ui).0;
+        assert!(html.contains("MCP integrations directory"));
+        assert!(html.contains(r#"action="/mcp/catalog""#));
+        assert!(html.contains("GitHub"));
+        assert!(!html.contains("Authorization: Bearer"));
     }
     #[test]
     fn sidebar_exposes_read_only_browser_skills(){
