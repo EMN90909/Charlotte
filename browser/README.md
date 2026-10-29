@@ -96,6 +96,8 @@ to Charlotte's implemented features, tradeoffs and outstanding gaps.
 Parallel autonomous tabs, custom skills/routines, OOPIF node handles and
 opt-in long-term semantic memory are **not** completed.
 
+See [AGENTIC_BROWSER_RESEARCH.md](AGENTIC_BROWSER_RESEARCH.md) for the implementation gap analysis and release gates derived from the supplied browser automation research.
+
 See [ADVANCED_AUTOMATION.md](ADVANCED_AUTOMATION.md) for scope, consent,
 privacy, iframe isolation, unverified behaviors and native test cases. Supported first-pass
 actions include page inspection, same-origin navigation, real Chromium
