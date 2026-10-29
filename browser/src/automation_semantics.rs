@@ -98,7 +98,17 @@ pub fn compact_ax(response:&Value)->Value{
             // Omit potentially sensitive editable textbox names and values;
             // the page's normal sanitized label is already available.
             if matches!(role.as_str(),"textbox"|"searchbox") {continue}
-            filtered.push(json!({"role":role,"name":cleaned(name,100)}));
+            let states=node.get("properties").and_then(Value::as_array)
+                .map(|props|props.iter().filter_map(|p|{
+                    let key=p["name"].as_str()?;
+                    if !matches!(key,"checked"|"disabled"|"expanded"|"selected"|"required"){return None}
+                    let value=p["value"]["value"].as_bool()
+                        .or_else(||p["value"]["value"].as_str().and_then(|v|
+                            match v{"true"=>Some(true),"false"=>Some(false),_=>None}))?;
+                    Some((key.to_owned(),json!(value)))
+                }).collect::<serde_json::Map<String,Value>>())
+                .unwrap_or_default();
+            filtered.push(json!({"role":role,"name":cleaned(name,100),"states":states}));
         }
     }
     json!(filtered)
@@ -260,6 +270,6 @@ mod tests{
          {"role":{"value":"button"},"name":{"value":"Submit"}},
          {"ignored":true,"role":{"value":"button"},"name":{"value":"Hidden"}}
      ]});
-     assert_eq!(compact_ax(&ax),json!([{"role":"button","name":"Submit"}]));
+     assert_eq!(compact_ax(&ax),json!([{"role":"button","name":"Submit","states":{}}]));
  }
 }
