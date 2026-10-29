@@ -209,14 +209,25 @@ impl Context {
     pub fn cdp(&self,method:&str,params:Value)->Result<Value,String>{
         use std::sync::mpsc;
         use std::time::Duration;
-        // All CEF APIs are invoked via post_ui_command, never on this worker.
+        // Every request has an ID known to the worker, allowing cancellation
+        // after timeout without leaking a native CEF observer registration.
+        static NEXT_ID:std::sync::atomic::AtomicI32=
+            std::sync::atomic::AtomicI32::new(100_000_000);
+        let request_id=NEXT_ID.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+        if request_id>1_900_000_000{return Err("CDP message IDs exhausted".into())}
         let (reply,receive)=mpsc::channel();
         crate::app::post_ui_command(crate::ui_server::Command::Automation{
-            browser_id:self.browser_id,expected_origin:self.origin.clone(),
+            request_id,browser_id:self.browser_id,expected_origin:self.origin.clone(),
             method:method.to_owned(),params,reply,
         });
-        receive.recv_timeout(Duration::from_secs(12))
-            .map_err(|_|"Chromium automation timed out (12 seconds)".to_string())?
+        match receive.recv_timeout(Duration::from_secs(12)){
+            Ok(answer)=>answer,
+            Err(_)=>{
+                crate::app::post_ui_command(
+                    crate::ui_server::Command::AutomationFinished(request_id));
+                Err("Chromium automation timed out (12 seconds)".into())
+            },
+        }
     }
     pub fn observe(&self)->Result<Value,String>{
         let (method,params)=observation_command();
