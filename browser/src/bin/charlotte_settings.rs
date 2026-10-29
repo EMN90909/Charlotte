@@ -31,6 +31,8 @@ Usage:
   charlotte-settings mcp oauth client-id set|remove <id>
   charlotte-settings mcp filesystem root set <existing-directory>
   charlotte-settings mcp filesystem root remove
+  charlotte-settings mcp sqlite file set <existing-sqlite-file>
+  charlotte-settings mcp sqlite file remove
   charlotte-settings mcp add <id> <https-url>
   charlotte-settings mcp remove <id>
   charlotte-settings mcp token set|remove <id>
@@ -51,6 +53,22 @@ fn run(args: &[String]) -> Result<(), String> {
     let db = Storage::open(&profile::profile_root().join("charlotte.sqlite")).map_err(|e|e.to_string())?;
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["profile"] => println!("{}", profile::profile_root().display()),
+        ["mcp","sqlite","file","set",filename]=>{
+            let file=std::fs::canonicalize(filename).map_err(|e|e.to_string())?;
+            if !file.is_file(){return Err("SQLite MCP selection is not a file".into())}
+            // Prove the selection is a valid SQLite file in read-only mode.
+            let _db=rusqlite::Connection::open_with_flags(
+                &file,rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+            ).map_err(|e|e.to_string())?;
+            charlotte_native::credentials::store("mcp-file:sqlite",&file.to_string_lossy())
+                .map_err(|e|e.to_string())?;
+            println!("Approved read-only SQLite MCP file: {}",file.display());
+        },
+        ["mcp","sqlite","file","remove"]=>{
+            charlotte_native::credentials::remove("mcp-file:sqlite")
+                .map_err(|e|e.to_string())?;
+            println!("Removed approved SQLite MCP file");
+        },
         ["mcp","filesystem","root","set",directory]=>{
             let root=std::fs::canonicalize(directory).map_err(|e|e.to_string())?;
             if !root.is_dir(){return Err("Filesystem MCP root must be a directory".into())}
