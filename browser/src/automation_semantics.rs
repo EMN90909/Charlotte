@@ -251,6 +251,20 @@ mod tests{
     ]});
     assert!(replan_stale_target(&old,&ambiguous,"button","Details").unwrap().is_none());
  }
+ #[test]fn accessibility_states_are_whitelisted(){
+     let ax=json!({"nodes":[{
+         "role":{"value":"checkbox"},"name":{"value":"Include archived"},
+         "properties":[
+             {"name":"checked","value":{"value":true}},
+             {"name":"value","value":{"value":"private"}},
+             {"name":"expanded","value":{"value":false}}
+         ]
+     }]});
+     let compact=compact_ax(&ax);
+     assert_eq!(compact[0]["states"]["checked"],true);
+     assert_eq!(compact[0]["states"]["expanded"],false);
+     assert!(compact[0]["states"].get("value").is_none());
+ }
  #[test]fn action_risk_treats_unlabelled_coordinates_as_consequential(){
      let snap=json!({"controls":[{"selector":"button","label":"Delete account"}]});
      assert_eq!(classify(&Action::Click{selector:"button".into()},&snap),Risk::Consequential);
