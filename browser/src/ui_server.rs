@@ -5,17 +5,18 @@
 use std::{net::TcpListener, sync::{Arc,Mutex,atomic::{AtomicBool,Ordering}}, thread};
 use axum::{extract::{State,Form},http::{HeaderMap,StatusCode,header},response::{Html,IntoResponse,Redirect,Response},routing::{get,post},Router};
 use serde::Deserialize;
-use crate::{cef_bridge::TabState, services::{self, ChatIdentity, Provider, Turn}};
+use crate::{cef_bridge::{Filter,TabState}, services::{self, ChatIdentity, Provider, Turn}};
 #[derive(Clone, Debug)]
 pub enum Command {
     Sync, New(String), Select(i32), Close(i32), Navigate(String),
-    Back, Forward, Reload, HardReload,
+    Back, Forward, Reload, HardReload, Shields(bool),
 }
 #[derive(Clone)]
 pub struct Ui {
     pub port: u16,
     pub token: String,
     pub tabs: TabState,
+    pub filter: Filter,
     inner: Arc<Mutex<UiInner>>,
 }
 struct UiInner {
@@ -89,6 +90,11 @@ fn chrome(ui:&Ui)->Html<String>{
         html.push_str(&format!(r#"<form method="post" action="/action">{}<button name="command" value="{}" title="{}">{}</button></form>"#,tok,action,action,label));
     }
     html.push_str(&format!(r#"<form style="flex:1" method="post" action="/action">{tok}<input name="value" aria-label="Address or search" value="{}" placeholder="Enter address or search" style="flex:1"><button class="primary" name="command" value="navigate">Go</button></form>"#,escape(active_url)));
+    let (enabled,blocked,rules)=ui.filter.lock().map(|f|(f.is_enabled(),f.blocked_count(),f.rule_count()))
+        .unwrap_or((true,0,0));
+    let action=if enabled{"shields-off"}else{"shields-on"};
+    let state=if enabled{"ON"}else{"OFF"};
+    html.push_str(&format!(r#"<form method="post" action="/action">{tok}<button name="command" value="{action}" aria-label="Toggle ad blocker" title="Charlotte Shields: {state}, {rules} loaded filter rules, {blocked} blocked requests">🛡 {state} · {blocked}</button></form>"#));
     html.push_str(r#"<form method="get" action="/chrome"><button title="Refresh tab strip">⟳</button></form></div><nav>"#);
     if let Some(tabs)=tabs{
         for tab in tabs.all(){
@@ -148,6 +154,8 @@ async fn action(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm
         "forward"=>Some(Command::Forward),
         "reload"=>Some(Command::Reload),
         "hard-reload"=>Some(Command::HardReload),
+        "shields-on"=>Some(Command::Shields(true)),
+        "shields-off"=>Some(Command::Shields(false)),
         _=>None,
     };
     let Some(cmd)=cmd else{return (StatusCode::BAD_REQUEST,"Invalid command").into_response()};
@@ -278,7 +286,7 @@ fn response_headers(mut response:Response)->Response{
     h.insert("x-frame-options","DENY".parse().unwrap());
     response
 }
-pub fn start(tabs:TabState)->Result<Ui,String>{
+pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
     use rand::{rngs::OsRng,RngCore};
     let mut nonce=[0u8;32];OsRng.fill_bytes(&mut nonce);
     let token: String=nonce.iter().map(|byte|format!("{byte:02x}")).collect();
@@ -289,7 +297,7 @@ pub fn start(tabs:TabState)->Result<Ui,String>{
         .ok().and_then(|db|db.messages("ai",100).ok())
         .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
-        port,token,tabs,inner:Arc::new(Mutex::new(UiInner{
+        port,token,tabs,filter,inner:Arc::new(Mutex::new(UiInner{
             ai:history,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
