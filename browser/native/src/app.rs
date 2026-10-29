@@ -1,7 +1,7 @@
 //! Charlotte native CEF application, browser window, popup lifecycle, and profile.
 use cef::*;
-use std::{cell::{Cell, RefCell}, rc::Rc};
-use crate::cef_bridge::{CharlotteClient, default_filter};
+use std::{cell::{Cell, RefCell}, rc::Rc, sync::{Arc, Mutex}};
+use crate::cef_bridge::{CharlotteClient, default_filter, TabState};
 
 pub fn run(main_args: &MainArgs, sandbox_info: *mut u8) -> i32 {
     let process_result = execute_process(Some(main_args), None::<&mut App>, sandbox_info);
@@ -38,7 +38,10 @@ wrap_app! {
     struct CharlotteApp;
     impl App {
         fn browser_process_handler(&self) -> Option<BrowserProcessHandler> {
-            Some(CharlotteBrowserProcess::new(RefCell::new(None), Rc::new(Cell::new(0))))
+            Some(CharlotteBrowserProcess::new(
+                RefCell::new(None), Rc::new(Cell::new(0)),
+                Arc::new(Mutex::new(crate::tabs::Tabs::default())),
+            ))
         }
     }
 }
@@ -47,10 +50,11 @@ wrap_browser_process_handler! {
     struct CharlotteBrowserProcess {
         client: RefCell<Option<Client>>,
         windows: Rc<Cell<usize>>,
+        tabs: TabState,
     }
     impl BrowserProcessHandler {
         fn on_context_initialized(&self) {
-            let client = CharlotteClient::new(default_filter());
+            let client = CharlotteClient::new(default_filter(), self.tabs.clone());
             *self.client.borrow_mut() = Some(client.clone());
             let initial = crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
                 .map(|db| crate::session::start_page(&db))

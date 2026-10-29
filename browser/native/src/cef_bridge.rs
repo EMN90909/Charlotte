@@ -2,27 +2,61 @@
 //! CEF invokes resource handlers on its IO thread; DB writes occur on the UI thread.
 use cef::*;
 use std::sync::{Arc, Mutex};
-use crate::{profile, shield::{Decision, Shield, STARTER_RULES}, storage::Storage};
+use crate::{profile, shield::{Decision, Shield, STARTER_RULES}, storage::Storage, tabs::Tabs};
 
 /// Shared rule engine compiled once, not once per network request.
 pub type Filter = Arc<Mutex<Shield>>;
+pub type TabState = Arc<Mutex<Tabs>>;
 pub fn default_filter() -> Filter {
-    Arc::new(Mutex::new(Shield::new(&[STARTER_RULES], true)))
+    let enabled = Storage::open(&profile::profile_root().join("charlotte.sqlite"))
+        .ok().and_then(|db| db.setting("shields").ok().flatten())
+        .as_deref() != Some("off");
+    Arc::new(Mutex::new(Shield::new(&[STARTER_RULES], enabled)))
 }
 
 wrap_client! {
     pub struct CharlotteClient {
         filter: Filter,
+        tabs: TabState,
     }
     impl Client {
         fn request_handler(&self) -> Option<RequestHandler> {
             Some(CharlotteRequestHandler::new(self.filter.clone()))
         }
         fn display_handler(&self) -> Option<DisplayHandler> {
-            Some(CharlotteDisplayHandler::new())
+            Some(CharlotteDisplayHandler::new(self.tabs.clone()))
+        }
+        fn life_span_handler(&self) -> Option<LifeSpanHandler> {
+            Some(CharlotteLifeSpanHandler::new(self.tabs.clone()))
         }
         fn load_handler(&self) -> Option<LoadHandler> {
-            Some(CharlotteLoadHandler::new(self.filter.clone()))
+            Some(CharlotteLoadHandler::new(self.filter.clone(), self.tabs.clone()))
+        }
+    }
+}
+
+
+fn persist_tabs(state: &TabState) {
+    if let Ok(tabs) = state.lock() {
+        if let Ok(db) = Storage::open(&profile::profile_root().join("charlotte.sqlite")) {
+            if let Err(error) = crate::session::save_tabs(&db, &tabs) {
+                eprintln!("Cannot persist native tabs: {error}");
+            }
+        }
+    }
+}
+
+wrap_life_span_handler! {
+    struct CharlotteLifeSpanHandler { tabs: TabState, }
+    impl LifeSpanHandler {
+        fn on_after_created(&self, browser: Option<&mut Browser>) {
+            let Some(browser) = browser else { return };
+            if let Ok(mut tabs) = self.tabs.lock() { tabs.open(browser.identifier()); }
+        }
+        fn on_before_close(&self, browser: Option<&mut Browser>) {
+            let Some(browser) = browser else { return };
+            if let Ok(mut tabs) = self.tabs.lock() { tabs.close(browser.identifier()); }
+            persist_tabs(&self.tabs);
         }
     }
 }
@@ -114,13 +148,19 @@ wrap_resource_request_handler! {
 }
 
 wrap_display_handler! {
-    struct CharlotteDisplayHandler;
+    struct CharlotteDisplayHandler { tabs: TabState, }
     impl DisplayHandler {
         fn on_title_change(&self, browser: Option<&mut Browser>, title: Option<&CefString>) {
             let Some(browser) = browser else { return };
             let Some(mut browser_view) = browser_view_get_for_browser(Some(browser)) else { return };
             let Some(window) = browser_view.window() else { return };
             window.set_title(title);
+            if let Some(title) = title {
+                if let Ok(mut tabs) = self.tabs.lock() {
+                    tabs.title(browser.identifier(), &title.to_string());
+                }
+                persist_tabs(&self.tabs);
+            }
         }
         fn on_address_change(
             &self, _browser: Option<&mut Browser>,
@@ -130,7 +170,13 @@ wrap_display_handler! {
             let (Some(frame), Some(url)) = (frame, url) else { return };
             if frame.is_main() == 0 { return }
             let address = url.to_string();
-            if !(address.starts_with("https://") || address.starts_with("http://")) { return }
+            if !crate::session::valid_page_url(&address) { return }
+            if let Some(browser) = browser {
+                if let Ok(mut tabs) = self.tabs.lock() {
+                    tabs.navigate(browser.identifier(), &address);
+                }
+                persist_tabs(&self.tabs);
+            }
             let millis = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
             if let Ok(store) = Storage::open(&profile::profile_root().join("charlotte.sqlite")) {
@@ -146,8 +192,18 @@ wrap_display_handler! {
 }
 
 wrap_load_handler! {
-    struct CharlotteLoadHandler { filter: Filter, }
+    struct CharlotteLoadHandler { filter: Filter, tabs: TabState, }
     impl LoadHandler {
+        fn on_loading_state_change(
+            &self, browser: Option<&mut Browser>, is_loading: i32,
+            _can_go_back: i32, _can_go_forward: i32,
+        ) {
+            if let Some(browser) = browser {
+                if let Ok(mut tabs) = self.tabs.lock() {
+                    tabs.loading(browser.identifier(), is_loading != 0);
+                }
+            }
+        }
         fn on_load_end(
             &self, _browser: Option<&mut Browser>,
             frame: Option<&mut Frame>, _http_status_code: i32,
