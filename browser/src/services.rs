@@ -137,6 +137,7 @@ pub fn send_visual_agent(
     provider:Provider,key:Option<&str>,model:&str,system:&str,
     history:&[Turn],text:&str,jpeg:&str
 )->Result<String,ServiceError>{
+    if matches!(provider,Provider::Cloud){return crate::cloud::send(model,system,history,text,Some(jpeg))}
     if jpeg.len()>1_600_000||jpeg.is_empty() {
         return Err(ServiceError::InvalidResponse)
     }
@@ -193,6 +194,21 @@ pub fn send_visual_agent(
                 .json(&json!({"model":model,"messages":messages,"stream":false})),
                 "/message/content")
         },
+        Provider::Compatible(service)=>{
+            let messages=vec![
+                json!({"role":"system","content":system}),
+                json!({"role":"user","content":[
+                    {"type":"text","text":text},
+                    {"type":"image_url","image_url":{"url":format!("data:image/jpeg;base64,{jpeg}"),"detail":"low"}}
+                ]})
+            ];
+            (http.post(endpoint(service,"/chat/completions")?).bearer_auth(key)
+                .json(&json!({"model":model,"messages":messages,
+                    "max_tokens":1200,"stream":false})),
+                "/choices/0/message/content")
+        },
+        Provider::Cohere=>return Err(ServiceError::InvalidResponse),
+        Provider::Cloud=>unreachable!("cloud is routed before local vision adapters"),
     };
     let response:Value=checked(request.send()?)?.json()?;
     response.pointer(pointer).and_then(Value::as_str)
