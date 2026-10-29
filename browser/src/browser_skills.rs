@@ -59,7 +59,7 @@ pub fn format_snapshot(skill:Skill,snapshot:&Value)->Result<String,String>{
             }
             if links.is_empty(){format!("{header}No visible links in the bounded observation.")}
             else{
-                let mut out=header;
+                let mut out=header.clone();
                 for (i,(url,label)) in links.into_iter().take(35).enumerate(){
                     out.push_str(&format!("{}. {} — {}\n",i+1,label,url));
                 }
@@ -67,7 +67,7 @@ pub fn format_snapshot(skill:Skill,snapshot:&Value)->Result<String,String>{
             }
         },
         Skill::Controls=>{
-            let mut out=header;
+            let mut out=header.clone();
             for (i,item) in controls.iter().take(50).enumerate(){
                 let label=safe_line(item["label"].as_str().unwrap_or(""));
                 let role=safe_line(item["role"].as_str().unwrap_or(item["tag"].as_str().unwrap_or("control")));
@@ -79,7 +79,7 @@ pub fn format_snapshot(skill:Skill,snapshot:&Value)->Result<String,String>{
         },
         Skill::Frames=>{
             let frames=snapshot["frames"].as_array();
-            let mut out=header;
+            let mut out=header.clone();
             for (i,frame) in frames.into_iter().flatten().take(24).enumerate(){
                 let origin=frame["url"].as_str().unwrap_or("[URL not exposed]");
                 let kind=if frame["sameOrigin"].as_bool()==Some(true){"same-origin DOM accessible"}
