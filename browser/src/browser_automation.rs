@@ -254,6 +254,13 @@ impl Context {
     }
     /// Page transitions are asynchronous; wait for an interactive document
     /// instead of assuming a fixed post-click delay is sufficient.
+    /// Read Chromium's actual accessibility data as optional semantic
+    /// context. Do not trust its node IDs as cross-frame capabilities.
+    pub fn accessibility_summary(&self)->Result<Value,String>{
+        let (method,params)=crate::automation_semantics::ax_tree_command();
+        let reply=self.cdp(method,params)?;
+        Ok(crate::automation_semantics::compact_ax(&reply))
+    }
     pub fn observe_settled(&self)->Result<Value,String>{
         let mut last=String::from("Page did not become ready");
         for _ in 0..8 {
