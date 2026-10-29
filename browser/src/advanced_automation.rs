@@ -166,7 +166,9 @@ pub fn element_command(selector:&str,kind:&str,value:Option<&str>)->Result<(Stri
         _=>return Err("Unknown DOM operation".into())
     };
     let value=serde_json::to_string(value.unwrap_or("")).map_err(|e|e.to_string())?;
-    let js=format!("(() => {{{LOOKUP} const hit=resolve(__SELECTOR__); if(!hit)return {{error:'Selector missing or ambiguous'}}; const el=hit.el; {action} }})()");
+    let js=["(() => {",LOOKUP,
+        " const hit=resolve(__SELECTOR__); if(!hit)return {error:'Selector missing or ambiguous'}; const el=hit.el;",
+        action," })()"].concat();
     let js=js.replace("__SELECTOR__",&quoted).replace("__VALUE__",&value);
     Ok(("Runtime.evaluate".into(),json!({
         "expression":js,"returnByValue":true,"awaitPromise":false,"userGesture":false
