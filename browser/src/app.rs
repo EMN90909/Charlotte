@@ -113,6 +113,10 @@ impl Controller {
     fn automation_request(&mut self,request_id:i32,browser_id:i32,expected_origin:String,
         method:String,params:Value,reply:mpsc::Sender<Result<Value,String>>){
         // CEF references never leave the UI thread. Prevent stale tab actions.
+        if !matches!(method.as_str(),"Runtime.evaluate"|"Page.navigate"|"Input.dispatchMouseEvent")
+            || params.to_string().len()>64*1024 {
+            let _=reply.send(Err("Unsupported or oversized Charlotte CDP method".into()));return
+        }
         let active=self.tabs.lock().ok().and_then(|tabs|tabs.active_id());
         if active!=Some(browser_id){
             let _=reply.send(Err("Automation tab is no longer active".into()));return
@@ -128,7 +132,7 @@ impl Controller {
             let _=reply.send(Err("CEF browser host unavailable".into()));return
         };
         let id=request_id;
-        if id<100_000_000||id>1_900_000_000||self.devtools_observers.len()>16{
+        if id<100_000_000||id>1_900_000_000||self.devtools_observers.len()>=16{
             let _=reply.send(Err("Automation DevTools IDs exhausted".into()));return
         }
         let mut observer=CharlotteAutomationObserver::new(id,reply.clone());
