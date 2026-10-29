@@ -61,14 +61,13 @@ CHAT_USERNAMES_FILE=/var/lib/charlotte/usernames.log \
 make run-ops
 ```
 
-(or `go build -o /usr/local/bin/charlotte-ops ./cmd/ops` and run that
+(or `cargo build --release --bin charlotte-ops` and run that
 under systemd/whatever you use to keep a process alive - the ops daemon
 itself has no supervisor of its own, only the app process it manages).
 
 Deploying to a DigitalOcean droplet specifically? See
 [`../deploy/`](../deploy) for a ready-made systemd unit and a first-boot
-setup script that installs and starts it automatically, no manual `go
-build` required.
+setup script that installs and starts it automatically, no manual Rust build required.
 
 The ops daemon listens on `:9090` by default (`OPS_ADDR` to change it), and expects
 the app's `/healthz` at `http://localhost:8080/healthz` by default
@@ -96,7 +95,7 @@ To fire a deploy by hand (e.g. testing the ops daemon without cutting a
 real release):
 
 ```bash
-TOKEN=$(OPS_JWT_SECRET=... go run ./cmd/deploytoken -version 1.2.3 -linux "https://.../chat-service-server-linux-amd64")
+TOKEN=$(OPS_JWT_SECRET=... cargo run --release --bin charlotte-deploytoken -- -version 1.2.3 -linux "https://.../chat-service-server-linux-amd64")
 curl -X POST https://ops.your-server.example/deploy -H "Authorization: Bearer $TOKEN"
 curl https://ops.your-server.example/version
 ```

@@ -20,8 +20,8 @@ GITHUB_REPO="${GITHUB_REPO:-EMN90909/Charlotte}"
 TAG="${1:-}"
 
 case "$(uname -m)" in
-  x86_64)  GOARCH=amd64 ;;
-  aarch64) GOARCH=arm64 ;;
+  x86_64)  ARCH=amd64 ;;
+  aarch64) ARCH=arm64 ;;
   *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 
@@ -42,7 +42,7 @@ echo "updating ops to ${TAG}"
 
 systemctl stop charlotte-ops
 curl -fsSL -o /opt/charlotte/bin/ops \
-  "https://github.com/${GITHUB_REPO}/releases/download/${TAG}/chat-service-ops-linux-${GOARCH}"
+  "https://github.com/${GITHUB_REPO}/releases/download/${TAG}/chat-service-ops-linux-${ARCH}"
 chmod +x /opt/charlotte/bin/ops
 id -u charlotte &>/dev/null && chown charlotte:charlotte /opt/charlotte/bin/ops
 systemctl start charlotte-ops

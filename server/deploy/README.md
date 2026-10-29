@@ -74,72 +74,17 @@ the deploy webhook to work, and there's no way to retrieve it again
 after this run short of reading `/etc/charlotte/ops.env` on the box
 itself (root-readable only, `chmod 600`).
 
-## Domain and TLS
+## Domain and TLS (Rust)
 
-`chat-service-server` terminates its own TLS - no reverse proxy in
-front of it. Setting `PUBLIC_HOSTNAME` in `/etc/charlotte/ops.env` makes
-it also bind `:443` with a certificate obtained and renewed
-automatically from Let's Encrypt (via `golang.org/x/crypto/acme/autocert`,
-using the TLS-ALPN-01 challenge - that's why `:443` specifically has to
-be reachable from the internet, not some other port). Leave
-`PUBLIC_HOSTNAME` unset and only plain `:8080` runs, same as local dev.
-The ops daemon's own `:9090` is never served over TLS - it's not meant
-to be public, see the security note below.
+The Rust chat server listens over plain HTTP on port 8080 and gRPC on
+port 50051. Automatic TLS-ALPN certificates previously supported by the
+Go server are not yet implemented in the Rust binary. To use HTTPS,
+terminate TLS in a reverse proxy or managed load balancer and forward
+HTTP and gRPC requests to their respective local ports.
 
-Only one hostname's worth of coverage: `HostPolicy: autocert.HostWhitelist(hostname)`
-in `cmd/server/main.go` refuses to request a cert for anything else, so
-a single `PUBLIC_HOSTNAME` covers the app only. The ops subdomain stays
-on whatever's already reaching `:9090` today (see below - it isn't meant
-to be public HTTPS in the first place).
-
-1. **Add a DNS record** at whatever manages `samuelabolo.dev` today
-   (Vercel, in your case - Project/domain settings -> DNS Records, or
-   wherever Vercel exposes it for a domain not tied to a specific
-   deployment). Type A, pointed at your droplet's public IPv4:
-   - `charlotte-chat-service`
-
-   A plain A record, nothing else to configure on the Vercel side.
-2. **Wait for propagation**, then set `PUBLIC_HOSTNAME` on the droplet
-   and restart:
-   ```
-   echo 'PUBLIC_HOSTNAME=paperkite-chat-service.samuelabolo.dev' >> /etc/charlotte/ops.env
-   systemctl restart charlotte-ops
-   ```
-   DNS has to already resolve to this droplet before the restart, or the
-   first TLS-ALPN-01 handshake (and every one after it, until it does)
-   fails and autocert never gets a cert - which is why this step comes
-   after step 1, not before. `ops` restarting relaunches
-   `chat-service-server` with the new env, picking up `PUBLIC_HOSTNAME`.
-3. **Confirm it worked**:
-   `curl https://paperkite-chat-service.samuelabolo.dev/healthz`. First
-   request after the restart is slow (autocert's blocking on the ACME
-   round-trip); after that, cached in
-   `AUTOCERT_CACHE_DIR` (`autocert-cache/` under the working directory,
-   `/opt/charlotte` - override if that's not where you want certs
-   persisted across restarts).
-4. **Point the app at the new domain**: `website/src/lib/site.ts`'s
-   `publicServer.httpUrl` already points at
-   `https://paperkite-chat-service.samuelabolo.dev` - flip `deployed` to
-   `true` once step 3 above is confirmed working end to end.
-
-**Binding `:443` without running as root**: `charlotte-ops.service` grants
-itself `AmbientCapabilities=CAP_NET_BIND_SERVICE` (+ the matching
-`CapabilityBoundingSet`), which Linux propagates across fork/exec to
-every binary `ops` launches as its child - including `chat-service-server`
-binaries downloaded fresh by a future auto-deploy. No per-binary `setcap`
-step needed, and nothing runs as root. If you ever see `chat-service-server`
-fail to bind `:443` with a permission error, check that this unit was
-actually reloaded (`systemctl daemon-reload` after editing the unit file,
-then restart) - a capability set change doesn't take effect on a bare
-`systemctl restart` alone.
-
-Neither `chat-service-server` nor `ops` do any rate limiting of their
-own (see `PROTOCOL.md` and the security note below), and this setup
-doesn't add any at the edge either - that's a deliberate simplification,
-not an oversight. If you want it back later, that's most easily added by
-putting a reverse proxy (Caddy, nginx) back in front of `:8080`/`:443`
-with a rate-limiting module of its own, or moving DNS to Cloudflare and
-using a dashboard rule there.
+The ops daemon listens on port 9090; do not expose it publicly. Protect
+its signed deploy endpoint with network access controls as well as
+OPS_JWT_SECRET.
 
 ## Security note: the ops port
 
