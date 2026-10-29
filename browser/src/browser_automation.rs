@@ -67,6 +67,17 @@ pub fn ensure_observed_target(action:&Action,snapshot:&Value)->Result<(),String>
     if matching!=1 {
         return Err("Charlotte action does not match a unique, permitted visible page control".into())
     }
+    if let Action::Click{..}=action {
+        if let Some(control)=controls.iter().find(|item|
+            item.get("selector").and_then(Value::as_str)==Some(selector)) {
+            if let Some(href)=control.get("href").and_then(Value::as_str) {
+                if !href.is_empty() {
+                    let current=snapshot.get("url").and_then(Value::as_str).ok_or("Missing page URL")?;
+                    require_same_origin(current,href)?;
+                }
+            }
+        }
+    }
     Ok(())
 }
 pub fn require_same_origin(current:&str,target:&str)->Result<(),String>{
@@ -335,6 +346,10 @@ mod tests {
             selector:"html > body > button".into()},&snap).is_ok());
         assert!(ensure_observed_target(&Action::Click{
             selector:"#invented".into()},&snap).is_err());
+        let external=json!({"url":"https://site.example/","controls":[
+            {"selector":"html > body > a","editable":false,"href":"https://other.example/"}]});
+        assert!(ensure_observed_target(&Action::Click{
+            selector:"html > body > a".into()},&external).is_err());
         assert!(ensure_observed_target(&Action::Type{
             selector:"html > body > button".into(),text:"x".into()},&snap).is_err());
     }
