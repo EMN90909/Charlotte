@@ -33,7 +33,7 @@ struct PendingTool {
 #[derive(Clone)]
 struct PendingBrowser {
     context:BrowserContext, action:BrowserAction, goal:String,
-    provider:String, step:u8, observed_url:String, target_label:String,
+    provider:String, step:u8, observed_url:String, target_label:String, visual:bool,
 }
 struct UiInner {
     pending_browser:Option<PendingBrowser>,
@@ -135,7 +135,7 @@ fn sidebar(ui:&Ui)->Html<String>{
     let Ok(inner)=ui.inner.lock() else {return Html("Sidebar unavailable".into())};
     html.push_str(r#"<section><h2>Ask Charlotte</h2><div class="stack"><form action="/ai" method="post" style="display:flex;flex-direction:column;align-items:stretch">"#);
     html.push_str(&token);
-    html.push_str(r#"<label for="provider">Provider</label><select name="provider" id="provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Ollama</option></select><label for="mode">Charlotte mode</label><select id="mode" name="mode"><option value="chat">Chat + MCP tools</option><option value="browser">Automate this Chromium tab</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask Charlotte a question or give Charlotte a task…"></textarea><button class="primary">Send</button></form>"#);
+    html.push_str(r#"<label for="provider">Provider</label><select name="provider" id="provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Ollama</option></select><label for="mode">Charlotte mode</label><select id="mode" name="mode"><option value="chat">Chat + MCP tools</option><option value="browser">Automate this Chromium tab</option><option value="visual">Visual automation (shares a screenshot)</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask Charlotte a question or give Charlotte a task…"></textarea><button class="primary">Send</button></form>"#);
     let configured=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
         .ok().and_then(|db|mcp::saved_servers(&db).ok()).unwrap_or_default();
     if configured.is_empty(){
@@ -152,7 +152,7 @@ fn sidebar(ui:&Ui)->Html<String>{
         html.push_str(&format!(r#"<form action="/browser/approve" method="post">{token}<button name="command" class="primary" value="approve">Approve this browser step</button><button name="command" value="reject">Stop automation</button></form>"#));
         html.push_str("</div>");
     }
-    html.push_str("<p class=\"muted\">Browser mode shares a bounded snapshot of the active page with your selected AI provider. Charlotte omits raw form values, password/file inputs and cookies, but visible page text can contain personal information. Every website-changing step requires approval.</p>");
+    html.push_str("<p class=\"muted\">Browser mode shares page text with your selected AI provider. Visual mode additionally sends a JPEG screenshot of the visible Chromium viewport. Charlotte omits raw form values, password/file inputs and cookies, but visible page text can contain personal information. Every website-changing step requires approval.</p>");
     if let Some(pending)=&inner.pending_tool {
         html.push_str("<div class=\"bubble\"><strong>Charlotte requests approval to use an MCP tool</strong>");
         html.push_str(&format!("<p>Tool: <code>{}</code></p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
@@ -260,14 +260,16 @@ fn browser_answer(state:&Ui,goal:&str,answer:String){
 }
 fn plan_browser_next(
     state:&Ui,context:BrowserContext,goal:String,provider_name:String,
-    step:u8,previous:&str,
+    step:u8,previous:&str,visual:bool,
 )->Result<(),String>{
-    let (provider,model)=provider_model(&provider_name).ok_or("Unknown AI provider")?;
+    let (provider,default_model)=provider_model(&provider_name).ok_or("Unknown AI provider")?;
+    let model=if visual&&provider_name=="ollama"{"llava"}else{default_model};
     let snapshot=context.observe_settled()?;
+    let screenshot=if visual {Some(context.screenshot()?)}else{None};
     let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
     let history=state.inner.lock().ok().map(|inner|inner.ai.clone()).unwrap_or_default();
     match browser_agent::decide(provider,key.as_deref(),model,&history,
-        &goal,step,&snapshot,previous)?{
+        &goal,step,&snapshot,previous,screenshot.as_deref())?{
         BrowserDecision::Answer(text)=>{
             browser_answer(state,&goal,text);
         },
@@ -278,6 +280,9 @@ fn plan_browser_next(
                 "Charlotte has inspected this page but needs a more specific next action. You can refine your task.".into());
         },
         BrowserDecision::Action(action)=>{
+            if matches!(action,BrowserAction::ClickAt{..})&&!visual {
+                return Err("Screenshot-coordinate click requires explicit visual mode".into())
+            }
             browser_automation::ensure_observed_target(&action,&snapshot)?;
             if let BrowserAction::Navigate{url}=&action {
                 browser_automation::require_same_origin(&context.origin,url)?;
@@ -296,7 +301,7 @@ fn plan_browser_next(
                 .ok_or("Chromium observation has no page URL")?.to_owned();
             if let Ok(mut inner)=state.inner.lock(){
                 inner.pending_browser=Some(PendingBrowser{
-                    context,action,goal,provider:provider_name,step,observed_url,target_label,
+                    context,action,goal,provider:provider_name,step,observed_url,target_label,visual,
                 });
             }else{return Err("Automation state lock failed".into())}
             finish(state,None);
@@ -347,7 +352,7 @@ async fn browser_approve(
                 std::thread::sleep(std::time::Duration::from_millis(350));
             }
             plan_browser_next(&state,pending.context,pending.goal,
-                pending.provider,pending.step+1,&action_outcome.to_string())
+                pending.provider,pending.step+1,&action_outcome.to_string(),pending.visual)
         })();
         if let Err(error)=outcome {
             let message=if attempted {
@@ -369,10 +374,10 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
         return (StatusCode::CONFLICT,"Resolve Charlotte's pending MCP or Chromium browser action first").into_response()
     }
     let mode=form.mode.as_deref().unwrap_or("chat");
-    if !["chat","browser"].contains(&mode){
+    if !["chat","browser","visual"].contains(&mode){
         return (StatusCode::BAD_REQUEST,"Unknown Charlotte mode").into_response()
     }
-    if mode=="browser" {
+    if mode=="browser" || mode=="visual" {
         let current=ui.tabs.lock().ok()
             .and_then(|tabs|tabs.active().map(|t|(t.id,t.url.clone())));
         let Some((id,url))=current else {
@@ -382,9 +387,10 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
             return (StatusCode::BAD_REQUEST,"Automation requires an active HTTPS or loopback webpage").into_response()
         };
         if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is already working").into_response()}
+        let visual=mode=="visual";
         let state=ui.clone();
         tokio::task::spawn_blocking(move||{
-            if let Err(error)=plan_browser_next(&state,context,text,provider_name,0,"Started task"){
+            if let Err(error)=plan_browser_next(&state,context,text,provider_name,0,"Started task",visual){
                 finish(&state,Some(error));
             }
         });
