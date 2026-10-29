@@ -63,11 +63,23 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: scripts\build.bat
-      - name: Upload CEF bundle
+      - name: Archive POSIX bundle preserving file modes and symlinks
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          tar -czf "target/Charlotte-${{ matrix.label }}.tar.gz" -C target/bundle .
+      - name: Archive Windows bundle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path target/bundle/* -DestinationPath "target/Charlotte-${{ matrix.label }}.zip"
+      - name: Upload native archive
         uses: actions/upload-artifact@v4
         with:
           name: Charlotte-${{ matrix.label }}
-          path: browser/native/target/bundle/**
+          path: |
+            browser/native/target/Charlotte-*.tar.gz
+            browser/native/target/Charlotte-*.zip
           if-no-files-found: error
   publish:
     needs: native
@@ -79,12 +91,12 @@ jobs:
           path: output
       - run: |
           cd output
-          find . -type f -print0 | sort -z | xargs -0 sha256sum > checksums.txt
-          for d in Charlotte-*; do zip -qr "${d}.zip" "$d"; done
+          find . -type f \( -name "*.zip" -o -name "*.tar.gz" \) -print0 | sort -z | xargs -0 sha256sum > checksums.txt
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
           prerelease: true
           files: |
-            output/*.zip
+            output/**/*.tar.gz
+            output/**/*.zip
             output/checksums.txt
