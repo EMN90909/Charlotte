@@ -31,7 +31,7 @@ try {
   if (!$port -or $port -notmatch '^\d+$') { throw 'Native UI server did not start' }
   $chrome = Invoke-WebRequest "http://127.0.0.1:$port/chrome"
   $sidebar = Invoke-WebRequest "http://127.0.0.1:$port/sidebar"
-  if ($chrome.Content -notmatch 'Charlotte' -or $sidebar.Content -notmatch 'Ask AI' -or $chrome.Content -notmatch 'Toggle ad blocker') {
+  if ($chrome.Content -notmatch 'Charlotte' -or $sidebar.Content -notmatch 'Ask Charlotte' -or $chrome.Content -notmatch 'Toggle ad blocker') {
     throw 'CEF native UI HTML is missing'
   }
   $rendered = $false
