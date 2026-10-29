@@ -46,6 +46,8 @@ curl --silent --fail "http://127.0.0.1:$port/chrome" | grep -q "Charlotte"
 curl --silent --fail "http://127.0.0.1:$port/chrome" | grep -q "Toggle ad blocker"
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Ask Charlotte"
 curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Automate this Chromium tab"
+curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Visual automation (shares a screenshot)"
+curl --silent --fail "http://127.0.0.1:$port/sidebar" | grep -q "Accept open dialog"
 automation_code="$(curl --silent --output /dev/null --write-out '%{http_code}'   -X POST "http://127.0.0.1:$port/browser/approve" -d 'command=approve')"
 [[ "$automation_code" == 403 ]] || { echo "Unsafe browser automation approval endpoint: $automation_code" >&2; exit 1; }
 for _ in $(seq 1 100); do
