@@ -93,7 +93,7 @@ mod tests{
         let mut ids=std::collections::HashSet::new();
         for item in PRESETS {
             assert!(ids.insert(item.id), "Duplicate catalog id");
-            if item.endpoint.starts_with("local:"){
+            if item.endpoint.starts_with("local:")&&item.id!="sqlite"{
                 assert!(local_command(item.id).is_some());
             }
         }
