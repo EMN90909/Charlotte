@@ -1027,9 +1027,19 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
     if ui.inner.lock().is_ok_and(|g|g.pending_tool.is_some()||g.pending_browser.is_some()){
         return (StatusCode::CONFLICT,"Resolve Charlotte's pending MCP or Chromium browser action first").into_response()
     }
-    let mode=form.mode.as_deref().unwrap_or("chat");
-    if !["chat","browser","visual"].contains(&mode){
+    let mode=form.mode.as_deref().unwrap_or("auto");
+    if !["auto","chat","browser","visual"].contains(&mode){
         return (StatusCode::BAD_REQUEST,"Unknown Charlotte mode").into_response()
+    }
+    if mode=="auto"{
+        if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is already working").into_response()}
+        let state=ui.clone();
+        tokio::task::spawn_blocking(move||{
+            if let Err(error)=run_auto_task(&state,text,provider_name){
+                finish(&state,Some(error));
+            }
+        });
+        return reply("/sidebar")
     }
     if mode=="browser" || mode=="visual" {
         let current=ui.tabs.lock().ok()
