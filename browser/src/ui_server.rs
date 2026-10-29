@@ -552,7 +552,7 @@ mod tests{
         let page=sidebar(&ui).0;
         assert!(page.contains("Charlotte requests approval"));
         assert!(page.contains("Approve once"));
-        assert!(page.contains("name=\\"command\\" value=\\"reject\\""));
+        assert!(page.contains(r#"name="command" value="reject""#));
         assert!(!page.contains("<script>"));
     }
     #[test]fn address_search_sanitizes_scheme(){
