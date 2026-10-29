@@ -364,14 +364,21 @@ impl Context {
                 self.cdp(&method,params)?;
                 let (method,params)=input_mouse_command("mousePressed",x,y);
                 self.cdp(&method,params)?;
-                for i in 1..=9{
-                    let px=x+(tx-x)*i/9;
-                    let py=y+(ty-y)*i/9;
-                    let (method,params)=held_mouse_move(px,py);
-                    self.cdp(&method,params)?;
-                }
+                let moving=(||->Result<(),String>{
+                    for i in 1..=9{
+                        let px=x+(tx-x)*i/9;
+                        let py=y+(ty-y)*i/9;
+                        let (method,params)=held_mouse_move(px,py);
+                        self.cdp(&method,params)?;
+                    }
+                    Ok(())
+                })();
+                // Always release the mouse, even if an intermediate CDP
+                // move failed. Never leave a synthetic drag button held.
                 let (method,params)=input_mouse_command("mouseReleased",tx,ty);
-                self.cdp(&method,params)?;
+                let released=self.cdp(&method,params);
+                moving?;
+                released?;
                 Ok(json!({"dragged":true}))
             },
             Action::Click{selector}=>{
