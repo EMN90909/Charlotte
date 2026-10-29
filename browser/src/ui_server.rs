@@ -351,7 +351,9 @@ fn plan_browser_next(
     }
     checkpoint_status(&run_id,"planning","Choosing next step",step);
     let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
-    let history=state.inner.lock().ok().map(|inner|inner.ai.clone()).unwrap_or_default();
+    // The browser task already has its own goal and bounded prior result.
+    // Do not send unrelated saved chat history into an automation prompt.
+    let history:Vec<Turn>=Vec::new();
     let proposed=browser_agent::decide(provider,key.as_deref(),model,&history,
         &goal,step,&snapshot,previous,screenshot.as_ref().map(|(jpeg,_)|jpeg.as_str()))?;
     if !run_is_authorized(state,&run_id){
