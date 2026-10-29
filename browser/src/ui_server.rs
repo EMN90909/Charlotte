@@ -308,8 +308,17 @@ fn run_is_authorized(ui:&Ui,id:&str)->bool{
         && !inner.cancel_automation.load(Ordering::SeqCst))
 }
 fn finish_if_current(ui:&Ui,id:&str,error:Option<String>){
-    let belongs=ui.inner.lock().ok().is_some_and(|inner|
-        inner.active_run_id.as_deref()==Some(id));
+    // End only this run: a newer task may already have started.
+    let belongs=if let Ok(mut inner)=ui.inner.lock(){
+        if inner.active_run_id.as_deref()!=Some(id){false}
+        else{
+            inner.active_run_id=None;
+            inner.automation_browser_id=None;
+            inner.automation_origin=None;
+            inner.pending_browser=None;
+            true
+        }
+    }else{false};
     if belongs{finish(ui,error)}
 }
 fn browser_answer(state:&Ui,goal:&str,answer:String,run_id:Option<&str>,step:u8){
@@ -629,7 +638,7 @@ async fn browser_resume(
             run.visual,run_id.clone());
         if let Err(error)=result{
             checkpoint_status(&run_id,"interrupted",&error,run.step);
-            finish(&state,Some(error));
+            finish_if_current(&state,&run_id,Some(error));
         }
     });
     reply("/sidebar")
@@ -752,7 +761,7 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
         tokio::task::spawn_blocking(move||{
             if let Err(error)=plan_browser_next(&state,context,text,provider_name,0,"Started task",visual,run_id.clone()){
                 checkpoint_status(&run_id,"interrupted",&error,0);
-                finish(&state,Some(error));
+                finish_if_current(&state,&run_id,Some(error));
             }
         });
         return reply("/sidebar")
