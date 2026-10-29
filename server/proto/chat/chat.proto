@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package chat;
 
-option go_package = "github.com/EMN90909/Charlotte/server/gen/chat";
 
 service Chat {
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);

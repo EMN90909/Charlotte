@@ -1,7 +1,6 @@
-.claude
-/data/
-/autocert-cache/
+/target/
 /bin/
 /dist/
-.env
-.env.local
+/data/
+/ops-data/
+*.log

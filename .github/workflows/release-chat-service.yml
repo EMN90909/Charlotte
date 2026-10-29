@@ -1,9 +1,4 @@
-name: Release chat-service
-
-# Same reasoning as release-browser.yml: this is a monorepo, so releases
-# are scoped by tag prefix rather than a shared "release published"
-# event. Only fires on tags shaped like `chat-service-v0.1.1` (created
-# by `make chat-service-tag`, see /Makefile).
+name: Release chat-service (Rust)
 on:
   push:
     tags:
@@ -11,80 +6,92 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to build, e.g. chat-service-v0.1.1'
+        description: 'Release tag'
         required: true
-
 permissions:
   contents: write
-
 concurrency:
   group: release-chat-service-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
-
 env:
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
-
-defaults:
-  run:
-    working-directory: server
-
 jobs:
   binaries:
-    name: Build binaries
-    runs-on: ubuntu-latest
+    name: Build Rust for ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            label: linux-amd64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            label: linux-arm64
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            label: darwin-amd64
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            label: darwin-arm64
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: windows-amd64
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: server
+        shell: bash
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          go-version: '1.23'
-          cache-dependency-path: server/go.sum
-
-      # Builds from the self-contained server module and scripts.
-      # Keep historical artifact names so existing ops deployment URLs work.
-      - name: Cross-compile standalone server and ops
-        run: bash scripts/build-all.sh
-
-      - name: Attach artifacts to the release
-        uses: softprops/action-gh-release@v2
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --target "${{ matrix.target }}" --bins
+      - name: Stage legacy-compatible release asset names
+        run: |
+          mkdir -p dist
+          ext=""
+          if [[ "${{ matrix.label }}" == windows-* ]]; then ext=".exe"; fi
+          cp "target/${{ matrix.target }}/release/charlotte-server$ext" "dist/chat-service-server-${{ matrix.label }}$ext"
+          cp "target/${{ matrix.target }}/release/charlotte-ops$ext" "dist/chat-service-ops-${{ matrix.label }}$ext"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chat-service-${{ matrix.label }}
+          path: server/dist/chat-service-*
+          if-no-files-found: error
+  release:
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: chat-service-*
+          merge-multiple: true
+          path: artifacts
+      - run: cd artifacts && sha256sum chat-service-* > checksums.txt
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
-          files: server/dist/*
-
-  # Optional: notify a running ops daemon (see cmd/ops) to pull this build
-  # and swap it in. Skipped entirely unless OPS_WEBHOOK_URL is configured
-  # (Settings -> Secrets and variables -> Actions -> Variables) - nothing
-  # here requires it to exist. See server/packaging/README.md for
-  # the full setup, including the OPS_JWT_SECRET this needs.
+          files: artifacts/*
   notify-ops:
-    name: Notify ops daemon
-    needs: binaries
+    needs: release
     if: ${{ vars.OPS_WEBHOOK_URL != '' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-          cache-dependency-path: server/go.sum
-
-      - name: Mint deploy token and notify
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Mint Rust deploy token and notify
+        working-directory: server
         env:
           OPS_JWT_SECRET: ${{ secrets.OPS_JWT_SECRET }}
         run: |
           set -euo pipefail
           VERSION="${TAG#chat-service-v}"
-          LINUX_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/chat-service-server-linux-amd64"
-          TOKEN=$(go run ./cmd/deploytoken -version "$VERSION" -linux "$LINUX_URL")
-          curl -sf -X POST "${{ vars.OPS_WEBHOOK_URL }}/deploy" \
-            -H "Authorization: Bearer $TOKEN" \
-            --max-time 90
+          LINUX_URL="https://github.com/${{ github.repository }}/releases/download/$TAG/chat-service-server-linux-amd64"
+          TOKEN=$(cargo run --quiet --release --bin charlotte-deploytoken -- -version "$VERSION" -linux "$LINUX_URL")
+          curl -fsS -X POST "${{ vars.OPS_WEBHOOK_URL }}/deploy" -H "Authorization: Bearer $TOKEN" --max-time 90

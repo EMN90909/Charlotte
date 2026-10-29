@@ -88,8 +88,8 @@ if [ -z "$OPS_JWT_SECRET" ]; then
 fi
 
 case "$(uname -m)" in
-  x86_64)  GOARCH=amd64 ;;
-  aarch64) GOARCH=arm64 ;;
+  x86_64)  ARCH=amd64 ;;
+  aarch64) ARCH=arm64 ;;
   *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 
@@ -119,7 +119,7 @@ echo "found ${LATEST_TAG}"
 VERSION="${LATEST_TAG#chat-service-v}"
 
 curl -fsSL -o /opt/charlotte/bin/ops \
-  "https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/chat-service-ops-linux-${GOARCH}"
+  "https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/chat-service-ops-linux-${ARCH}"
 chmod +x /opt/charlotte/bin/ops
 
 # Staged for the ops daemon to adopt on its first start (OPS_INITIAL_BINARY
@@ -128,7 +128,7 @@ chmod +x /opt/charlotte/bin/ops
 # own naming convention, so this staged copy is disposable once that's
 # happened; left here untouched otherwise.
 curl -fsSL -o /opt/charlotte/bin/chat-service-server-initial \
-  "https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/chat-service-server-linux-${GOARCH}"
+  "https://github.com/${GITHUB_REPO}/releases/download/${LATEST_TAG}/chat-service-server-linux-${ARCH}"
 chmod +x /opt/charlotte/bin/chat-service-server-initial
 
 chown -R charlotte:charlotte /opt/charlotte/bin

@@ -1,5 +1,4 @@
-name: Standalone Charlotte Go server
-
+name: Standalone Charlotte Rust server
 on:
   push:
     branches: [main]
@@ -11,27 +10,37 @@ on:
       - 'server/**'
       - '.github/workflows/server-standalone.yml'
   workflow_dispatch:
-
 permissions:
   contents: read
-
+  issues: write
 jobs:
   isolated-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: server/go.mod
-          cache-dependency-path: server/go.sum
-      - name: Confirm server builds without parent files
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile and test Rust binaries
         working-directory: server
-        run: bash scripts/verify-standalone.sh
-      - name: Start and smoke-test the native server
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --all-targets 2>&1 | tee cargo-ci.log
+      - name: Report Rust compilation errors on PR 5
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          log=Path('server/cargo-ci.log').read_text(errors='replace') if Path('server/cargo-ci.log').exists() else 'No log available.'
+          Path('/tmp/report.md').write_text('Rust CI failed:\n\n\x60\x60\x60\n'+log[-10000:]+'\n\x60\x60\x60\n')
+          PY
+          gh issue comment 5 --repo "$GITHUB_REPOSITORY" --body-file /tmp/report.md
+      - name: Rust server smoke
         working-directory: server
         run: bash scripts/smoke-standalone.sh
-      - name: Cross-compile Linux and Windows artifacts
+      - name: Verify isolated Rust build
         working-directory: server
-        run: TARGETS="linux/amd64 windows/amd64" bash scripts/build-all.sh
-      - name: Build self-contained Docker image
+        run: bash scripts/verify-standalone.sh
+      - name: Build Docker image
         run: docker build -t charlotte-server:ci server
