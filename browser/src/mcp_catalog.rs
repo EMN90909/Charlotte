@@ -53,7 +53,7 @@ pub static PRESETS:&[Preset]=&[
     Preset{id:"huggingface",name:"Hugging Face",category:"AI & research",endpoint:"https://huggingface.co/mcp",auth:"oauth-or-token",description:"Models, datasets and Spaces",keywords:"hugging face models"},
     Preset{id:"deepwiki",name:"DeepWiki",category:"AI & research",endpoint:"https://mcp.deepwiki.com/mcp",auth:"none",description:"Public repository documentation",keywords:"deepwiki repo"},
     Preset{id:"memory",name:"MCP Memory",category:"Local tools",endpoint:"local:memory",auth:"local",description:"Local knowledge graph storage",keywords:"memory graph"},
-    Preset{id:"filesystem",name:"MCP Filesystem",category:"Local tools",endpoint:"local:filesystem",auth:"local",description:"Restricted file roots required before use",keywords:"filesystem files"},
+    Preset{id:"filesystem",name:"MCP Filesystem",category:"Local tools",endpoint:"local:filesystem",auth:"local",description:"Requires explicitly configured local filesystem root",keywords:"filesystem files"},
     Preset{id:"sequential-thinking",name:"MCP Sequential Thinking",category:"Local tools",endpoint:"local:sequential-thinking",auth:"local",description:"Local reasoning workflow",keywords:"thinking plan"},
     Preset{id:"git",name:"MCP Git",category:"Local tools",endpoint:"local:git",auth:"local",description:"Local Git repository operations",keywords:"git commits"},
 ];
@@ -69,6 +69,7 @@ pub fn local_command(id:&str)->Option<(&'static str,&'static [&'static str])>{
         "memory"=>Some(("npx",&["@modelcontextprotocol/server-memory"])) ,
         "sequential-thinking"=>Some(("npx",&["@modelcontextprotocol/server-sequential-thinking"])) ,
         "git"=>Some(("uvx",&["mcp-server-git"])) ,
+        "filesystem"=>Some(("npx",&["@modelcontextprotocol/server-filesystem"])) ,
         _=>None,
     }
 }
