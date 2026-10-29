@@ -152,7 +152,7 @@ fn sidebar(ui:&Ui)->Html<String>{
         html.push_str(&format!(r#"<form action="/browser/approve" method="post">{token}<button name="command" class="primary" value="approve">Approve this browser step</button><button name="command" value="reject">Stop automation</button></form>"#));
         html.push_str("</div>");
     }
-    html.push_str("<p class=\"muted\">Browser mode shares a bounded snapshot of the active page with your selected AI provider. No passwords or cookies are included in the snapshot. Each website-changing step requires approval.</p>");
+    html.push_str("<p class=\"muted\">Browser mode shares a bounded snapshot of the active page with your selected AI provider. Charlotte omits raw form values, password/file inputs and cookies, but visible page text can contain personal information. Every website-changing step requires approval.</p>");
     if let Some(pending)=&inner.pending_tool {
         html.push_str("<div class=\"bubble\"><strong>Charlotte requests approval to use an MCP tool</strong>");
         html.push_str(&format!("<p>Tool: <code>{}</code></p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
@@ -356,7 +356,7 @@ async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->
     let Some((provider,model))=provider_model(&provider_name)
         else{return (StatusCode::BAD_REQUEST,"Unknown provider").into_response()};
     if ui.inner.lock().is_ok_and(|g|g.pending_tool.is_some()||g.pending_browser.is_some()){
-        return (StatusCode::CONFLICT,"Approve or deny Charlotte's pending MCP tool first").into_response()
+        return (StatusCode::CONFLICT,"Resolve Charlotte's pending MCP or Chromium browser action first").into_response()
     }
     let mode=form.mode.as_deref().unwrap_or("chat");
     if !["chat","browser"].contains(&mode){
