@@ -17,6 +17,10 @@ Usage:
   charlotte-settings downloads list [count]
   charlotte-settings downloads clear
   charlotte-settings credential set|remove|show openai|claude|gemini
+  charlotte-settings account status|signout
+  charlotte-settings account signin|signup <email>
+  charlotte-settings mcp tools <https-url>
+  charlotte-settings mcp call <https-url> <namespaced-tool> <JSON-arguments>
   charlotte-settings profile
 The browser must be restarted for changes to ad blocking; media permissions
 are checked on every CEF media request. Only HTTPS origins or loopback HTTP
@@ -31,6 +35,35 @@ fn run(args: &[String]) -> Result<(), String> {
     let db = Storage::open(&profile::profile_root().join("charlotte.sqlite")).map_err(|e|e.to_string())?;
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["profile"] => println!("{}", profile::profile_root().display()),
+        ["mcp","tools",endpoint] => {
+            let mut client=charlotte_native::mcp::Registry::new();
+            for tool in client.connect("manual",endpoint,None)?{
+                println!("{}\t{}",tool.name,tool.description);
+            }
+        }
+        ["mcp","call",endpoint,tool,arguments] => {
+            let params:serde_json::Value=serde_json::from_str(arguments).map_err(|e|e.to_string())?;
+            let mut client=charlotte_native::mcp::Registry::new();
+            client.connect("manual",endpoint,None)?;
+            let result=client.call(tool,params)?;
+            println!("{}",serde_json::to_string_pretty(&result).map_err(|e|e.to_string())?);
+        }
+        ["account","status"] => {
+            let auth=charlotte_native::auth::SupabaseAuth::configured()?;
+            println!("{:#?}",auth.status());
+        }
+        ["account","signin"|"signup",email] => {
+            let auth=charlotte_native::auth::SupabaseAuth::configured()?;
+            eprintln!("Supabase account password (hidden input):");
+            let password=rpassword::read_password().map_err(|e|e.to_string())?;
+            let status=if args[1]=="signin"{auth.sign_in(email,&password)?}
+                else{auth.sign_up(email,&password)?};
+            println!("{status:#?}");
+        }
+        ["account","signout"] => {
+            let auth=charlotte_native::auth::SupabaseAuth::configured()?;
+            println!("{:#?}",auth.sign_out()?);
+        }
         ["credential", action, provider] => {
             if !["openai", "claude", "gemini"].contains(provider) {
                 return Err("Supported provider: openai, claude, gemini".into());

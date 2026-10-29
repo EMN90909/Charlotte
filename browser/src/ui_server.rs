@@ -49,7 +49,7 @@ fn input(name: &str, value: &str) -> String {
 fn header_html(title: &str, compact: bool) -> String {
     let width=if compact {"100%"} else {"100%"};
     format!(r#"<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; object-src 'none'">
 <title>{}</title><style>
 :root{{color-scheme:dark;--bg:#1b1b18;--card:#292924;--text:#f5eee0;--sub:#a9a394;--line:#3d3b35;--accent:#cbaa7a}}
 *{{box-sizing:border-box}}body{{width:{};margin:0;background:var(--bg);color:var(--text);font:13px system-ui,-apple-system,Segoe UI,sans-serif}}
@@ -64,13 +64,7 @@ small,.muted{{color:var(--sub)}}section{{border-top:1px solid var(--line);paddin
 label{{color:var(--sub);font-size:12px}}h2{{font-size:16px;margin:0 0 14px}}.error{{color:#e9aeae}}
 </style></head><body>"#,escape(title),width)
 }
-fn footer() -> &'static str {r#"<script>
-setInterval(() => {
-  const el = document.activeElement;
-  if (el && ['INPUT','TEXTAREA','SELECT'].includes(el.tagName)) return;
-  if (document.visibilityState === 'visible') window.location.reload();
-}, 5000);
-</script></body></html>"#}
+fn footer() -> &'static str {"</body></html>"}
 pub fn resolve_address(raw: &str) -> Option<String> {
     let value=raw.trim();
     if value.is_empty() || value.len()>2048 {return None}
@@ -169,6 +163,7 @@ fn busy(ui:&Ui)->bool{
 }
 fn finish(ui:&Ui,error:Option<String>){
     if let Ok(mut i)=ui.inner.lock(){i.working=false;i.error=error.unwrap_or_default()}
+    crate::app::post_ui_command(Command::Sync);
 }
 async fn ai(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response{
     if !check(&ui,&headers,&form.token){return forbidden()}
@@ -245,6 +240,7 @@ async fn connect(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionFor
                                 }
                                 if inner.chat.len()>200 {let excess=inner.chat.len()-200;inner.chat.drain(0..excess);}
                             }
+                            crate::app::post_ui_command(Command::Sync);
                         });
                         match result {Ok(next)=>cursor=next,Err(e)=>{
                             if let Ok(mut inner)=listener.inner.lock(){inner.error=e.to_string();}

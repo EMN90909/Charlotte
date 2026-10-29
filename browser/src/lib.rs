@@ -16,6 +16,7 @@ pub mod newtab;
 pub mod ui_server;
 pub mod auth;
 pub mod translate;
+pub mod mcp;
 pub mod main;
 pub mod renderer;
 
