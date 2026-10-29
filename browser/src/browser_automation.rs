@@ -87,17 +87,18 @@ pub fn observation_command()->(String,Value){
         };
         const controls=Array.from(document.querySelectorAll(selectable)).slice(0,300)
             .filter(el=>{
+                if(el.matches('input[type=password],input[type=hidden],input[type=file]'))return false;
                 const r=el.getBoundingClientRect();
                 return r.width>0&&r.height>0&&!el.disabled;
             }).slice(0,70).map(el=>({
                 selector:path(el),tag:el.localName,
                 role:short(el.getAttribute('role')),
-                label:short(el.getAttribute('aria-label')||el.labels?.[0]?.innerText||el.innerText||el.placeholder||el.name||el.value),
-                type:short(el.getAttribute('type')),href:el.localName==='a'?short(el.href):'',
+                label:short(el.getAttribute('aria-label')||el.labels?.[0]?.innerText||el.innerText||el.placeholder||el.name),
+                type:short(el.getAttribute('type')),href:el.localName==='a'?short(new URL(el.href).origin+new URL(el.href).pathname):'',
                 editable:el.matches('input,textarea,[contenteditable=true]'),
                 password:el.matches('input[type=password]')
             }));
-        return {url:location.href,title:document.title,
+        return {url:location.origin+location.pathname,title:document.title,
             text:short(document.body?.innerText).slice(0,180),
             excerpt:String(document.body?.innerText||'').slice(0,5000),
             controls};
