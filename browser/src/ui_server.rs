@@ -725,7 +725,7 @@ async fn browser_resume(
         return (StatusCode::CONFLICT,"Saved task reached the step limit").into_response()
     }
     if ui.inner.lock().is_ok_and(|inner|
-        inner.pending_browser.is_some()||inner.pending_tool.is_some()){
+        inner.pending_browser.is_some()||inner.pending_tool.is_some()||inner.pending_auto.is_some()){
         return (StatusCode::CONFLICT,"Resolve current pending action first").into_response()
     }
     if busy(&ui){return (StatusCode::CONFLICT,"Charlotte is already working").into_response()}
@@ -761,7 +761,7 @@ async fn mcp_custom_action(
     let (Some(id),Some(url))=(form.custom_id.as_deref(),form.endpoint.as_deref()) else {
         return (StatusCode::BAD_REQUEST,"MCP ID and endpoint required").into_response()
     };
-    if ui.inner.lock().is_ok_and(|inner|inner.working||inner.pending_tool.is_some()){
+    if ui.inner.lock().is_ok_and(|inner|inner.working||inner.pending_tool.is_some()||inner.pending_auto.is_some()){
         return (StatusCode::CONFLICT,"Resolve the active tool request").into_response()
     }
     let result=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
@@ -781,7 +781,7 @@ async fn mcp_catalog_action(
     if crate::mcp_catalog::get(id).is_none(){
         return (StatusCode::BAD_REQUEST,"Unknown MCP catalog profile").into_response()
     }
-    if ui.inner.lock().is_ok_and(|inner|inner.pending_tool.is_some()||inner.working){
+    if ui.inner.lock().is_ok_and(|inner|inner.pending_tool.is_some()||inner.pending_auto.is_some()||inner.working){
         return (StatusCode::CONFLICT,"Resolve the active tool request first").into_response()
     }
     let database=crate::storage::Storage::open(
@@ -811,7 +811,7 @@ async fn browser_skill(
         _=>return (StatusCode::BAD_REQUEST,"Unknown browser skill").into_response(),
     };
     if ui.inner.lock().is_ok_and(|inner|
-        inner.pending_browser.is_some()||inner.pending_tool.is_some()){
+        inner.pending_browser.is_some()||inner.pending_tool.is_some()||inner.pending_auto.is_some()){
         return (StatusCode::CONFLICT,"Resolve Charlotte's pending action first").into_response()
     }
     let current=ui.tabs.lock().ok()
