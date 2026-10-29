@@ -113,7 +113,7 @@ impl Controller {
     fn automation_request(&mut self,request_id:i32,browser_id:i32,expected_origin:String,
         method:String,params:Value,reply:mpsc::Sender<Result<Value,String>>){
         // CEF references never leave the UI thread. Prevent stale tab actions.
-        if !matches!(method.as_str(),"Runtime.evaluate"|"Page.navigate"|"Input.dispatchMouseEvent")
+        if !matches!(method.as_str(),"Runtime.evaluate"|"Page.navigate"|"Input.dispatchMouseEvent"|"Page.captureScreenshot"|"Page.handleJavaScriptDialog"|"Page.getFrameTree")
             || params.to_string().len()>64*1024 {
             let _=reply.send(Err("Unsupported or oversized Charlotte CDP method".into()));return
         }
@@ -212,10 +212,19 @@ wrap_dev_tools_message_observer! {
         ){
             if message_id!=self.message_id {return}
             let response=if success==0{
-                Err("Chromium rejected automation command".to_owned())
+                Err(result.and_then(|bytes|serde_json::from_slice::<Value>(bytes).ok())
+                    .map(|e|format!("Chromium CDP error: {}",e.to_string().chars().take(240).collect::<String>()))
+                    .unwrap_or_else(||"Chromium rejected automation command".into()))
             }else{
-                result.and_then(|bytes|serde_json::from_slice::<Value>(bytes).ok())
-                    .ok_or_else(||"Malformed Chromium DevTools response".to_owned())
+                result.ok_or_else(||"Missing Chromium CDP response".to_owned())
+                    .and_then(|bytes|{
+                        if bytes.len()>2_100_000 {
+                            Err("Chromium automation result exceeds 2.1 MB".into())
+                        }else{
+                            serde_json::from_slice::<Value>(bytes)
+                                .map_err(|_|"Malformed Chromium DevTools response".into())
+                        }
+                    })
             };
             let _=self.reply.send(response);
             post_ui_command(Command::AutomationFinished(message_id));
