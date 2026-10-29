@@ -18,6 +18,7 @@ pub mod ui_server;
 pub mod auth;
 pub mod translate;
 pub mod mcp;
+pub mod agent;
 pub mod main;
 pub mod renderer;
 
