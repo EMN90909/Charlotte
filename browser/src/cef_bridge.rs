@@ -362,7 +362,8 @@ wrap_load_handler! {
             frame: Option<&mut Frame>, _http_status_code: i32,
         ) {
             let Some(frame) = frame else { return };
-            if frame.is_main() == 0 { return }
+            // A page can display ads in subframes too; apply scoped cosmetic
+            // selectors to each loaded frame, not just the main document.
             let url = frame.url().to_string();
             if !(url.starts_with("https://") || url.starts_with("http://")) { return }
             let selectors = match self.filter.lock() {
