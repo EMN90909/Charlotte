@@ -20,6 +20,7 @@ pub mod translate;
 pub mod mcp;
 pub mod mcp_catalog;
 pub mod mcp_stdio;
+pub mod mcp_oauth;
 pub mod agent;
 pub mod browser_automation;
 pub mod advanced_automation;
