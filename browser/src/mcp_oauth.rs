@@ -181,6 +181,12 @@ pub fn authorize(
         .ok_or("MCP resource does not advertise an OAuth authorization server")?;
     let issuer=https_url(issuer)?;
     let auth_meta=discover(&http,&issuer,false)?;
+    let metadata_issuer=auth_meta["issuer"].as_str()
+        .ok_or("OAuth authorization server metadata has no issuer")?;
+    if https_url(metadata_issuer)?.as_str().trim_end_matches('/')!=
+        issuer.as_str().trim_end_matches('/'){
+        return Err("OAuth issuer mismatch; refusing authorization-server switch".into())
+    }
     let supported=auth_meta["code_challenge_methods_supported"].as_array()
         .is_some_and(|values|values.iter().any(|v|v.as_str()==Some("S256")));
     if !supported{return Err("OAuth server did not advertise required PKCE S256".into())}
