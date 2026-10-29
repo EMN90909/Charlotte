@@ -3,7 +3,7 @@
 //! Bound only to 127.0.0.1 with an unpredictable per-launch form token.
 //! There is no Electron, Node process, websocket proxy or JS-facing OS API.
 use std::{net::TcpListener, sync::{Arc,Mutex,atomic::{AtomicBool,Ordering}}, thread};
-use axum::{extract::{State,Form},http::{HeaderMap,StatusCode,header},response::{Html,IntoResponse,Redirect,Response},routing::{get,post},Router};
+use axum::{extract::{State,Form},http::{HeaderMap,StatusCode,header},response::{Html,IntoResponse,Redirect,Response},routing::{get,post},Json,Router};
 use serde::Deserialize;
 use crate::{cef_bridge::{Filter,TabState}, services::{self, ChatIdentity, Provider, Turn}};
 #[derive(Clone, Debug)]
@@ -286,6 +286,18 @@ fn response_headers(mut response:Response)->Response{
     h.insert("x-frame-options","DENY".parse().unwrap());
     response
 }
+// Minimal loopback diagnostics without URLs, chat content or secrets.
+async fn health(State(ui):State<Ui>)->Json<serde_json::Value>{
+    let (enabled,rules,blocked)=ui.filter.read()
+        .map(|shield|(shield.is_enabled(),shield.rule_count(),shield.blocked_count()))
+        .unwrap_or((false,0,0));
+    Json(serde_json::json!({
+        "cef_main_frame_loads":crate::cef_bridge::main_frame_loads(),
+        "shields_enabled":enabled,
+        "filter_rules":rules,
+        "blocked_requests":blocked,
+    }))
+}
 pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
     use rand::{rngs::OsRng,RngCore};
     let mut nonce=[0u8;32];OsRng.fill_bytes(&mut nonce);
@@ -311,6 +323,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         runtime.block_on(async move{
             let router=Router::new()
                 .route("/chrome",get(|State(ui):State<Ui>|async move{chrome(&ui)}))
+                .route("/health",get(health))
                 .route("/sidebar",get(|State(ui):State<Ui>|async move{sidebar(&ui)}))
                 .route("/action",post(action))
                 .route("/ai",post(ai))
