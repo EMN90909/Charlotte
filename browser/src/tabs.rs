@@ -60,8 +60,8 @@ impl Tabs {
         if !crate::session::valid_page_url(url) { return false }
         tab.url = url.to_owned();
         tab.loading = true;
-        self.active = Some(id);
-        self.update_sleeping();
+        // A hidden CEF page may navigate on its own. Navigation must never
+        // activate that tab or unexpectedly interrupt current music/video.
         true
     }
     /// Restore a saved background tab without making it active or initiating
@@ -187,6 +187,16 @@ mod tests {
         assert_eq!(tabs.persistable(),
             (vec!["https://active.example/".into(),"https://background.example/path".into()],0));
         assert!(!tabs.all()[1].loading);
+    }
+    #[test]
+    fn hidden_page_navigation_does_not_steal_active_tab() {
+        let mut tabs=Tabs::default();
+        tabs.open(1);
+        tabs.open(2);
+        tabs.activate(1);
+        assert!(tabs.navigate(2,"https://background.example/redirect"));
+        assert_eq!(tabs.active_id(),Some(1));
+        assert!(tabs.all().iter().find(|t|t.id==2).unwrap().sleeping);
     }
     #[test]
     fn eco_sleep_does_not_destroy_background_tab_state() {
