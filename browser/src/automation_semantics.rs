@@ -105,6 +105,31 @@ pub fn compact_ax(response:&Value)->Value{
 }
 /// Small pruned role/name observation. Keep exact selectors only inside
 /// Rust; let the model use ephemeral accessible element indices.
+/// Self-heal only as a NEW proposal. Never dispatch input directly after
+/// re-targeting: role/name matching can be ambiguous on adversarial pages.
+pub fn replan_stale_target(
+    action:&Action,snapshot:&Value,old_role:&str,old_name:&str
+)->Result<Option<Action>,String>{
+    let (needs_editable,text)=match action{
+        Action::Click{..}=>(false,None),
+        Action::Type{text,..}=>(true,Some(text.clone())),
+        _=>return Ok(None)
+    };
+    if old_name.is_empty()||old_role.is_empty(){return Ok(None)}
+    let controls=snapshot["controls"].as_array().ok_or("No fresh controls")?;
+    let candidates:Vec<_>=controls.iter().filter(|c|
+        c["role"].as_str()==Some(old_role)&&c["label"].as_str()==Some(old_name)
+        && (!needs_editable||c["editable"].as_bool()==Some(true))
+    ).collect();
+    if candidates.len()!=1{return Ok(None)}
+    let selector=candidates[0]["selector"].as_str()
+        .filter(|s|!s.is_empty()).ok_or("Retargeted element has no CSS path")?;
+    let update=if let Some(text)=text{
+        Action::Type{selector:selector.into(),text}
+    }else{Action::Click{selector:selector.into()}};
+    crate::browser_automation::ensure_observed_target(&update,snapshot)?;
+    Ok(Some(update))
+}
 pub fn model_snapshot(snapshot:&Value)->Value{
     let controls=snapshot["controls"].as_array().map(|items|{
         items.iter().take(MAX_SEMANTIC_CONTROLS).map(|item|{
@@ -182,6 +207,19 @@ mod tests{
     assert!(model.contains("Open menu"));
     assert!(model.contains("index"));
     assert!(!model.contains("html > body"));
+ }
+ #[test]fn stale_element_repair_requires_unique_semantic_match(){
+    let old=Action::Click{selector:"html > body > button:nth-of-type(1)".into()};
+    let page=json!({"controls":[
+        {"selector":"html > body > button:nth-of-type(3)","role":"button","label":"Details"}
+    ]});
+    let healed=replan_stale_target(&old,&page,"button","Details").unwrap().unwrap();
+    assert_eq!(healed,Action::Click{selector:"html > body > button:nth-of-type(3)".into()});
+    let ambiguous=json!({"controls":[
+        {"selector":"button:nth-of-type(1)","role":"button","label":"Details"},
+        {"selector":"button:nth-of-type(2)","role":"button","label":"Details"}
+    ]});
+    assert!(replan_stale_target(&old,&ambiguous,"button","Details").unwrap().is_none());
  }
  #[test]fn action_risk_treats_unlabelled_coordinates_as_consequential(){
      let snap=json!({"controls":[{"selector":"button","label":"Delete account"}]});
