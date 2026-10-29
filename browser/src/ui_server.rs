@@ -449,7 +449,44 @@ fn plan_browser_next(
     }
     match proposed{
         BrowserDecision::Answer(text)=>{
-            browser_answer(state,&goal,text,Some(&run_id),step);
+            // A browser-first cross-app task never silently launches an MCP
+            // operation. Completing its Chromium stage stages another,
+            // separate page-sharing consent followed by per-tool approval.
+            let continuation=state.inner.lock().ok().and_then(|mut inner|{
+                if inner.auto_handoff.as_ref().is_some_and(|(id,_)|id==&run_id){
+                    inner.auto_handoff.take().map(|(_,server)|server)
+                }else{None}
+            });
+            if let Some(server_id)=continuation {
+                let source=state.tabs.lock().ok().and_then(|tabs|
+                    tabs.active().map(|t|(t.id,t.url.clone())))
+                    .ok_or("Chromium source tab closed before cross-app handoff")?;
+                if source.0!=context.browser_id ||
+                   permissions::canonical_origin(&source.1).as_deref()!=Some(context.origin.as_str()){
+                    return Err("Chromium source changed before cross-app handoff; task paused".into())
+                }
+                let mut inner=state.inner.lock().map_err(|_|"Automation state unavailable")?;
+                if inner.active_run_id.as_deref()!=Some(run_id.as_str()) ||
+                   inner.cancel_automation.load(Ordering::SeqCst) {
+                    return Err("Browser task was paused before external handoff".into())
+                }
+                inner.active_run_id=None;
+                inner.automation_browser_id=None;
+                inner.automation_origin=None;
+                inner.pending_browser=None;
+                inner.pending_auto=Some(PendingAuto{
+                    route:AutoRoute::PageToMcp{server_id},
+                    question:goal,provider_name:provider_name,source,
+                });
+                inner.ai.push(Turn{role:"assistant".into(),
+                    text:format!("Chromium stage finished: {}. Review the page before permitting the MCP handoff.",text.chars().take(700).collect::<String>())});
+                drop(inner);
+                checkpoint_status(&run_id,"done",
+                    "Chromium stage completed; separate page-to-MCP consent is required",step);
+                finish(state,None);
+            }else{
+                browser_answer(state,&goal,text,Some(&run_id),step);
+            }
         },
         BrowserDecision::Action(BrowserAction::Observe)=>{
             // Observation is performed before every planning step; letting
