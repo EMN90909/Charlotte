@@ -1,13 +1,13 @@
 //! Local, user-directed settings administration for native Charlotte.
 //! Changes persist to the same profile as the CEF browser; no browser
 //! process restart is required for future resource permission requests.
-use charlotte_native::{permissions::{self, Capability, Decision}, profile, storage::Storage, shield_lists};
+use charlotte_native::{permissions::{self, Capability, Decision}, profile, storage::Storage, shield_lists, mcp};
 use std::{env, process};
 
 const HELP: &str = "\
 Charlotte native settings
 Usage:
-  charlotte-settings permission allow|deny|reset|show camera|microphone|geolocation <origin>
+  charlotte-settings permission allow|deny|reset|show camera|microphone|geolocation|notifications <origin>
   charlotte-settings shields on|off|show
   charlotte-settings shields lists
   charlotte-settings shields list on|off <list-id>
@@ -22,6 +22,10 @@ Usage:
   charlotte-settings credential set|remove|show openai|claude|gemini
   charlotte-settings account status|signout
   charlotte-settings account signin|signup <email>
+  charlotte-settings mcp servers
+  charlotte-settings mcp add <id> <https-url>
+  charlotte-settings mcp remove <id>
+  charlotte-settings mcp token set|remove <id>
   charlotte-settings mcp tools <https-url>
   charlotte-settings mcp call <https-url> <namespaced-tool> <JSON-arguments>
   charlotte-settings profile
@@ -39,6 +43,31 @@ fn run(args: &[String]) -> Result<(), String> {
     let db = Storage::open(&profile::profile_root().join("charlotte.sqlite")).map_err(|e|e.to_string())?;
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["profile"] => println!("{}", profile::profile_root().display()),
+        ["mcp","servers"] => for server in mcp::saved_servers(&db)?{
+            println!("{}\t{}",server.id,server.url);
+        },
+        ["mcp","add",id,url] => {
+            mcp::save_server(&db,id,url)?;
+            println!("Charlotte MCP server {id} saved");
+        },
+        ["mcp","remove",id] => {
+            mcp::remove_server(&db,id)?;
+            println!("Charlotte MCP server {id} removed");
+        },
+        ["mcp","token","set",id] => {
+            if !mcp::saved_servers(&db)?.iter().any(|s|s.id==*id){
+                return Err("Register this MCP server first".into())
+            }
+            eprintln!("Paste MCP access token (hidden input):");
+            let secret=rpassword::read_password().map_err(|e|e.to_string())?;
+            if secret.trim().is_empty(){return Err("Empty token rejected".into())}
+            charlotte_native::credentials::store(&format!("mcp:{id}"),&secret)
+                .map_err(|e|e.to_string())?;
+        },
+        ["mcp","token","remove",id] => {
+            charlotte_native::credentials::remove(&format!("mcp:{id}"))
+                .map_err(|e|e.to_string())?;
+        },
         ["mcp","tools",endpoint] => {
             let mut client=charlotte_native::mcp::Registry::new();
             for tool in client.connect("manual",endpoint,None)?{
