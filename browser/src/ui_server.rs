@@ -123,6 +123,14 @@ fn sidebar(ui:&Ui)->Html<String>{
     html.push_str(r#"<section><h2>Ask Charlotte</h2><div class="stack"><form action="/ai" method="post" style="display:flex;flex-direction:column;align-items:stretch">"#);
     html.push_str(&token);
     html.push_str(r#"<label for="provider">Provider</label><select name="provider" id="provider"><option value="openai">OpenAI</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="ollama">Ollama</option></select><textarea name="value" aria-label="Ask an AI" maxlength="4000" placeholder="Ask Charlotte a question or give Charlotte a task…"></textarea><button class="primary">Send</button></form>"#);
+    let configured=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
+        .ok().and_then(|db|mcp::saved_servers(&db).ok()).unwrap_or_default();
+    if configured.is_empty(){
+        html.push_str("<p class=\"muted\">No MCP tools connected. Configure a server with charlotte-settings mcp add.</p>");
+    } else {
+        let names=configured.iter().map(|c|escape(&c.id)).collect::<Vec<_>>().join(", ");
+        html.push_str(&format!("<p class=\"muted\">MCP servers configured: {names}. Charlotte asks before using any tool.</p>"));
+    }
     if let Some(pending)=&inner.pending_tool {
         html.push_str("<div class=\"bubble\"><strong>Charlotte requests approval to use an MCP tool</strong>");
         html.push_str(&format!("<p>Tool: <code>{}</code></p><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre>",
