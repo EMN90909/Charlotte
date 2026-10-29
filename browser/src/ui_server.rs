@@ -317,6 +317,13 @@ fn plan_browser_next(
     state:&Ui,context:BrowserContext,goal:String,provider_name:String,
     step:u8,previous:&str,visual:bool,run_id:String,
 )->Result<(),String>{
+    let cancelled=state.inner.lock().ok().map(|inner|
+        inner.cancel_automation.load(Ordering::SeqCst)).unwrap_or(true);
+    if cancelled {
+        checkpoint_status(&run_id,"paused","Task paused before page inspection",step);
+        finish(state,None);
+        return Ok(())
+    }
     checkpoint_status(&run_id,"observing","Reading current page",step);
     let (provider,default_model)=provider_model(&provider_name).ok_or("Unknown AI provider")?;
     let model=if visual&&provider_name=="ollama"{"llava"}else{default_model};
@@ -337,8 +344,15 @@ fn plan_browser_next(
     checkpoint_status(&run_id,"planning","Choosing next step",step);
     let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
     let history=state.inner.lock().ok().map(|inner|inner.ai.clone()).unwrap_or_default();
-    match browser_agent::decide(provider,key.as_deref(),model,&history,
-        &goal,step,&snapshot,previous,screenshot.as_ref().map(|(jpeg,_)|jpeg.as_str()))?{
+    let proposed=browser_agent::decide(provider,key.as_deref(),model,&history,
+        &goal,step,&snapshot,previous,screenshot.as_ref().map(|(jpeg,_)|jpeg.as_str()))?;
+    if state.inner.lock().ok().map(|inner|
+        inner.cancel_automation.load(Ordering::SeqCst)).unwrap_or(true){
+        checkpoint_status(&run_id,"paused","User paused Charlotte; no further action proposed",step);
+        finish(state,None);
+        return Ok(())
+    }
+    match proposed{
         BrowserDecision::Answer(text)=>{
             browser_answer(state,&goal,text,Some(&run_id));
         },
@@ -438,6 +452,12 @@ async fn browser_approve(
                     }
                 }
             }
+            if state.inner.lock().ok().map(|inner|
+                inner.cancel_automation.load(Ordering::SeqCst)).unwrap_or(true){
+                checkpoint_status(&pending.run_id,"paused","User paused before dispatch",pending.step);
+                finish(&state,None);
+                return Ok(())
+            }
             checkpoint_status(&pending.run_id,"executing",
                 "Executing explicitly approved action",pending.step);
             attempted=true;
@@ -457,7 +477,9 @@ async fn browser_approve(
             let message=if attempted {
                 format!("Charlotte attempted the approved browser action, but verification failed. It may have changed the page: {error}")
             }else{error};
-            checkpoint_status(&pending.run_id,"interrupted",&message,pending.step);
+            let cancelled=state.inner.lock().ok().map(|inner|
+                inner.cancel_automation.load(Ordering::SeqCst)).unwrap_or(false);
+            checkpoint_status(&pending.run_id,if cancelled{"paused"}else{"interrupted"},&message,pending.step);
             finish(&state,Some(message));
         }
     });
