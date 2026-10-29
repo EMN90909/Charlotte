@@ -57,6 +57,18 @@ impl Tabs {
         self.active = Some(id);
         true
     }
+    /// Restore a saved background tab without making it active or initiating
+    /// a Chromium navigation. The CEF view starts at about:blank until selected.
+    pub fn restore_background(&mut self, id: i32, url: &str) -> bool {
+        if !crate::session::valid_page_url(url) { return false; }
+        let Some(tab) = self.open.iter_mut().find(|t| t.id == id) else { return false };
+        tab.url = url.to_owned();
+        tab.title = url::Url::parse(url).ok()
+            .and_then(|parsed| parsed.host_str().map(str::to_owned))
+            .unwrap_or_else(|| "Restored tab".into());
+        tab.loading = false;
+        true
+    }
     pub fn title(&mut self, id: i32, title: &str) -> bool {
         let Some(tab) = self.open.iter_mut().find(|t| t.id == id) else { return false };
         let normalized = title.trim();
@@ -145,6 +157,19 @@ mod tests {
         }
         assert_eq!(tabs.closed.len(), 20);
         assert_eq!(tabs.last_closed().as_deref(), Some("https://example.com/25"));
+    }
+    #[test]
+    fn background_restore_preserves_active_tab_and_saved_session() {
+        let mut tabs=Tabs::default();
+        tabs.open(1);
+        tabs.navigate(1,"https://active.example/");
+        tabs.open(2);
+        tabs.activate(1);
+        assert!(tabs.restore_background(2,"https://background.example/path"));
+        assert_eq!(tabs.active_id(),Some(1));
+        assert_eq!(tabs.persistable(),
+            (vec!["https://active.example/".into(),"https://background.example/path".into()],0));
+        assert!(!tabs.all()[1].loading);
     }
     #[test]
     fn caps_open_tabs() {
