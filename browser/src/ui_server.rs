@@ -171,7 +171,7 @@ fn sidebar(ui:&Ui)->Html<String>{
     for p in crate::ai_providers::PROVIDERS{
         html.push_str(&format!(r#"<option value="{}">{}</option>"#,escape(p.id),escape(p.name)));
     }
-    html.push_str(r#"</select><input type="password" name="api_key" maxlength="4096" autocomplete="new-password" placeholder="BYOK API key (not for Cloud)"><input name="model" list="ai-model-hints" maxlength="120" placeholder="Model ID or auto"><button class="primary" name="command" value="save">Save configuration</button><button name="command" value="test">Test saved model</button><button name="command" value="remove">Remove provider key</button></form>"#));
+    html.push_str(r#"</select><input type="password" name="api_key" maxlength="4096" autocomplete="new-password" placeholder="BYOK API key (not for Cloud)"><input name="model" list="ai-model-hints" maxlength="120" placeholder="Model ID or auto"><button class="primary" name="command" value="save">Save configuration</button><button name="command" value="test">Test saved model</button><button name="command" value="remove">Remove provider key</button></form>"#);
     html.push_str(r#"<datalist id="ai-model-hints">"#);
     for p in crate::ai_providers::PROVIDERS{
         for model in p.models{
