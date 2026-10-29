@@ -45,6 +45,10 @@ in the PDF were not independently audited.
 - **Stable tool names** derived from each saved server ID, not connection
   order, to avoid misrouting approvals when active profiles differ between
   planning and execution.
+- MCP tools are conservatively classified as **Read-only**, **Modifying**,
+  or **Financial** for the approval card. Unknown operations default to
+  Modifying; Stripe and PayPal default to Financial. The displayed risk
+  must still match after the server reconnects before executing.
 - **Every MCP tool call requires a signed, explicit approval** in Charlotte's
   sidebar; no read-only exceptions are silently executed. The approved
   server and advertised tool are re-verified just before invocation.
