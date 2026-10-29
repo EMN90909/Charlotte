@@ -363,15 +363,20 @@ async fn browser_approve(
         let outcome=(||->Result<(),String>{
             // Check the actual live Chromium URL before executing a selector
             // generated from an earlier DOM snapshot.
-            let current=pending.context.observe_settled()?;
-            if current.get("url").and_then(serde_json::Value::as_str)!=Some(pending.observed_url.as_str()){
-                return Err("Page changed since Charlotte proposed this action. Nothing was clicked or typed; start a new task.".into())
-            }
-            browser_automation::ensure_observed_target(&pending.action,&current)?;
-            if matches!(pending.action,BrowserAction::ClickAt{..}){
-                let (new_image,_)=pending.context.screenshot()?;
-                if pending.screenshot_fingerprint!=Some(screenshot_fingerprint(&new_image)){
-                    return Err("The visual page changed since Charlotte proposed the click; nothing was clicked. Re-plan this step.".into())
+            // Runtime.evaluate cannot execute while a blocking JavaScript
+            // alert/confirm/prompt is open. CEF still checks tab+origin before
+            // invoking Page.handleJavaScriptDialog.
+            if !matches!(pending.action,BrowserAction::Dialog{..}){
+                let current=pending.context.observe_settled()?;
+                if current.get("url").and_then(serde_json::Value::as_str)!=Some(pending.observed_url.as_str()){
+                    return Err("Page changed since Charlotte proposed this action. Nothing was clicked or typed; start a new task.".into())
+                }
+                browser_automation::ensure_observed_target(&pending.action,&current)?;
+                if matches!(pending.action,BrowserAction::ClickAt{..}){
+                    let (new_image,_)=pending.context.screenshot()?;
+                    if pending.screenshot_fingerprint!=Some(screenshot_fingerprint(&new_image)){
+                        return Err("The visual page changed since Charlotte proposed the click; nothing was clicked. Re-plan this step.".into())
+                    }
                 }
             }
             attempted=true;
