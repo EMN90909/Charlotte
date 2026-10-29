@@ -1,14 +1,17 @@
 //! Local, user-directed settings administration for native Charlotte.
 //! Changes persist to the same profile as the CEF browser; no browser
 //! process restart is required for future resource permission requests.
-use charlotte_native::{permissions::{self, Capability, Decision}, profile, storage::Storage};
+use charlotte_native::{permissions::{self, Capability, Decision}, profile, storage::Storage, shield_lists, mcp};
 use std::{env, process};
 
 const HELP: &str = "\
 Charlotte native settings
 Usage:
-  charlotte-settings permission allow|deny|reset|show camera|microphone|geolocation <origin>
+  charlotte-settings permission allow|deny|reset|show camera|microphone|geolocation|notifications <origin>
   charlotte-settings shields on|off|show
+  charlotte-settings shields lists
+  charlotte-settings shields list on|off <list-id>
+  charlotte-settings shields update
   charlotte-settings bookmark add <https-url> <title>
   charlotte-settings bookmark remove <https-url>
   charlotte-settings bookmark list
@@ -19,10 +22,25 @@ Usage:
   charlotte-settings credential set|remove|show openai|claude|gemini
   charlotte-settings account status|signout
   charlotte-settings account signin|signup <email>
+  charlotte-settings mcp servers
+  charlotte-settings mcp catalog
+  charlotte-settings mcp enable <catalog-id>
+  charlotte-settings mcp disable <catalog-id>
+  charlotte-settings mcp verify <configured-id>
+  charlotte-settings mcp oauth authorize <id>
+  charlotte-settings mcp oauth client-id set|remove <id>
+  charlotte-settings mcp filesystem root set <existing-directory>
+  charlotte-settings mcp filesystem root remove
+  charlotte-settings mcp sqlite file set <existing-sqlite-file>
+  charlotte-settings mcp sqlite file remove
+  charlotte-settings mcp add <id> <https-url>
+  charlotte-settings mcp remove <id>
+  charlotte-settings mcp token set|remove <id>
   charlotte-settings mcp tools <https-url>
   charlotte-settings mcp call <https-url> <namespaced-tool> <JSON-arguments>
   charlotte-settings profile
-The browser must be restarted for changes to ad blocking; media permissions
+Toolbar changes to Shields apply immediately; settings CLI list changes and
+manual filter-list updates apply when the browser is next launched. Media permissions
 are checked on every CEF media request. Only HTTPS origins or loopback HTTP
 origins are permitted for remembered permissions.
 ";
@@ -35,6 +53,113 @@ fn run(args: &[String]) -> Result<(), String> {
     let db = Storage::open(&profile::profile_root().join("charlotte.sqlite")).map_err(|e|e.to_string())?;
     match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["profile"] => println!("{}", profile::profile_root().display()),
+        ["mcp","sqlite","file","set",filename]=>{
+            let file=std::fs::canonicalize(filename).map_err(|e|e.to_string())?;
+            if !file.is_file(){return Err("SQLite MCP selection is not a file".into())}
+            // Prove the selection is a valid SQLite file in read-only mode.
+            let _db=rusqlite::Connection::open_with_flags(
+                &file,rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+            ).map_err(|e|e.to_string())?;
+            charlotte_native::credentials::store("mcp-file:sqlite",&file.to_string_lossy())
+                .map_err(|e|e.to_string())?;
+            println!("Approved read-only SQLite MCP file: {}",file.display());
+        },
+        ["mcp","sqlite","file","remove"]=>{
+            charlotte_native::credentials::remove("mcp-file:sqlite")
+                .map_err(|e|e.to_string())?;
+            println!("Removed approved SQLite MCP file");
+        },
+        ["mcp","filesystem","root","set",directory]=>{
+            let root=std::fs::canonicalize(directory).map_err(|e|e.to_string())?;
+            if !root.is_dir(){return Err("Filesystem MCP root must be a directory".into())}
+            charlotte_native::credentials::store("mcp-root:filesystem",&root.to_string_lossy())
+                .map_err(|e|e.to_string())?;
+            println!("Approved filesystem MCP root: {}",root.display());
+            println!("File operations through this MCP require separate agent approval.");
+        },
+        ["mcp","filesystem","root","remove"]=>{
+            charlotte_native::credentials::remove("mcp-root:filesystem")
+                .map_err(|e|e.to_string())?;
+            println!("Removed approved filesystem MCP root");
+        },
+        ["mcp","catalog"]=>{
+            let selected=mcp::saved_servers(&db)?;
+            for p in charlotte_native::mcp_catalog::PRESETS {
+                let enabled=selected.iter().any(|s|s.id==p.id);
+                let supported=charlotte_native::mcp_catalog::supported(p);
+                println!("{}\t{}\t{}\t{}\t{}\t{}",
+                    p.id,if enabled{"configured"}else{"not configured"},
+                    if supported{"setup available"}else{"requires manual endpoint"},
+                    p.category,p.name,p.auth);
+            }
+            println!("Catalog entries are templates, not verified live OAuth connections.");
+        },
+        ["mcp","enable",id]=>{
+            mcp::save_preset(&db,id)?;
+            println!("Registered MCP profile {id}; authenticate separately before use.");
+        },
+        ["mcp","disable",id]=>{
+            mcp::remove_server(&db,id)?;
+            println!("Removed MCP profile {id}. Stored keys can be removed via mcp token remove {id}.");
+        },
+        ["mcp","oauth","authorize",id]=>{
+            let server=mcp::saved_servers(&db)?.into_iter().find(|p|p.id==*id)
+                .ok_or("Enable this catalog or custom MCP server before authorization")?;
+            let client_id=charlotte_native::credentials::retrieve(&format!("mcp-client:{id}")).ok();
+            charlotte_native::mcp_oauth::authorize(id,&server.url,client_id.as_deref())?;
+            println!("Run: charlotte-settings mcp verify {id}");
+        },
+        ["mcp","oauth","client-id","set",id]=>{
+            if !mcp::saved_servers(&db)?.iter().any(|server|server.id==*id){
+                return Err("Enable this MCP server first".into())
+            }
+            eprintln!("Enter your registered OAuth public client ID (hidden input):");
+            let client_id=rpassword::read_password().map_err(|e|e.to_string())?;
+            if client_id.is_empty()||client_id.len()>1024{
+                return Err("Invalid OAuth client ID".into())
+            }
+            charlotte_native::credentials::store(&format!("mcp-client:{id}"),&client_id)
+                .map_err(|e|e.to_string())?;
+            println!("Saved MCP public client ID in the OS credential store");
+        },
+        ["mcp","oauth","client-id","remove",id]=>{
+            charlotte_native::credentials::remove(&format!("mcp-client:{id}"))
+                .map_err(|e|e.to_string())?;
+            println!("Cleared MCP OAuth client ID for {id}");
+        },
+        ["mcp","verify",id]=>{
+            let registry=mcp::connect_selected(&db,id)?;
+            let tools=registry.tools();
+            println!("MCP profile {id}: {} tools advertised",tools.len());
+            for tool in tools.iter().take(40){
+                println!("{}\t{}",tool.name,tool.description.chars().take(100).collect::<String>());
+            }
+        },
+        ["mcp","servers"] => for server in mcp::saved_servers(&db)?{
+            println!("{}\t{}",server.id,server.url);
+        },
+        ["mcp","add",id,url] => {
+            mcp::save_server(&db,id,url)?;
+            println!("Charlotte MCP server {id} saved");
+        },
+        ["mcp","remove",id] => {
+            mcp::remove_server(&db,id)?;
+            println!("Charlotte MCP server {id} removed");
+        },
+        ["mcp","token","set",id] => {
+            if !mcp::saved_servers(&db)?.iter().any(|s|s.id==*id){
+                return Err("Register this MCP server first".into())
+            }
+            eprintln!("Paste MCP access token (hidden input):");
+            let secret=rpassword::read_password().map_err(|e|e.to_string())?;
+            if secret.trim().is_empty(){return Err("Empty token rejected".into())}
+            charlotte_native::credentials::store(&format!("mcp:{id}"),&secret)
+                .map_err(|e|e.to_string())?;
+        },
+        ["mcp","token","remove",id] => {
+            charlotte_native::credentials::remove(&format!("mcp:{id}"))
+                .map_err(|e|e.to_string())?;
+        },
         ["mcp","tools",endpoint] => {
             let mut client=charlotte_native::mcp::Registry::new();
             for tool in client.connect("manual",endpoint,None)?{
@@ -90,6 +215,20 @@ fn run(args: &[String]) -> Result<(), String> {
             println!("Shields {} (restart Charlotte to apply)", args[1]);
         }
         ["shields", "show"] => println!("{}", db.setting("shields").map_err(|e|e.to_string())?.unwrap_or_else(||"on".into())),
+        ["shields","lists"] => for item in shield_lists::LISTS {
+            let on=shield_lists::enabled(&db,item);
+            let cache=shield_lists::list_file(&profile::profile_root(),item.id)?;
+            println!("{}\t{}\t{}\t{}",item.id,if on {"on"}else{"off"},
+                if cache.exists() {"cached"}else{"not downloaded"},item.name);
+        },
+        ["shields","list",action,id] if *action=="on" || *action=="off" => {
+            shield_lists::set_enabled(&db,id,*action=="on")?;
+            println!("Shield list {id}: {action} (restart Charlotte to apply)");
+        },
+        ["shields","update"] => {
+            let updated=shield_lists::update(&db,&profile::profile_root(),true)?;
+            println!("Refreshed {updated} subscription files (restart Charlotte to load)");
+        },
         ["permission", action, capability, origin] => {
             let cap = Capability::from_name(capability).ok_or("Expected camera, microphone or geolocation")?;
             match *action {

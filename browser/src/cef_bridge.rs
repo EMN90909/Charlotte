@@ -1,17 +1,64 @@
 //! CEF browser-process handlers. No Electron IPC, Node, or renderer privileges.
 //! CEF invokes resource handlers on its IO thread; DB writes occur on the UI thread.
 use cef::*;
-use std::sync::{Arc, Mutex};
-use crate::{profile, shield::{Decision, Shield, STARTER_RULES}, storage::Storage, tabs::Tabs};
+use std::sync::{Arc, Mutex, RwLock, atomic::{AtomicU64,Ordering}};
+use crate::{profile, shield::{Decision, Shield, STARTER_RULES}, shield_lists, storage::Storage, tabs::Tabs};
+
+// Incremented only by a real CEF page-frame load callback, not the local UI.
+static CEF_MAIN_FRAME_LOADS:AtomicU64=AtomicU64::new(0);
+pub fn main_frame_loads()->u64{CEF_MAIN_FRAME_LOADS.load(Ordering::Relaxed)}
 
 /// Shared rule engine compiled once, not once per network request.
-pub type Filter = Arc<Mutex<Shield>>;
+pub type Filter = Arc<RwLock<Shield>>;
 pub type TabState = Arc<Mutex<Tabs>>;
+static REFRESH_IN_PROGRESS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Compile and update subscription lists outside CEF's UI/IO callbacks.
+pub fn schedule_filter_refresh(filter:Filter) {
+    use std::sync::atomic::Ordering;
+    if REFRESH_IN_PROGRESS.compare_exchange(false,true,Ordering::AcqRel,Ordering::Relaxed).is_err(){
+        return;
+    }
+    let worker=std::thread::Builder::new().name("charlotte-shield-lists".into()).spawn(move||{
+        struct ResetRefresh;
+        impl Drop for ResetRefresh {
+            fn drop(&mut self) {
+                REFRESH_IN_PROGRESS.store(false,std::sync::atomic::Ordering::Release);
+            }
+        }
+        let _reset=ResetRefresh;
+        let profile=profile::profile_root();
+        let Ok(db)=Storage::open(&profile.join("charlotte.sqlite")) else {return};
+        let install=|mut fresh:Shield|{
+            if let Ok(mut current)=filter.write(){
+                fresh.set_enabled(current.is_enabled());
+                fresh.set_blocked_count(current.blocked_count());
+                *current=fresh;
+            }
+        };
+        install(shield_lists::load_cached(&db,&profile));
+        if filter.read().map(|f|!f.is_enabled()).unwrap_or(true) {return}
+        match shield_lists::update(&db,&profile,false){
+            Ok(changed) if changed>0=>install(shield_lists::load_cached(&db,&profile)),
+            Ok(_)=>{},
+            Err(error)=>eprintln!("Could not update native adblock lists: {error}"),
+        }
+    });
+    if let Err(error)=worker {
+        REFRESH_IN_PROGRESS.store(false,Ordering::Release);
+        eprintln!("Unable to start Shields background worker: {error}");
+    }
+}
+
+/// Start with the offline starter rules immediately; load larger lists later.
 pub fn default_filter() -> Filter {
     let enabled = Storage::open(&profile::profile_root().join("charlotte.sqlite"))
         .ok().and_then(|db| db.setting("shields").ok().flatten())
         .as_deref() != Some("off");
-    Arc::new(Mutex::new(Shield::new(&[STARTER_RULES], enabled)))
+    let filter=Arc::new(RwLock::new(Shield::new(&[STARTER_RULES], enabled)));
+    if enabled {schedule_filter_refresh(filter.clone())}
+    filter
 }
 
 wrap_client! {
@@ -151,6 +198,28 @@ wrap_download_handler! {
 wrap_permission_handler! {
     struct CharlottePermissionHandler;
     impl PermissionHandler {
+        fn on_show_permission_prompt(
+            &self, _browser: Option<&mut Browser>, _prompt_id:u64,
+            requesting_origin:Option<&CefString>, requested_permissions:u32,
+            callback:Option<&mut PermissionPromptCallback>,
+        )->i32{
+            // Alloy has no built-in Chrome-style permission prompt. Resolve
+            // notification requests explicitly, never silently grant them.
+            // A grant must already have been given via Charlotte's UI.
+            if requested_permissions != crate::permissions::NOTIFICATIONS_BIT {return 0}
+            let Some(callback)=callback else {return 0};
+            let origin=requesting_origin.map(CefString::to_string).unwrap_or_default();
+            let decision=Storage::open(&profile::profile_root().join("charlotte.sqlite"))
+                .ok()
+                .and_then(|db|crate::permissions::allowed_notification_prompt(
+                    &db,&origin,requested_permissions).ok().flatten());
+            match decision {
+                Some(crate::permissions::Decision::Allow) =>
+                    callback.cont(PermissionRequestResult::ACCEPT),
+                _ => callback.cont(PermissionRequestResult::DENY),
+            }
+            1
+        }
         fn on_request_media_access_permission(
             &self, _browser: Option<&mut Browser>, _frame: Option<&mut Frame>,
             requesting_origin: Option<&CefString>,
@@ -184,6 +253,7 @@ wrap_life_span_handler! {
         }
         fn on_before_close(&self, browser: Option<&mut Browser>) {
             let Some(browser) = browser else { return };
+            crate::app::post_ui_command(crate::ui_server::Command::BrowserClosed(browser.identifier()));
             if let Ok(mut tabs) = self.tabs.lock() { tabs.close(browser.identifier()); }
             persist_tabs(&self.tabs);
             crate::app::post_ui_command(crate::ui_server::Command::Sync);
@@ -210,6 +280,16 @@ wrap_request_handler! {
             ))
         }
 
+        fn on_render_process_terminated(
+            &self, browser: Option<&mut Browser>, _status: TerminationStatus,
+            _error_code: i32, _error_string: Option<&CefString>,
+        ){
+            if let Some(browser)=browser{
+                crate::app::post_ui_command(
+                    crate::ui_server::Command::BrowserCrashed(browser.identifier()));
+            }
+            // Never auto-reload or replay a previously approved action.
+        }
         fn on_certificate_error(
             &self, _browser: Option<&mut Browser>, _error: Errorcode,
             _url: Option<&CefString>, _ssl: Option<&mut Sslinfo>,
@@ -251,7 +331,7 @@ wrap_resource_request_handler! {
                 else if t.contains("sub_frame") { "subdocument" }
                 else if t.contains("main_frame") { "document" }
                 else { "other" };
-            let decision = match self.filter.lock() {
+            let decision = match self.filter.read() {
                 Ok(filter) => filter.check(&url, &source, kind, &method),
                 Err(_) => return ReturnValue::CANCEL,
             };
@@ -290,7 +370,8 @@ wrap_display_handler! {
                 if let Ok(mut tabs) = self.tabs.lock() {
                     tabs.title(id, &title.to_string());
                 }
-                persist_tabs(&self.tabs);
+                // Titles are not stored in session snapshots; avoid a disk write
+                // for every transient title update.
             }
         }
         fn on_address_change(
@@ -341,37 +422,36 @@ wrap_load_handler! {
             frame: Option<&mut Frame>, _http_status_code: i32,
         ) {
             let Some(frame) = frame else { return };
-            if frame.is_main() == 0 { return }
+            if frame.is_main()!=0 {CEF_MAIN_FRAME_LOADS.fetch_add(1,Ordering::Relaxed);}
+            // A page can display ads in subframes too; apply scoped cosmetic
+            // selectors to each loaded frame, not just the main document.
             let url = frame.url().to_string();
             if !(url.starts_with("https://") || url.starts_with("http://")) { return }
-            let selectors = match self.filter.lock() {
+            let selectors = match self.filter.read() {
                 Ok(shield) => shield.cosmetics(&url).hide_selectors.into_iter().collect::<Vec<_>>(),
                 Err(_) => return,
             };
             if selectors.is_empty() { return }
-            // JSON-encode CSS selectors as data, never interpolate them as JS code.
+            // JSON-encode selectors as data, never interpolate rule text into
+            // JavaScript. CSS handles dynamically inserted elements without
+            // a costly document-wide MutationObserver.
+            let mut selectors=selectors;
+            selectors.truncate(4096); // Bound per-frame setup work.
             let Ok(values) = serde_json::to_string(&selectors) else { return };
-            // DOM style changes avoid evaluating any scripts from third-party lists.
             let script = format!(r#"
                 (() => {{
-                    const selectors = {values};
-                    const hide = () => {{
-                        for (const selector of selectors) {{
-                            try {{
-                                document.querySelectorAll(selector).forEach(el => {{
-                                    el.style.setProperty('display', 'none', 'important');
-                                }});
-                            }} catch (_) {{}}
-                        }}
-                    }};
-                    hide();
-                    let queued = false;
-                    new MutationObserver(() => {{
-                        if (!queued) {{
-                            queued = true;
-                            requestAnimationFrame(() => {{ queued = false; hide(); }});
-                        }}
-                    }}).observe(document.documentElement, {{childList: true, subtree: true}});
+                    const rules = {values};
+                    const style = document.createElement('style');
+                    style.setAttribute('data-charlotte-shields', '');
+                    (document.head || document.documentElement).appendChild(style);
+                    const sheet = style.sheet;
+                    if (!sheet) return;
+                    for (const selector of rules) {{
+                        try {{
+                            // insertRule rejects multiple CSS rules.
+                            sheet.insertRule(selector + ' {{ display: none !important; }}', sheet.cssRules.length);
+                        }} catch (_) {{}}
+                    }}
                 }})();
             "#);
             frame.execute_java_script(

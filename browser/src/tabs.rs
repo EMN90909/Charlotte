@@ -13,6 +13,10 @@ pub struct Tab {
     pub title: String,
     pub url: String,
     pub loading: bool,
+    /// Eco sleep means background rendering is occluded, not destroyed.
+    /// Audio, timers and service workers remain owned by CEF.
+    #[serde(default)]
+    pub sleeping: bool,
 }
 
 impl Tab {
@@ -33,8 +37,9 @@ impl Tabs {
         if id <= 0 || self.open.iter().any(|tab| tab.id == id) || self.open.len() >= MAX_TABS {
             return false;
         }
-        self.open.push(Tab { id, title: "New tab".into(), url: String::new(), loading: true });
+        self.open.push(Tab { id, title: "New tab".into(), url: String::new(), loading: true, sleeping: false });
         self.active = Some(id);
+        self.update_sleeping();
         true
     }
     pub fn close(&mut self, id: i32) -> bool {
@@ -47,6 +52,7 @@ impl Tabs {
         if self.active == Some(id) {
             self.active = self.open.get(pos.min(self.open.len().saturating_sub(1))).map(|t| t.id);
         }
+        self.update_sleeping();
         true
     }
     pub fn navigate(&mut self, id: i32, url: &str) -> bool {
@@ -54,7 +60,21 @@ impl Tabs {
         if !crate::session::valid_page_url(url) { return false }
         tab.url = url.to_owned();
         tab.loading = true;
-        self.active = Some(id);
+        // A hidden CEF page may navigate on its own. Navigation must never
+        // activate that tab or unexpectedly interrupt current music/video.
+        true
+    }
+    /// Restore a saved background tab without making it active or initiating
+    /// a Chromium navigation. The CEF view starts at about:blank until selected.
+    pub fn restore_background(&mut self, id: i32, url: &str) -> bool {
+        if !crate::session::valid_page_url(url) { return false; }
+        let Some(tab) = self.open.iter_mut().find(|t| t.id == id) else { return false };
+        tab.url = url.to_owned();
+        tab.title = url::Url::parse(url).ok()
+            .and_then(|parsed| parsed.host_str().map(str::to_owned))
+            .unwrap_or_else(|| "Restored tab".into());
+        tab.loading = false;
+        tab.sleeping = true;
         true
     }
     pub fn title(&mut self, id: i32, title: &str) -> bool {
@@ -72,8 +92,17 @@ impl Tabs {
     pub fn activate(&mut self, id: i32) -> bool {
         if self.open.iter().any(|t| t.id == id) {
             self.active = Some(id);
+            self.update_sleeping();
             true
         } else { false }
+    }
+    /// Do not freeze/discard CEF page processes: that would stop audio,
+    /// live calls, web notification contexts and unsaved form state.
+    /// Inactive tabs are eco-slept by native View occlusion only.
+    fn update_sleeping(&mut self) {
+        for tab in &mut self.open {
+            tab.sleeping = self.active != Some(tab.id);
+        }
     }
     pub fn active(&self) -> Option<&Tab> {
         let id = self.active?;
@@ -145,6 +174,43 @@ mod tests {
         }
         assert_eq!(tabs.closed.len(), 20);
         assert_eq!(tabs.last_closed().as_deref(), Some("https://example.com/25"));
+    }
+    #[test]
+    fn background_restore_preserves_active_tab_and_saved_session() {
+        let mut tabs=Tabs::default();
+        tabs.open(1);
+        tabs.navigate(1,"https://active.example/");
+        tabs.open(2);
+        tabs.activate(1);
+        assert!(tabs.restore_background(2,"https://background.example/path"));
+        assert_eq!(tabs.active_id(),Some(1));
+        assert_eq!(tabs.persistable(),
+            (vec!["https://active.example/".into(),"https://background.example/path".into()],0));
+        assert!(!tabs.all()[1].loading);
+    }
+    #[test]
+    fn hidden_page_navigation_does_not_steal_active_tab() {
+        let mut tabs=Tabs::default();
+        tabs.open(1);
+        tabs.open(2);
+        tabs.activate(1);
+        assert!(tabs.navigate(2,"https://background.example/redirect"));
+        assert_eq!(tabs.active_id(),Some(1));
+        assert!(tabs.all().iter().find(|t|t.id==2).unwrap().sleeping);
+    }
+    #[test]
+    fn eco_sleep_does_not_destroy_background_tab_state() {
+        let mut tabs=Tabs::default();
+        tabs.open(10);
+        tabs.navigate(10,"https://music.example/song");
+        tabs.open(20);
+        tabs.navigate(20,"https://news.example/");
+        assert!(tabs.all().iter().find(|t|t.id==10).unwrap().sleeping);
+        assert!(!tabs.all().iter().find(|t|t.id==20).unwrap().sleeping);
+        assert_eq!(tabs.persistable().0.len(),2);
+        tabs.activate(10);
+        assert!(!tabs.all().iter().find(|t|t.id==10).unwrap().sleeping);
+        assert!(tabs.all().iter().find(|t|t.id==20).unwrap().sleeping);
     }
     #[test]
     fn caps_open_tabs() {

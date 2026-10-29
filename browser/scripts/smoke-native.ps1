@@ -31,16 +31,29 @@ try {
   if (!$port -or $port -notmatch '^\d+$') { throw 'Native UI server did not start' }
   $chrome = Invoke-WebRequest "http://127.0.0.1:$port/chrome"
   $sidebar = Invoke-WebRequest "http://127.0.0.1:$port/sidebar"
-  if ($chrome.Content -notmatch 'Charlotte' -or $sidebar.Content -notmatch 'Ask AI') {
+  if ($chrome.Content -notmatch 'Charlotte' -or $sidebar.Content -notmatch 'Ask Charlotte' -or $sidebar.Content -notmatch 'Automate this Chromium tab' -or $sidebar.Content -notmatch 'Visual automation \(shares a screenshot\)' -or $sidebar.Content -notmatch 'Accept open dialog' -or $sidebar.Content -notmatch 'Browser skills' -or $sidebar.Content -notmatch 'MCP integrations directory' -or $sidebar.Content -notmatch 'value="auto"' -or $sidebar.Content -notmatch 'AI provider connection' -or $chrome.Content -notmatch 'Toggle ad blocker') {
     throw 'CEF native UI HTML is missing'
   }
+  $rendered = $false
+  foreach ($i in 1..100) {
+    $health = Invoke-RestMethod "http://127.0.0.1:$port/health" -TimeoutSec 2
+    if ($health.cef_main_frame_loads -ge 1) { $rendered = $true; break }
+    Start-Sleep -Milliseconds 300
+  }
+  if (!$rendered) { throw 'CEF never completed a main-frame load' }
   try {
     Invoke-WebRequest "http://127.0.0.1:$port/action" -Method POST -Body @{command='new'} | Out-Null
     throw 'CSRF request unexpectedly succeeded'
   } catch {
     if ($_.Exception.Response.StatusCode.value__ -ne 403) { throw }
   }
-  Write-Host 'Native Windows CEF launch and Rust UI smoke passed.'
+  try {
+    Invoke-WebRequest "http://127.0.0.1:$port/browser/approve" -Method POST -Body @{command='approve'} | Out-Null
+    throw 'Unsigned Chromium browser automation unexpectedly succeeded'
+  } catch {
+    if ($_.Exception.Response.StatusCode.value__ -ne 403) { throw }
+  }
+  Write-Host 'Native Windows CEF page render, browser automation UI and CSRF smoke passed.'
 } finally {
   if ($process -and !$process.HasExited) {
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue

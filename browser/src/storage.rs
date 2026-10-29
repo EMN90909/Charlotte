@@ -11,6 +11,14 @@ pub struct Visit { pub id: i64, pub url: String, pub title: String, pub visited_
 #[derive(Debug, PartialEq, Eq)]
 pub struct Message { pub id: i64, pub room: String, pub sender: String, pub body: String, pub created_at: i64 }
 
+/// A durable automation progress marker. No screenshots, cookies, field
+/// values or approval tokens are ever written to the run log.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct AutomationRun{
+    pub id:String,pub goal:String,pub origin:String,pub provider:String,
+    pub visual:bool,pub step:u8,pub status:String,pub summary:String,
+    pub updated_at:i64,
+}
 pub struct Storage(Connection);
 
 impl Storage {
@@ -37,6 +45,19 @@ impl Storage {
                 PRIMARY KEY(id, finished_at)
              );
              CREATE INDEX IF NOT EXISTS downloads_recent ON downloads(finished_at DESC);
+             CREATE TABLE IF NOT EXISTS automation_runs (
+                id TEXT PRIMARY KEY,
+                goal TEXT NOT NULL,
+                origin TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                visual INTEGER NOT NULL,
+                step INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS automation_runs_recent
+                ON automation_runs(updated_at DESC);
              COMMIT;",
         )?;
         if version < 2 {
@@ -49,6 +70,50 @@ impl Storage {
             connection.pragma_update(None, "user_version", 2)?;
         }
         Ok(Self(connection))
+    }
+
+    /// A task is written before execution, never after a step's side effect.
+    /// Actions, typed field contents and screenshots are purposely NOT saved.
+    pub fn save_automation_run(&self,run:&AutomationRun)->rusqlite::Result<()>{
+        if run.goal.len()>4000||run.summary.len()>500||run.step>100{
+            return Err(rusqlite::Error::InvalidQuery)
+        }
+        self.0.execute("INSERT INTO automation_runs
+            (id,goal,origin,provider,visual,step,status,summary,updated_at)
+            VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)
+            ON CONFLICT(id) DO UPDATE SET
+            step=excluded.step,status=excluded.status,summary=excluded.summary,
+            updated_at=excluded.updated_at",
+            params![run.id,run.goal,run.origin,run.provider,
+                i64::from(run.visual),i64::from(run.step),run.status,run.summary,
+                run.updated_at])?;
+        // Keep a small local audit log; no indefinite collection.
+        self.0.execute("DELETE FROM automation_runs WHERE id NOT IN
+            (SELECT id FROM automation_runs ORDER BY updated_at DESC LIMIT 25)",[])?;
+        Ok(())
+    }
+    pub fn latest_paused_automation_run(&self)->rusqlite::Result<Option<AutomationRun>>{
+        self.0.query_row("SELECT id,goal,origin,provider,visual,step,status,summary,updated_at
+            FROM automation_runs WHERE status IN ('observing','planning',
+             'awaiting_approval','executing','verifying','paused','interrupted')
+            ORDER BY updated_at DESC LIMIT 1",[],|row|{
+                let step:i64=row.get(5)?;
+                Ok(AutomationRun{
+                    id:row.get(0)?,goal:row.get(1)?,origin:row.get(2)?,
+                    provider:row.get(3)?,visual:row.get::<_,i64>(4)?!=0,
+                    step:step.clamp(0,255) as u8,status:row.get(6)?,
+                    summary:row.get(7)?,updated_at:row.get(8)?
+                })
+            }).optional()
+    }
+    pub fn set_automation_status(&self,id:&str,status:&str,summary:&str,step:u8)
+        ->rusqlite::Result<bool>{
+        let now=std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
+        Ok(self.0.execute("UPDATE automation_runs SET status=?2,summary=?3,
+            step=?4,updated_at=?5 WHERE id=?1",params![
+                id,status,summary.chars().take(500).collect::<String>(),i64::from(step),now
+            ])?!=0)
     }
 
     pub fn setting(&self, key: &str) -> rusqlite::Result<Option<String>> {
@@ -170,6 +235,21 @@ impl Storage {
 mod tests {
     use super::*;
 
+    #[test]
+    fn automation_checkpoints_survive_reopening_without_secrets(){
+        let path=std::env::temp_dir().join(format!("charlotte-automation-{}.sqlite",std::process::id()));
+        let checkpoint=AutomationRun{id:"test".into(),goal:"Review product plans".into(),
+            origin:"https://example.org".into(),provider:"ollama".into(),visual:false,
+            step:1,status:"awaiting_approval".into(),summary:"Click plan details".into(),
+            updated_at:24};
+        {let db=Storage::open(&path).unwrap();
+         db.save_automation_run(&checkpoint).unwrap();}
+        let db=Storage::open(&path).unwrap();
+        assert_eq!(db.latest_paused_automation_run().unwrap(),Some(checkpoint));
+        assert!(db.set_automation_status("test","done","Completed",2).unwrap());
+        assert!(db.latest_paused_automation_run().unwrap().is_none());
+        drop(db);let _=std::fs::remove_file(path);
+    }
     #[test]
     fn settings_survive_reopening() {
         let path = std::env::temp_dir().join(format!("charlotte-settings-{}-{}.sqlite", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));

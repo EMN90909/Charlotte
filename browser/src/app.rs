@@ -1,7 +1,8 @@
 //! Native Charlotte CEF Views host: tab strip, Chromium page viewport, AI/chat
 //! sidebar. There is no Electron and no Node or JS/OS bridge in this process.
 use cef::*;
-use std::{cell::{Cell,RefCell},rc::Rc,sync::{Arc,Mutex}};
+use std::{cell::{Cell,RefCell},collections::HashMap,rc::Rc,sync::{Arc,Mutex,mpsc}};
+use serde_json::Value;
 use crate::{
     cef_bridge::{CharlotteClient,default_filter,TabState},
     ui_server::{self,Ui,Command},
@@ -11,7 +12,7 @@ thread_local! {
     static CONTROLLER: RefCell<Option<Controller>> = const { RefCell::new(None) };
 }
 struct Controller {
-    _ui: Ui, tabs: TabState,
+    _ui: Ui, tabs: TabState, filter: crate::cef_bridge::Filter,
     windows: Rc<Cell<usize>>,
     views: Vec<BrowserView>,
     page_panel: Panel,
@@ -20,6 +21,10 @@ struct Controller {
     client: Client,
     restore_index: usize,
     restore_pending: bool,
+    restore_urls: Vec<String>,
+    pending_restore: HashMap<i32,String>,
+    devtools_observers: HashMap<i32,Registration>,
+    devtools_browsers: HashMap<i32,i32>,
 }
 fn browser_id(view:&BrowserView)->Option<i32> {
     view.browser().map(|browser| browser.identifier())
@@ -39,13 +44,22 @@ impl Controller {
     fn select(&mut self, selected:i32) {
         let Some(index)=self.views.iter().position(|view|browser_id(view)==Some(selected)) else{return};
         for (i,view) in self.views.iter().enumerate() {view.set_visible((i==index) as i32);}
+        // Saved background URLs remain in Rust until explicitly selected.
+        if let Some(url)=self.pending_restore.remove(&selected) {
+            if let Some(frame)=self.views[index].browser().and_then(|b|b.main_frame()){
+                frame.load_url(Some(&CefString::from(url.as_str())));
+            } else { self.pending_restore.insert(selected,url); }
+        }
         if let Ok(mut tabs)=self.tabs.lock() {
-            tabs.activate(selected);
-            if let Ok(store)=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
-                let _=crate::session::save_tabs(&store,&tabs);
+            if tabs.active_id()!=Some(selected) {
+                tabs.activate(selected);
+                if let Ok(store)=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
+                    let _=crate::session::save_tabs(&store,&tabs);
+                }
             }
         }
         self.page_panel.layout();
+        self._ui.tab_selected(selected);
         if let Ok(tabs)=self.tabs.lock(){
             if let Some(active)=tabs.active(){self._ui.page_changed(&active.url);}
         }
@@ -57,14 +71,26 @@ impl Controller {
         self.views.iter().filter_map(BrowserView::browser).find(|browser|browser.identifier()==id)
     }
     fn sync(&mut self){
-        let ready=self.views.iter().all(|v|v.browser().is_some());
-        if self.restore_pending && ready {
+        if self.restore_pending {
+            // CEF BrowserView may exist before its Browser is initialized.
+            // Wait for all saved browser IDs before restoring selection.
+            if !self.views.iter().all(|v|v.browser().is_some()) {return}
             self.restore_pending=false;
+            if let Ok(mut tabs)=self.tabs.lock() {
+                for (index,view) in self.views.iter().enumerate() {
+                    if index==self.restore_index {continue}
+                    if let (Some(id),Some(url))=(browser_id(view),self.restore_urls.get(index)){
+                        if tabs.restore_background(id,url){
+                            self.pending_restore.insert(id,url.clone());
+                        }
+                    }
+                }
+            }
+            self.restore_urls.clear();
             if let Some(id)=self.views.get(self.restore_index).and_then(browser_id) {
                 self.select(id);return
             }
         }
-        // Newly created page tabs are activated when their CEF browser is ready.
         let active=self.tabs.lock().ok().and_then(|t|t.active_id());
         if let Some(id)=active {self.select(id);}
     }
@@ -86,9 +112,83 @@ impl Controller {
         self.views.push(view);
         self.page_panel.layout();
     }
+    fn automation_request(&mut self,request_id:i32,browser_id:i32,expected_origin:String,
+        method:String,params:Value,reply:mpsc::Sender<Result<Value,String>>){
+        // CEF references never leave the UI thread. Prevent stale tab actions.
+        if !matches!(method.as_str(),"Runtime.evaluate"|"Page.navigate"|"Input.dispatchMouseEvent"|"Page.captureScreenshot"|"Page.handleJavaScriptDialog"|"Page.getFrameTree"|"Accessibility.getFullAXTree")
+            || params.to_string().len()>64*1024 {
+            let _=reply.send(Err("Unsupported or oversized Charlotte CDP method".into()));return
+        }
+        let active=self.tabs.lock().ok().and_then(|tabs|tabs.active_id());
+        if active!=Some(browser_id){
+            let _=reply.send(Err("Automation tab is no longer active".into()));return
+        }
+        let Some(browser)=self.active_browser() else{
+            let _=reply.send(Err("Automation browser has closed".into()));return
+        };
+        let page=browser.main_frame().map(|f|f.url().to_string()).unwrap_or_default();
+        if crate::permissions::canonical_origin(&page)!=Some(expected_origin) {
+            let _=reply.send(Err("Automation paused: page origin changed".into()));return
+        }
+        let Some(host)=browser.host() else{
+            let _=reply.send(Err("CEF browser host unavailable".into()));return
+        };
+        let id=request_id;
+        if id<100_000_000||id>1_900_000_000||self.devtools_observers.len()>=16{
+            let _=reply.send(Err("Automation DevTools IDs exhausted".into()));return
+        }
+        let mut observer=CharlotteAutomationObserver::new(id,reply.clone());
+        let Some(registration)=host.add_dev_tools_message_observer(Some(&mut observer)) else{
+            let _=reply.send(Err("CEF DevTools observer registration failed".into()));return
+        };
+        let message=serde_json::json!({"id":id,"method":method,"params":params}).to_string();
+        self.devtools_observers.insert(id,registration);
+        self.devtools_browsers.insert(id,browser_id);
+        if host.send_dev_tools_message(Some(message.as_bytes()))!=1 {
+            self.devtools_observers.remove(&id);
+            self.devtools_browsers.remove(&id);
+            let _=reply.send(Err("CEF refused DevTools method".into()));
+        }
+    }
+    fn close_browser_observers(&mut self,browser_id:i32){
+        let ids:Vec<i32>=self.devtools_browsers.iter()
+            .filter(|(_,id)|**id==browser_id).map(|(request,_)|*request).collect();
+        for id in ids{
+            self.devtools_observers.remove(&id);
+            self.devtools_browsers.remove(&id);
+        }
+    }
     fn apply(&mut self,command:Command){
         match command{
             Command::Sync=>self.sync(),
+            Command::Automation{request_id,browser_id,expected_origin,method,params,reply}=>
+                self.automation_request(request_id,browser_id,expected_origin,method,params,reply),
+            Command::AutomationFinished(id)=>{
+                self.devtools_observers.remove(&id);
+                self.devtools_browsers.remove(&id);
+            },
+            Command::BrowserClosed(id)=>{
+                self._ui.tab_closed(id);
+                self.close_browser_observers(id);
+            },
+            Command::BrowserCrashed(id)=>{
+                self._ui.tab_crashed(id);
+                self.close_browser_observers(id);
+            },
+            Command::Shields(enabled)=>{
+                let was_enabled=self.filter.read().map(|s|s.is_enabled()).unwrap_or(false);
+                if let Ok(db)=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")){
+                    if let Err(error)=db.set_setting("shields",if enabled{"on"}else{"off"}){
+                        eprintln!("Unable to save Shields setting: {error}");
+                        return;
+                    }
+                }else{return}
+                if let Ok(mut shield)=self.filter.write(){shield.set_enabled(enabled)}
+                if enabled && !was_enabled {
+                    crate::cef_bridge::schedule_filter_refresh(self.filter.clone());
+                }
+                self.refresh_chrome();
+            },
             Command::New(url)=>self.add(url),
             Command::Select(id)=>self.select(id),
             Command::Navigate(url)=>{
@@ -104,6 +204,8 @@ impl Controller {
             Command::Reload=>{if let Some(b)=self.active_browser(){b.reload()}},
             Command::HardReload=>{if let Some(b)=self.active_browser(){b.reload_ignore_cache()}},
             Command::Close(id)=>{
+                self._ui.tab_closed(id);
+                self.pending_restore.remove(&id);
                 if self.views.len()==1{
                     self.add(String::new());
                 }
@@ -119,6 +221,41 @@ impl Controller {
                 // CEF lifespan callback updates the actual registry after close.
                 post_ui_command(Command::Sync);
             }
+        }
+    }
+}
+wrap_dev_tools_message_observer! {
+    struct CharlotteAutomationObserver {
+        message_id:i32,
+        reply:mpsc::Sender<Result<Value,String>>,
+    }
+    impl DevToolsMessageObserver {
+        fn on_dev_tools_agent_detached(&self,_browser:Option<&mut Browser>){
+            let _=self.reply.send(Err("Chromium DevTools agent detached; automation must be re-planned".into()));
+            post_ui_command(Command::AutomationFinished(self.message_id));
+        }
+        fn on_dev_tools_method_result(
+            &self,_browser:Option<&mut Browser>,message_id:i32,
+            success:i32,result:Option<&[u8]>,
+        ){
+            if message_id!=self.message_id {return}
+            let response=if success==0{
+                Err(result.and_then(|bytes|serde_json::from_slice::<Value>(bytes).ok())
+                    .map(|e|format!("Chromium CDP error: {}",e.to_string().chars().take(240).collect::<String>()))
+                    .unwrap_or_else(||"Chromium rejected automation command".into()))
+            }else{
+                result.ok_or_else(||"Missing Chromium CDP response".to_owned())
+                    .and_then(|bytes|{
+                        if bytes.len()>2_100_000 {
+                            Err("Chromium automation result exceeds 2.1 MB".into())
+                        }else{
+                            serde_json::from_slice::<Value>(bytes)
+                                .map_err(|_|"Malformed Chromium DevTools response".into())
+                        }
+                    })
+            };
+            let _=self.reply.send(response);
+            post_ui_command(Command::AutomationFinished(message_id));
         }
     }
 }
@@ -199,10 +336,11 @@ wrap_browser_process_handler! {
     impl BrowserProcessHandler {
         fn on_context_initialized(&self){
             let tabs:TabState=Arc::new(Mutex::new(crate::tabs::Tabs::default()));
-            let ui=match ui_server::start(tabs.clone()){
+            let filter=default_filter();
+            let ui=match ui_server::start(tabs.clone(),filter.clone()){
                 Ok(ui)=>ui,Err(e)=>{eprintln!("Native UI server: {e}");quit_message_loop();return}
             };
-            let client=CharlotteClient::new(default_filter(),tabs.clone());
+            let client=CharlotteClient::new(filter.clone(),tabs.clone());
             let settings=BrowserSettings::default();
             let mut ui_client=CharlotteLocalClient::new();
             let mut chrome_delegate=CharlotteUiViewDelegate::new(1);
@@ -227,11 +365,15 @@ wrap_browser_process_handler! {
                     .unwrap_or_else(||"https://www.google.com/".into())]};
             let Some(panel)=panel_create(None) else{quit_message_loop();return};
             let _fill=panel.set_to_fill_layout();
+            let restore_urls=urls;
             let mut views=Vec::new();
-            for url in urls.into_iter().take(crate::tabs::MAX_TABS){
+            for (index,url) in restore_urls.iter().take(crate::tabs::MAX_TABS).enumerate(){
+                // Avoid network and decode work for pages the user has not
+                // selected. A lightweight blank CEF view keeps tab IDs stable.
+                let initial=if index==restore.active_index {url.as_str()}else{"about:blank"};
                 let mut c=client.clone();
                 let mut delegate=CharlotteBrowserViewDelegate::new(self.windows.clone());
-                if let Some(view)=browser_view_create(Some(&mut c),Some(&CefString::from(url.as_str())),
+                if let Some(view)=browser_view_create(Some(&mut c),Some(&CefString::from(initial)),
                     Some(&settings),None,None,Some(&mut delegate)){
                     view.set_visible((views.len()==restore.active_index) as i32);
                     let mut native=View::from(&view);
@@ -241,9 +383,11 @@ wrap_browser_process_handler! {
             }
             if views.is_empty(){quit_message_loop();return;}
             let control=Controller{
-                _ui:ui,tabs,windows:self.windows.clone(),views,page_panel:panel.clone(),toolbar:toolbar.clone(),
+                _ui:ui,tabs,filter,windows:self.windows.clone(),views,page_panel:panel.clone(),toolbar:toolbar.clone(),
                 _sidebar:sidebar.clone(),client,restore_index:restore.active_index,
-                restore_pending:true,
+                restore_pending:true,restore_urls,pending_restore:HashMap::new(),
+                devtools_observers:HashMap::new(),
+                devtools_browsers:HashMap::new(),
             };
             CONTROLLER.with(|cell|{cell.replace(Some(control));});
             let mut delegate=CharlotteWindowDelegate::new(toolbar,panel,sidebar,self.windows.clone());

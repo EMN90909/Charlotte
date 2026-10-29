@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Charlotte Advanced Automation Fixture</title>
+<style>
+body{font:16px system-ui;padding:20px;max-width:1000px;margin:auto;background:#fff;color:#202020}
+article{padding:15px;border:1px solid #ddd;margin:10px 0}
+.drags{display:flex;gap:20px}.dragitem,.droparea{border:2px dashed #456;padding:25px;min-width:160px}
+iframe{width:420px;height:150px;border:2px solid #888}
+button{padding:10px;cursor:pointer}output{display:block;margin-top:8px}
+</style></head>
+<body>
+<h1>Charlotte CEF / Chromium automation fixture</h1>
+<p>This static page tests DOM, open ShadowRoot, same-origin iframe, screenshot, drag, dialogs and cross-origin frame boundaries.</p>
+<article><h2>Basic DOM</h2>
+<label for="query">Search term</label><input id="query" placeholder="Type test phrase">
+<button id="basic" type="button">Increment counter</button>
+<output id="status" aria-live="polite">Count 0</output></article>
+<article><h2>Open Shadow DOM</h2><shadow-counter></shadow-counter></article>
+<article><h2>Same-origin iframe</h2>
+<iframe title="Same-origin control fixture" srcdoc="<!doctype html><html><body><button id='framed' type='button' onclick=&quot;document.querySelector('#frame-state').textContent='Clicked!'&quot;>Frame button</button><output id='frame-state'>Not clicked</output></body></html>"></iframe></article>
+<article><h2>Cross-origin iframe (requires second local server)</h2>
+<iframe title="Cross-origin visual fixture" src="http://localhost:8878/cross-origin.html"></iframe>
+<p>Run a second test server on port 8878. The embedded frame's DOM must not be read through the parent page.</p></article>
+<article><h2>Drag item</h2><div class="drags">
+<div id="drag" class="dragitem" draggable="true">Drag this card</div>
+<div id="drop" class="droparea">Drop target</div></div>
+<output id="drag-status">Not dropped</output></article>
+<article><h2>JavaScript dialogs</h2>
+<button id="confirm" type="button" onclick="document.querySelector('#dialog-status').textContent=confirm('Confirm this fixture?')?'Accepted':'Rejected'">Open confirm dialog</button>
+<button id="prompt" type="button" onclick="document.querySelector('#dialog-status').textContent=prompt('Type a short fixture value:','')||'Dismissed'">Open prompt dialog</button>
+<output id="dialog-status">No dialog yet</output></article>
+<script>
+let count=0;
+document.querySelector('#basic').addEventListener('click',()=>{
+  document.querySelector('#status').textContent='Count '+(++count);
+});
+customElements.define('shadow-counter',class extends HTMLElement{
+  constructor(){
+    super();const root=this.attachShadow({mode:'open'});
+    root.innerHTML='<button id="shadow-action">Shadow button</button><output>Shadow count 0</output>';
+    let n=0;root.querySelector('button').addEventListener('click',()=>{
+      root.querySelector('output').textContent='Shadow count '+(++n);
+    });
+  }
+});
+document.querySelector('#drag').addEventListener('dragstart',event=>{
+  event.dataTransfer.setData('text/plain','charlotte-fixture');
+});
+document.querySelector('#drop').addEventListener('dragover',event=>event.preventDefault());
+document.querySelector('#drop').addEventListener('drop',event=>{
+  event.preventDefault();
+  document.querySelector('#drag-status').textContent=
+    event.dataTransfer.getData('text/plain')==='charlotte-fixture'?'Dropped!':'Wrong drag data';
+});
+</script></body></html>

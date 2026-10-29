@@ -1,0 +1,494 @@
+//! Charlotte's typed Chromium automation protocol.
+//! Only fixed, reviewed scripts may be sent to the active CEF page via CDP.
+//! Remote websites can never access the host's automation IPC or native OS.
+use serde::{Deserialize,Serialize};
+use serde_json::{json,Value};
+
+pub const MAX_STEPS:u8=8;
+pub const MAX_ELEMENTS:usize=70;
+pub const MAX_SELECTOR:usize=512;
+pub const MAX_TEXT:usize=2000;
+
+#[derive(Debug,Clone,PartialEq,Serialize,Deserialize)]
+#[serde(tag="action",rename_all="snake_case",deny_unknown_fields)]
+pub enum Action {
+    Observe,
+    Navigate {url:String},
+    Click {selector:String},
+    ClickIndex {index:u32},
+    TypeIndex {index:u32,text:String},
+    DragIndex {from_index:u32,to_index:u32},
+    Type {selector:String,text:String},
+    Scroll {direction:ScrollDirection},
+    ClickAt {x:u32,y:u32},
+    Drag {from:String,to:String},
+    Dialog {accept:bool,#[serde(default)] prompt_text:Option<String>},
+}
+#[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize)]
+#[serde(rename_all="snake_case")]
+pub enum ScrollDirection {Up,Down}
+impl Action {
+    pub fn validate(&self)->Result<(),String>{
+        match self {
+            Self::Observe|Self::Scroll{..}=>Ok(()),
+            Self::ClickIndex{index} if (1..=70).contains(index)=>Ok(()),
+            Self::ClickIndex{..}=>Err("Invalid semantic element index".into()),
+            Self::TypeIndex{index,text} if (1..=70).contains(index) && text.len()<=MAX_TEXT && !text.contains('\0')=>Ok(()),
+            Self::TypeIndex{..}=>Err("Invalid semantic input index or value".into()),
+            Self::DragIndex{from_index,to_index}
+                if (1..=70).contains(from_index) && (1..=70).contains(to_index)
+                   && from_index!=to_index=>Ok(()),
+            Self::DragIndex{..}=>Err("Invalid accessible drag element indices".into()),
+            Self::ClickAt{x,y} if *x<=10000 && *y<=10000=>Ok(()),
+            Self::ClickAt{..}=>Err("Visual click outside allowed viewport".into()),
+            Self::Drag{from,to} if from.is_empty()||to.is_empty()||
+                from.len()>MAX_SELECTOR||to.len()>MAX_SELECTOR=>Err("Invalid drag selectors".into()),
+            Self::Drag{..}=>Ok(()),
+            Self::Dialog{prompt_text,..} if prompt_text.as_ref().is_some_and(|v|v.len()>500)=>
+                Err("Dialog text too long".into()),
+            Self::Dialog{..}=>Ok(()),
+            Self::Navigate{url} if crate::session::valid_page_url(url)=>Ok(()),
+            Self::Navigate{..}=>Err("Only normal HTTP/HTTPS URLs may be opened".into()),
+            Self::Click{selector}|Self::Type{selector,..} if selector.is_empty()||
+                selector.len()>MAX_SELECTOR||selector.contains('\0') =>
+                Err("Invalid element selector".into()),
+            Self::Type{text,..} if text.len()>MAX_TEXT || text.contains('\0')=>
+                Err("Text exceeds automation input limit".into()),
+            _=>Ok(()),
+        }
+    }
+    pub fn needs_approval(&self)->bool{
+        !matches!(self,Self::Observe)
+    }
+    pub fn description(&self)->String{
+        match self {
+            Self::Observe=>"Inspect current page".into(),
+            Self::Navigate{url}=>format!("Navigate Chromium to {url}"),
+            Self::Click{selector}=>format!("Click page element {selector}"),
+            Self::ClickIndex{index}=>format!("Click accessible element [{index}]"),
+            Self::DragIndex{from_index,to_index}=>format!("Drag [{from_index}] onto [{to_index}]"),
+            Self::TypeIndex{index,text}=>format!("Type {} characters into accessible element [{index}]",text.chars().count()),
+            Self::Type{selector,text}=>format!("Type {} characters into {selector}",text.chars().count()),
+            Self::Scroll{direction}=>format!("Scroll page {:?}",direction),
+            Self::ClickAt{x,y}=>format!("Click screenshot position ({x},{y})"),
+            Self::Drag{from,to}=>format!("Drag {from} onto {to}"),
+            Self::Dialog{accept,..}=>format!("{} JavaScript dialog",if *accept{"Accept"}else{"Dismiss"}),
+        }
+    }
+}
+/// Never let a model invent an arbitrary CSS selector to click, or repurpose
+/// a text-only element as a form field. Its action must match the last real
+/// Chromium DOM observation. Called again immediately before approval.
+pub fn ensure_observed_target(action:&Action,snapshot:&Value)->Result<(),String>{
+    if let Action::Drag{from,to}=action {
+        ensure_observed_target(&Action::Click{selector:from.clone()},snapshot)?;
+        ensure_observed_target(&Action::Click{selector:to.clone()},snapshot)?;
+        let drag=snapshot["controls"].as_array().and_then(|controls|controls.iter().find(|c|
+            c["selector"].as_str()==Some(from.as_str())));
+        if drag.and_then(|c|c["draggable"].as_bool())!=Some(true){
+            return Err("Drag source is not reported draggable by Chromium".into())
+        }
+        return Ok(())
+    }
+    if let Action::ClickAt{x,y}=action {
+        let bounds=&snapshot["viewport"];
+        if (*x as u64)>=bounds["width"].as_u64().unwrap_or(0)||
+           (*y as u64)>=bounds["height"].as_u64().unwrap_or(0){
+            return Err("Visual click is outside current viewport".into())
+        }
+        return Ok(())
+    }
+    let (selector,needs_editable)=match action {
+        Action::Click{selector}=>(selector.as_str(),false),
+        Action::Type{selector,..}=>(selector.as_str(),true),
+        _=>return Ok(()),
+    };
+    let controls=snapshot.get("controls").and_then(Value::as_array)
+        .ok_or("Missing page controls in Chromium observation")?;
+    let matching=controls.iter().filter(|control|
+        control.get("selector").and_then(Value::as_str)==Some(selector) &&
+        control.get("password").and_then(Value::as_bool)!=Some(true) &&
+        (!needs_editable||control.get("editable").and_then(Value::as_bool)==Some(true))
+    ).count();
+    if matching!=1 {
+        return Err("Charlotte action does not match a unique, permitted visible page control".into())
+    }
+    if let Action::Click{..}=action {
+        if let Some(control)=controls.iter().find(|item|
+            item.get("selector").and_then(Value::as_str)==Some(selector)) {
+            if let Some(href)=control.get("href").and_then(Value::as_str) {
+                if !href.is_empty() {
+                    let current=snapshot.get("url").and_then(Value::as_str).ok_or("Missing page URL")?;
+                    require_same_origin(current,href)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+pub fn require_same_origin(current:&str,target:&str)->Result<(),String>{
+    let source=crate::permissions::canonical_origin(current)
+        .ok_or("Browser automation requires an active HTTPS/loopback page")?;
+    let target=crate::permissions::canonical_origin(target)
+        .ok_or("Automation target must be HTTPS or loopback HTTP")?;
+    if source!=target {return Err("Cross-origin navigation needs a new user-authorized task".into())}
+    Ok(())
+}
+
+/// Commands are bound to a specific CEF browser and verified on the CEF UI
+/// thread. This module never accepts arbitrary Runtime.evaluate expressions.
+pub fn runtime_evaluate(expression:String)->(String,Value){
+    ("Runtime.evaluate".to_owned(),json!({
+        "expression":expression,"returnByValue":true,"awaitPromise":false,
+        "userGesture":false
+    }))
+}
+fn serialized(value:&str)->Result<String,String>{
+    serde_json::to_string(value).map_err(|e|e.to_string())
+}
+pub fn observation_command()->(String,Value){
+    crate::advanced_automation::observation_command()
+}
+pub fn click_point_command(selector:&str)->Result<(String,Value),String>{
+    Action::Click{selector:selector.to_owned()}.validate()?;
+    crate::advanced_automation::element_command(selector,"position",None)
+}
+pub fn type_command(selector:&str,text:&str)->Result<(String,Value),String>{
+    Action::Type{selector:selector.to_owned(),text:text.to_owned()}.validate()?;
+    crate::advanced_automation::element_command(selector,"fill",Some(text))
+}
+pub fn scroll_command(direction:ScrollDirection)->(String,Value){
+    let amount=match direction{ScrollDirection::Down=>610,ScrollDirection::Up=>-610};
+    runtime_evaluate(format!("(() => {{ window.scrollBy({{top:{amount},behavior:'auto'}});return {{ok:true}}; }})()"))
+}
+pub fn input_mouse_command(kind:&str,x:i32,y:i32)->(String,Value){
+    ("Input.dispatchMouseEvent".into(),json!({
+        "type":kind,"x":x,"y":y,
+        // Chrome requires the released button to match the pressed one.
+        "button":if kind=="mouseMoved" {"none"} else {"left"},
+        "clickCount":if kind=="mouseMoved" {0}else{1}
+    }))
+}
+pub fn held_mouse_move(x:i32,y:i32)->(String,Value){
+    ("Input.dispatchMouseEvent".into(),json!({
+        "type":"mouseMoved","x":x,"y":y,"button":"left","buttons":1
+    }))
+}
+pub fn extract_result(raw:&Value)->Result<Value,String>{
+    if let Some(e)=raw.get("exceptionDetails"){return Err(format!("Chromium JavaScript exception: {e}"))}
+    let result=raw.get("result").ok_or("CDP Runtime.evaluate returned no result")?;
+    let value=result.get("value").cloned().ok_or("Chromium returned no serializable value")?;
+    if let Some(message)=value.get("error").and_then(Value::as_str){return Err(message.to_owned())}
+    Ok(value)
+}
+/// Read JPEG dimensions without loading an image processing runtime.
+pub fn jpeg_dimensions(bytes:&[u8])->Option<(u32,u32)>{
+    if !bytes.starts_with(&[0xff,0xd8]){return None}
+    let mut i=2usize;
+    while i+4<bytes.len() {
+        if bytes[i]!=0xff {i+=1;continue}
+        while i<bytes.len()&&bytes[i]==0xff{i+=1}
+        if i>=bytes.len(){break}
+        let marker=bytes[i];i+=1;
+        if marker==0xd9||marker==0xda{break}
+        if (0xd0..=0xd7).contains(&marker)||marker==0x01{continue}
+        if i+2>bytes.len(){break}
+        let length=u16::from_be_bytes([bytes[i],bytes[i+1]]) as usize;
+        if length<2||i+length>bytes.len(){break}
+        if matches!(marker,0xc0..=0xc3|0xc5..=0xc7|0xc9..=0xcb|0xcd..=0xcf)&&length>=7{
+            let h=u16::from_be_bytes([bytes[i+3],bytes[i+4]]) as u32;
+            let w=u16::from_be_bytes([bytes[i+5],bytes[i+6]]) as u32;
+            return if (1..=10000).contains(&w)&&(1..=10000).contains(&h){
+                Some((w,h))
+            }else{None}
+        }
+        i+=length;
+    }
+    None
+}
+pub fn click_coordinates(value:&Value)->Result<(i32,i32),String>{
+    let x=value.get("x").and_then(Value::as_i64).ok_or("Element has no x position")?;
+    let y=value.get("y").and_then(Value::as_i64).ok_or("Element has no y position")?;
+    if !(0..=20000).contains(&x)||!(0..=20000).contains(&y) {
+        return Err("Element coordinates out of browser bounds".into())
+    }
+    Ok((x as i32,y as i32))
+}
+/// Browser-specific capability: the browser ID and exact origin are fixed
+/// when the user starts the task. Never use a global remote-debugging port.
+#[derive(Debug,Clone)]
+pub struct Context {pub browser_id:i32,pub origin:String}
+impl Context {
+    pub fn new(browser_id:i32,url:&str)->Result<Self,String>{
+        if browser_id<=0{return Err("No active browser".into())}
+        let origin=crate::permissions::canonical_origin(url)
+            .ok_or("Only active HTTPS/loopback pages can be automated")?;
+        Ok(Self{browser_id,origin})
+    }
+    pub fn cdp(&self,method:&str,params:Value)->Result<Value,String>{
+        use std::sync::mpsc;
+        use std::time::Duration;
+        // Every request has an ID known to the worker, allowing cancellation
+        // after timeout without leaking a native CEF observer registration.
+        static NEXT_ID:std::sync::atomic::AtomicI32=
+            std::sync::atomic::AtomicI32::new(100_000_000);
+        let request_id=NEXT_ID.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+        if request_id>1_900_000_000{return Err("CDP message IDs exhausted".into())}
+        let (reply,receive)=mpsc::channel();
+        crate::app::post_ui_command(crate::ui_server::Command::Automation{
+            request_id,browser_id:self.browser_id,expected_origin:self.origin.clone(),
+            method:method.to_owned(),params,reply,
+        });
+        match receive.recv_timeout(Duration::from_secs(12)){
+            Ok(answer)=>answer,
+            Err(_)=>{
+                crate::app::post_ui_command(
+                    crate::ui_server::Command::AutomationFinished(request_id));
+                Err("Chromium automation timed out (12 seconds)".into())
+            },
+        }
+    }
+    pub fn observe(&self)->Result<Value,String>{
+        let (method,params)=observation_command();
+        let result=self.cdp(&method,params)?;
+        let data=extract_result(&result)?;
+        let url=data.get("url").and_then(Value::as_str).ok_or("No page URL")?;
+        if crate::permissions::canonical_origin(url).as_deref()!=Some(self.origin.as_str()){
+            return Err("Page left the authorized origin".into())
+        }
+        Ok(data)
+    }
+    /// Page transitions are asynchronous; wait for an interactive document
+    /// instead of assuming a fixed post-click delay is sufficient.
+    /// Read Chromium's actual accessibility data as optional semantic
+    /// context. Do not trust its node IDs as cross-frame capabilities.
+    pub fn accessibility_summary(&self)->Result<Value,String>{
+        let (method,params)=crate::automation_semantics::ax_tree_command();
+        let reply=self.cdp(method,params)?;
+        Ok(crate::automation_semantics::compact_ax(&reply))
+    }
+    pub fn observe_settled(&self)->Result<Value,String>{
+        let mut last=String::from("Page did not become ready");
+        for _ in 0..8 {
+            match self.observe(){
+                Ok(snapshot)=>{
+                    if snapshot.get("ready").and_then(Value::as_str)!=Some("loading"){
+                        return Ok(snapshot)
+                    }
+                    last="Chromium document is still loading".into();
+                },
+                Err(error)=>last=error,
+            }
+            std::thread::sleep(std::time::Duration::from_millis(350));
+        }
+        Err(last)
+    }
+    pub fn wait_for_navigation(&self,target:&str)->Result<(),String>{
+        let parsed=url::Url::parse(target).map_err(|e|e.to_string())?;
+        let expected=format!("{}{}",parsed.origin().ascii_serialization(),parsed.path());
+        for _ in 0..12{
+            if let Ok(snapshot)=self.observe(){
+                if snapshot.get("url").and_then(Value::as_str)==Some(expected.as_str()) &&
+                   snapshot.get("ready").and_then(Value::as_str)!=Some("loading"){
+                    return Ok(())
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(350));
+        }
+        Err("Navigation did not complete on the approved origin".into())
+    }
+    /// Captured only with explicit visual-mode consent. Never persisted.
+    /// Return only bounded, credential-free frame locations. CDP enumerates
+    /// OOPIF frames without granting access to their isolated document DOM.
+    pub fn frame_inventory(&self)->Result<Vec<Value>,String>{
+        let (method,params)=crate::advanced_automation::frame_tree_command();
+        let tree=self.cdp(&method,params)?;
+        let mut result=Vec::new();
+        let mut stack=vec![&tree["frameTree"]];
+        while let Some(node)=stack.pop(){
+            if result.len()>=24{break}
+            if let Some(frame)=node.get("frame"){
+                let raw=frame["url"].as_str().unwrap_or("");
+                let safe=url::Url::parse(raw).ok()
+                    .filter(|url|crate::permissions::canonical_origin(url.as_str()).is_some())
+                    .map(|url|format!("{}{}",url.origin().ascii_serialization(),url.path()));
+                if let Some(safe)=safe{
+                    result.push(json!({"url":safe,
+                        "crossOrigin":crate::permissions::canonical_origin(raw)
+                            .as_deref()!=Some(self.origin.as_str())}));
+                }
+            }
+            if let Some(children)=node.get("childFrames").and_then(Value::as_array){
+                for item in children.iter().take(24){stack.push(item)}
+            }
+        }
+        Ok(result)
+    }
+    pub fn screenshot(&self)->Result<(String,(u32,u32)),String>{
+        let (method,params)=crate::advanced_automation::screenshot_command();
+        let reply=self.cdp(&method,params)?;
+        let text=reply.get("data").and_then(Value::as_str)
+            .ok_or("Chromium returned no screenshot data")?;
+        if text.len()>1_600_000{return Err("Screenshot exceeds 1.2 MB limit".into())}
+        use base64::Engine as _;
+        let data=base64::engine::general_purpose::STANDARD.decode(text)
+            .map_err(|_|"Invalid screenshot encoding")?;
+        if data.len()<4||data.len()>1_200_000||!data.starts_with(&[0xff,0xd8,0xff]){
+            return Err("Invalid or oversized JPEG screenshot".into())
+        }
+        let dimensions=jpeg_dimensions(&data)
+            .ok_or("Screenshot JPEG dimensions are missing or too large")?;
+        Ok((text.to_owned(),dimensions))
+    }
+    fn mouse_click(&self,x:i32,y:i32)->Result<(),String>{
+        for kind in ["mouseMoved","mousePressed","mouseReleased"]{
+            let (method,params)=input_mouse_command(kind,x,y);
+            self.cdp(&method,params)?;
+        }
+        Ok(())
+    }
+    pub fn act(&self,action:&Action)->Result<Value,String>{
+        action.validate()?;
+        match action {
+            Action::Observe=>self.observe(),
+            Action::ClickIndex{..}|Action::TypeIndex{..}|Action::DragIndex{..}=>Err("Semantic element index requires fresh snapshot resolution".into()),
+            Action::Navigate{url}=>{
+                require_same_origin(&self.origin,url)?;
+                let result=self.cdp("Page.navigate",json!({"url":url}))?;
+                if result.get("errorText").is_some(){return Err(format!("Navigation failed: {result}"))}
+                Ok(result)
+            },
+            Action::Type{selector,text}=>{
+                let (method,params)=type_command(selector,text)?;
+                extract_result(&self.cdp(&method,params)?)
+            },
+            Action::Scroll{direction}=>{
+                let (method,params)=scroll_command(*direction);
+                extract_result(&self.cdp(&method,params)?)
+            },
+            Action::ClickAt{x,y}=>{
+                self.mouse_click(*x as i32,*y as i32)?;
+                Ok(json!({"clicked":true,"x":x,"y":y}))
+            },
+            Action::Dialog{accept,prompt_text}=>{
+                let (method,params)=crate::advanced_automation::dialog_command(
+                    *accept,prompt_text.as_deref())?;
+                self.cdp(&method,params)
+            },
+            Action::Drag{from,to}=>{
+                let (method,params)=click_point_command(from)?;
+                let src=extract_result(&self.cdp(&method,params)?)?;
+                let (x,y)=click_coordinates(&src)?;
+                let (method,params)=click_point_command(to)?;
+                let target=extract_result(&self.cdp(&method,params)?)?;
+                let (tx,ty)=click_coordinates(&target)?;
+                let (method,params)=input_mouse_command("mouseMoved",x,y);
+                self.cdp(&method,params)?;
+                let (method,params)=input_mouse_command("mousePressed",x,y);
+                self.cdp(&method,params)?;
+                let moving=(||->Result<(),String>{
+                    for i in 1..=9{
+                        let px=x+(tx-x)*i/9;
+                        let py=y+(ty-y)*i/9;
+                        let (method,params)=held_mouse_move(px,py);
+                        self.cdp(&method,params)?;
+                    }
+                    Ok(())
+                })();
+                // Always release the mouse, even if an intermediate CDP
+                // move failed. Never leave a synthetic drag button held.
+                let (method,params)=input_mouse_command("mouseReleased",tx,ty);
+                let released=self.cdp(&method,params);
+                moving?;
+                released?;
+                Ok(json!({"dragged":true}))
+            },
+            Action::Click{selector}=>{
+                let (method,params)=click_point_command(selector)?;
+                let position=extract_result(&self.cdp(&method,params)?)?;
+                let (x,y)=click_coordinates(&position)?;
+                self.mouse_click(x,y)?;
+                Ok(json!({"clicked":true,"selector":selector}))
+            },
+        }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]fn rejects_invalid_navigation_and_inputs(){
+        assert!(Action::Navigate{url:"javascript:alert(1)".into()}.validate().is_err());
+        assert!(Action::Type{selector:"input".into(),text:"a".repeat(MAX_TEXT+1)}.validate().is_err());
+        assert!(Action::Click{selector:"button".into()}.needs_approval());
+        assert!(!Action::Observe.needs_approval());
+    }
+    #[test]fn origin_scope_rejects_unapproved_new_sites(){
+        assert!(require_same_origin("https://site.example/path","https://site.example/next").is_ok());
+        assert!(require_same_origin("https://site.example","https://other.example").is_err());
+    }
+    #[test]fn scripts_encode_untrusted_values_as_json_literals(){
+        let (method,params)=type_command("input[title='\";evil()']","hello \"world\"").unwrap();
+        assert_eq!(method,"Runtime.evaluate");
+        let expr=params["expression"].as_str().unwrap();
+        assert!(expr.contains(r#"hello \"world\""#));
+        assert!(!expr.contains("eval("));
+    }
+    #[test]fn disallows_invented_or_noneditable_selectors(){
+        let snap=json!({"controls":[
+            {"selector":"html > body > button","editable":false,"password":false},
+            {"selector":"html > body > input","editable":true,"password":false}
+        ]});
+        assert!(ensure_observed_target(&Action::Click{
+            selector:"html > body > button".into()},&snap).is_ok());
+        assert!(ensure_observed_target(&Action::Click{
+            selector:"#invented".into()},&snap).is_err());
+        let external=json!({"url":"https://site.example/","controls":[
+            {"selector":"html > body > a","editable":false,"href":"https://other.example/"}]});
+        assert!(ensure_observed_target(&Action::Click{
+            selector:"html > body > a".into()},&external).is_err());
+        assert!(ensure_observed_target(&Action::Type{
+            selector:"html > body > button".into(),text:"x".into()},&snap).is_err());
+    }
+    #[test]fn jpeg_reader_finds_scaled_capture_dimensions(){
+        let jpeg=[0xff,0xd8,0xff,0xc0,0,11,8,0x02,0xd0,0x05,0xa0,3,1,0x11,0];
+        assert_eq!(jpeg_dimensions(&jpeg),Some((1440,720)));
+        assert!(jpeg_dimensions(&[1,2,3]).is_none());
+    }
+    #[test]fn visual_click_bounds_are_checked_against_css_viewport(){
+        let page=json!({"viewport":{"width":800,"height":600}});
+        assert!(ensure_observed_target(&Action::ClickAt{x:400,y:300},&page).is_ok());
+        assert!(ensure_observed_target(&Action::ClickAt{x:900,y:300},&page).is_err());
+    }
+    #[test]fn native_drag_requires_both_real_controls_and_draggable_source(){
+        let page=json!({"controls":[
+            {"selector":"x-card >>> div:nth-of-type(1)","draggable":true},
+            {"selector":"iframe:nth-of-type(1) ::frame button:nth-of-type(1)","draggable":false}
+        ]});
+        assert!(ensure_observed_target(&Action::Drag{
+            from:"x-card >>> div:nth-of-type(1)".into(),
+            to:"iframe:nth-of-type(1) ::frame button:nth-of-type(1)".into()
+        },&page).is_ok());
+        assert!(ensure_observed_target(&Action::Drag{
+            from:"iframe:nth-of-type(1) ::frame button:nth-of-type(1)".into(),
+            to:"x-card >>> div:nth-of-type(1)".into()
+        },&page).is_err());
+    }
+    #[test]fn mouse_down_and_up_both_keep_left_button(){
+        for event in ["mousePressed","mouseReleased"] {
+            let (method,args)=input_mouse_command(event,21,34);
+            assert_eq!(method,"Input.dispatchMouseEvent");
+            assert_eq!(args["button"],"left");
+            assert_eq!(args["clickCount"],1);
+        }
+    }
+    #[test]fn browser_snapshot_does_not_read_password_values(){
+        let (_,args)=observation_command();
+        let source=args["expression"].as_str().unwrap();
+        assert!(source.contains("input[type=password]"));
+        assert!(!source.contains("||el.value"));
+    }
+    #[test]fn validates_chromium_reply(){
+        assert_eq!(extract_result(&json!({"result":{"value":{"ok":true}}})).unwrap(),json!({"ok":true}));
+        assert!(extract_result(&json!({"exceptionDetails":{"text":"bad"}})).is_err());
+    }
+}

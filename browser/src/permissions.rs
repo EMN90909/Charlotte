@@ -5,13 +5,14 @@ use crate::storage::Storage;
 use url::Url;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Capability { Camera, Microphone, Geolocation }
+pub enum Capability { Camera, Microphone, Geolocation, Notifications }
 impl Capability {
     pub fn from_name(s: &str) -> Option<Self> {
         match s {
             "camera" => Some(Self::Camera),
             "microphone" => Some(Self::Microphone),
             "geolocation" => Some(Self::Geolocation),
+            "notifications" => Some(Self::Notifications),
             _ => None,
         }
     }
@@ -20,6 +21,7 @@ impl Capability {
             Self::Camera => "camera",
             Self::Microphone => "microphone",
             Self::Geolocation => "geolocation",
+            Self::Notifications => "notifications",
         }
     }
 }
@@ -68,6 +70,15 @@ pub fn reset(db: &Storage, origin: &str, capability: Capability) -> Result<(), S
     db.remove_setting(&k).map_err(|e| e.to_string())?;
     Ok(())
 }
+/// CEF 156 permission bit mask: NOTIFICATIONS is bit 15; never approve an
+/// unrelated permission when multiple bits are combined in one request.
+pub const NOTIFICATIONS_BIT:u32 = 1 << 15;
+pub fn allowed_notification_prompt(
+    db:&Storage, origin:&str, requested:u32
+)->rusqlite::Result<Option<Decision>> {
+    if requested != NOTIFICATIONS_BIT || canonical_origin(origin).is_none() { return Ok(None) }
+    get(db,origin,Capability::Notifications)
+}
 /// CEF bit flags: device audio=1, device video=2. Desktop screen sharing
 /// is never granted by a persisted webcam/mic permission.
 pub fn allowed_media_bits(db: &Storage, origin: &str, requested: u32) -> rusqlite::Result<u32> {
@@ -97,6 +108,15 @@ mod tests {
             assert_eq!(canonical_origin(u), None);
         }
         assert!(canonical_origin("http://127.0.0.1:8080").is_some());
+    }
+    #[test]
+    fn notification_permission_is_origin_scoped_and_not_auto_granted() {
+        let db=Storage::open(Path::new(":memory:")).unwrap();
+        assert_eq!(allowed_notification_prompt(&db,"https://news.example",NOTIFICATIONS_BIT).unwrap(),None);
+        set(&db,"https://news.example",Capability::Notifications,Decision::Allow).unwrap();
+        assert_eq!(allowed_notification_prompt(&db,"https://news.example/path",NOTIFICATIONS_BIT).unwrap(),Some(Decision::Allow));
+        assert_eq!(allowed_notification_prompt(&db,"https://other.example",NOTIFICATIONS_BIT).unwrap(),None);
+        assert_eq!(allowed_notification_prompt(&db,"https://news.example",NOTIFICATIONS_BIT | 256).unwrap(),None);
     }
     #[test]
     fn media_grants_are_explicit_and_all_or_nothing() {
