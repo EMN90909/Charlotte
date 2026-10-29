@@ -9,7 +9,7 @@ use serde_json::{json,Value};
 use sha2::{Digest,Sha256};
 use std::{
     io::{Read,Write},
-    net::{TcpListener,TcpStream},
+    net::TcpListener,
     time::{Duration,Instant},
 };
 use url::Url;
@@ -35,7 +35,8 @@ fn get_json(client:&Client,link:&Url)->Result<Value,String>{
     if response.content_length().is_some_and(|n|n>128*1024){
         return Err("OAuth metadata too large".into())
     }
-    let bytes=response.bytes().map_err(|e|e.to_string())?;
+    let mut bytes=Vec::new();
+    response.take(128*1024+1).read_to_end(&mut bytes).map_err(|e|e.to_string())?;
     if bytes.len()>128*1024{return Err("OAuth metadata too large".into())}
     serde_json::from_slice(&bytes).map_err(|e|e.to_string())
 }
@@ -119,7 +120,14 @@ fn await_callback(listener:&TcpListener,port:u16,expected_state:&str)->Result<St
                 if !addr.ip().is_loopback(){continue}
                 stream.set_read_timeout(Some(Duration::from_secs(4))).map_err(|e|e.to_string())?;
                 let mut buffer=[0u8;4096];
-                let n=stream.read(&mut buffer).map_err(|e|e.to_string())?;
+                let mut n=0usize;
+                loop{
+                    if n==buffer.len(){return Err("OAuth callback headers too large".into())}
+                    let read=stream.read(&mut buffer[n..]).map_err(|e|e.to_string())?;
+                    if read==0 {break}
+                    n+=read;
+                    if buffer[..n].windows(4).any(|w|w==b"\r\n\r\n"){break}
+                }
                 let request=std::str::from_utf8(&buffer[..n])
                     .map_err(|_|"Invalid OAuth callback request")?;
                 let Some(start)=request.lines().next() else{continue};
@@ -208,6 +216,9 @@ pub fn authorize(
         return Err(format!("MCP OAuth token exchange HTTP {}",response.status()))
     }
     let body:Value=response.json().map_err(|e|e.to_string())?;
+    if body["token_type"].as_str().is_some_and(|kind|!kind.eq_ignore_ascii_case("bearer")){
+        return Err("OAuth token type is not Bearer".into())
+    }
     let token=body["access_token"].as_str().filter(|value|
         !value.is_empty()&&value.len()<=16_000)
         .ok_or("OAuth response did not contain an access token")?;
