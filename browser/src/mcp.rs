@@ -84,34 +84,93 @@ pub fn remove_server(db:&crate::storage::Storage,id:&str)->Result<(),String>{
     db.set_setting(CONFIG_KEY,&serde_json::to_string(&servers).map_err(|e|e.to_string())?)
         .map_err(|e|e.to_string())
 }
-/// Call on background workers only. Secrets remain in the OS credential store.
-pub fn connect_saved(db:&crate::storage::Storage)->Result<Registry,String>{
+/// Each task connects only the most relevant saved, explicitly opted-in
+/// profiles. Vendors still require the user's own OAuth or API credentials.
+pub fn connect_saved_for(
+    db:&crate::storage::Storage,goal:&str,max:usize
+)->Result<Registry,String>{
+    let servers=saved_servers(db)?;
+    let words:Vec<String>=goal.split(|c:char|!c.is_ascii_alphanumeric())
+        .filter(|w|w.len()>2).map(|w|w.to_ascii_lowercase()).collect();
+    let mut ranked:Vec<(usize,i32)>=servers.iter().enumerate().map(|(i,server)|{
+        let description=crate::mcp_catalog::get(&server.id).map(|preset|
+            format!("{} {} {}",preset.name,preset.category,preset.keywords)).unwrap_or_default();
+        let haystack=format!("{} {}",server.id,description).to_ascii_lowercase();
+        let score=words.iter().map(|word|{
+            if server.id.contains(word.as_str()){12}
+            else if haystack.split_whitespace().any(|term|term==word){5}
+            else if haystack.contains(word){2}
+            else{0}
+        }).sum::<i32>();
+        (i,score)
+    }).collect();
+    ranked.sort_by(|a,b|b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
     let mut registry=Registry::new();
-    for server in saved_servers(db)?{
+    let limit=max.clamp(1,5);
+    for (index,_) in ranked.into_iter().take(limit){
+        let server=&servers[index];
         let token=crate::credentials::retrieve(&format!("mcp:{}",server.id)).ok();
-        if let Err(e)=registry.connect(&server.id,&server.url,token){
-            eprintln!("Charlotte MCP server {} not reachable: {}",server.id,e);
+        if let Err(error)=registry.connect_config(&server.id,&server.url,token){
+            eprintln!("Charlotte MCP profile {} unavailable: {}",server.id,error);
         }
     }
     Ok(registry)
 }
-pub struct Registry {connections:HashMap<String,Connection>,next_alias:usize}
+pub fn connect_saved(db:&crate::storage::Storage)->Result<Registry,String>{
+    connect_saved_for(db,"",5)
+}
+pub fn connect_selected(db:&crate::storage::Storage,id:&str)->Result<Registry,String>{
+    let server=saved_servers(db)?.into_iter().find(|s|s.id==id)
+        .ok_or("MCP server not enabled")?;
+    let token=crate::credentials::retrieve(&format!("mcp:{}",id)).ok();
+    let mut registry=Registry::new();
+    registry.connect_config(&server.id,&server.url,token)?;
+    Ok(registry)
+}
+/// Tool namespace identity is derived from the saved server ID, NOT connection
+/// order. This prevents attaching an approved request to a different server
+/// when on-demand selection changes between planning and execution.
+pub(crate) fn alias_for(id:&str)->String{
+    let mut value=String::from("s");
+    for byte in id.bytes(){value.push_str(&format!("{byte:02x}"))}
+    value
+}
+pub(crate) fn valid_tool_name(name:&str)->bool{
+    !name.is_empty()&&name.len()<=200&&
+        name.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'_'||b==b'-')
+}
+pub struct Registry {
+    connections:HashMap<String,Connection>,
+    local:HashMap<String,crate::mcp_stdio::LocalConnection>,
+}
 impl Registry {
-    pub fn new()->Self{Self{connections:HashMap::new(),next_alias:0}}
+    pub fn new()->Self{Self{connections:HashMap::new(),local:HashMap::new()}}
+    pub fn connect_config(&mut self,id:&str,endpoint:&str,token:Option<String>)
+        ->Result<&[Tool],String>{
+        validate_server(id,endpoint)?;
+        if endpoint==format!("local:{id}"){
+            if !self.local.contains_key(id){
+                let conn=crate::mcp_stdio::LocalConnection::connect(id)?;
+                self.local.insert(id.to_owned(),conn);
+            }
+            return Ok(&self.local.get(id).ok_or("Local MCP not connected")?.tools)
+        }
+        self.connect(id,endpoint,token)
+    }
     pub fn connect(&mut self,id:&str,raw:&str,token:Option<String>)->Result<&[Tool],String>{
         if self.connections.contains_key(id){
             return Ok(&self.connections.get(id).expect("checked").tools)
         }
         if id.is_empty()||id.len()>128{return Err("Invalid MCP server id".into())}
         let endpoint=Url::parse(raw).map_err(|e|e.to_string())?;
-        if endpoint.username()!=""||endpoint.password().is_some()||
-           endpoint.query().is_some()||endpoint.fragment().is_some(){return Err("Unsafe MCP endpoint".into())}
+        validate_server(id,raw)?;
+        if raw.starts_with("local:"){return Err("Use connect_config for STDIO".into())}
         let host=endpoint.host_str().ok_or("MCP endpoint requires a host")?;
         if endpoint.scheme()!="https"&& !(endpoint.scheme()=="http"&&
            matches!(host,"localhost"|"127.0.0.1"|"::1")){
             return Err("MCP must use HTTPS except on loopback".into())
         }
-        let alias=format!("s{}",self.next_alias);
+        let alias=alias_for(id);
         let mut conn=Connection{
             endpoint,client:Client::builder().connect_timeout(Duration::from_secs(5)).timeout(Duration::from_secs(20))
                 .redirect(Policy::none()).build().map_err(|e|e.to_string())?,
@@ -121,28 +180,40 @@ impl Registry {
           "capabilities":{},"clientInfo":{"name":"charlotte","version":"0.4.0"}}))?;
         let _=conn.notification("notifications/initialized",json!({}));
         conn.refresh_tools()?;
-        self.next_alias+=1;self.connections.insert(id.to_owned(),conn);
+        self.connections.insert(id.to_owned(),conn);
         Ok(&self.connections.get(id).expect("inserted").tools)
     }
     pub fn tools(&self)->Vec<Tool>{
-        self.connections.values().flat_map(|c|c.tools.iter().cloned()).collect()
+        let mut list:Vec<Tool>=self.connections.values().flat_map(|c|c.tools.iter().cloned())
+            .chain(self.local.values().flat_map(|c|c.tools.iter().cloned())).collect();
+        list.sort_by(|a,b|a.server_id.cmp(&b.server_id).then(a.name.cmp(&b.name)));
+        list
     }
     pub fn call(&mut self,alias_name:&str,args:Value)->Result<Value,String>{
         if !args.is_object(){return Err("MCP tool arguments must be a JSON object".into())}
         let (alias,name)=parse_name(alias_name).ok_or("Invalid namespaced MCP tool")?;
-        let c=self.connections.values_mut().find(|c|c.alias==alias).ok_or("MCP server not connected")?;
-        if !c.tools.iter().any(|t|t.name==alias_name&&t.original_name==name){
-            return Err("MCP tool is not advertised by the server".into())
+        if let Some(c)=self.connections.values_mut().find(|c|c.alias==alias){
+            if !c.tools.iter().any(|t|t.name==alias_name&&t.original_name==name){
+                return Err("MCP tool is not advertised by the server".into())
+            }
+            return c.call("tools/call",json!({"name":name,"arguments":args}))
         }
-        c.call("tools/call",json!({"name":name,"arguments":args}))
+        if let Some(c)=self.local.values_mut().find(|c|c.alias==alias){
+            if !c.tools.iter().any(|t|t.name==alias_name&&t.original_name==name){
+                return Err("Local MCP tool is not advertised by the server".into())
+            }
+            return c.invoke(name,args)
+        }
+        Err("MCP server is not connected".into())
     }
-    pub fn disconnect(&mut self,id:&str){self.connections.remove(id);}
+    pub fn disconnect(&mut self,id:&str){self.connections.remove(id);self.local.remove(id);}
 }
 fn parse_name(name:&str)->Option<(&str,&str)> {
     let rest=name.strip_prefix("mcp__")?;
     let (alias,tool)=rest.split_once("__")?;
-    if alias.is_empty()||tool.is_empty()||!alias.starts_with('s')||
-       !alias[1..].bytes().all(|b|b.is_ascii_digit()){return None}
+    if alias.len()<3||tool.is_empty()||!alias.starts_with('s')||
+        alias[1..].len()%2!=0 ||
+        !alias[1..].bytes().all(|b|b.is_ascii_hexdigit()){return None}
     Some((alias,tool))
 }
 impl Connection {
@@ -222,7 +293,7 @@ impl Connection {
         let mut tools=Vec::new();
         for entry in list.iter().take(300){
             let Some(name)=entry.get("name").and_then(Value::as_str) else {continue};
-            if name.is_empty()||name.len()>200||!name.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'_'||b==b'-'){continue}
+            if !valid_tool_name(name){continue}
             tools.push(Tool{
                 server_id:self.server_id.clone(),original_name:name.to_owned(),
                 name:format!("mcp__{}__{name}",self.alias),
@@ -237,7 +308,7 @@ impl Connection {
 #[cfg(test)]
 mod tests{
     use super::*;
-    #[test]fn namespaced_tools(){assert_eq!(parse_name("mcp__s2__search_files"),Some(("s2","search_files")));assert!(parse_name("mcp__bad__hi").is_none());}
+    #[test]fn namespaced_tools(){assert_eq!(parse_name("mcp__s616263__search_files"),Some(("s616263","search_files")));assert!(parse_name("mcp__bad__hi").is_none());}
     #[test]fn registry_starts_empty(){assert!(Registry::new().tools().is_empty());}
     #[test]fn mcp_config_validates_remote_endpoints(){
         assert!(validate_server("search","https://example.org/mcp").is_ok());
@@ -245,6 +316,18 @@ mod tests{
         assert!(validate_server("oops","http://evil.example/mcp").is_err());
         assert!(validate_server("oops","https://username:password@host/mcp").is_err());
         assert!(validate_server("../oops","https://host/mcp").is_err());
+    }
+    #[test]fn stable_server_namespace_is_independent_of_connection_order(){
+        assert_eq!(alias_for("github"),alias_for("github"));
+        assert_ne!(alias_for("github"),alias_for("gitlab"));
+        let name=format!("mcp__{}__list_issues",alias_for("github"));
+        assert_eq!(parse_name(&name).unwrap().1,"list_issues");
+    }
+    #[test]fn read_only_url_and_local_allowlist_are_strict(){
+        assert!(validate_server("supabase","https://mcp.supabase.com/mcp?read_only=true").is_ok());
+        assert!(validate_server("supabase","https://mcp.supabase.com/mcp?read_only=false").is_err());
+        assert!(validate_server("playwright","local:playwright").is_ok());
+        assert!(validate_server("unknown","local:unknown").is_err());
     }
     #[test]fn persisted_server_ids_are_bounded(){
         let db=crate::storage::Storage::open(std::path::Path::new(":memory:")).unwrap();
