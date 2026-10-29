@@ -24,6 +24,7 @@ Usage:
   charlotte-settings ai cloud set <https-service-url>
   charlotte-settings ai cloud remove
   charlotte-settings ai cloud show
+  charlotte-settings ai cloud models
   charlotte-settings updates check [stable|beta]
   charlotte-settings updates stage [stable|beta]
   charlotte-settings account status|signout
@@ -76,6 +77,11 @@ fn run(args: &[String]) -> Result<(), String> {
         ["ai","cloud","remove"]=>{
             db.set_setting("ai:cloud_url","").map_err(|e|e.to_string())?;
             println!("Charlotte cloud URL cleared.");
+        },
+        ["ai","cloud","models"]=>{
+            for model in charlotte_native::cloud::models().map_err(|e|e.to_string())?{
+                println!("{model}");
+            }
         },
         ["ai","cloud","show"]=>{
             println!("{}",
