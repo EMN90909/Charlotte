@@ -70,6 +70,8 @@ struct ActionForm {
     prompt_text: Option<String>,
     skill: Option<String>,
     catalog: Option<String>,
+    custom_id: Option<String>,
+    endpoint: Option<String>,
 }
 fn escape(s: &str) -> String {
     s.replace('&',"&amp;").replace('<',"&lt;").replace('>',"&gt;")
@@ -157,6 +159,7 @@ fn sidebar(ui:&Ui)->Html<String>{
             escape(item.id),escape(item.category),escape(item.name)));
     }
     html.push_str(r#"</select><button name="command" class="primary" value="enable">Enable profile</button><button name="command" value="disable">Disable</button></form>"#);
+    html.push_str(&format!(r#"<form action="/mcp/custom" method="post" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">{token}<input name="custom_id" aria-label="Custom MCP ID" maxlength="40" placeholder="Provider ID"><input name="endpoint" aria-label="HTTPS MCP endpoint" maxlength="1024" placeholder="https://vendor.example/mcp"><button class="primary">Save custom HTTPS MCP</button></form>"#));
     html.push_str("<small class=\"muted\">OAuth services need user sign-in and compatible OAuth support; locally installed STDIO packages are never installed automatically. Unsupported vendor-specific entries require the actual MCP URL.</small></section>");
     let configured=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
         .ok().and_then(|db|mcp::saved_servers(&db).ok()).unwrap_or_default();
@@ -658,6 +661,25 @@ async fn browser_resume(
 /// saved screenshot, model-generated selector, network download or mutation.
 /// User-selected profile registration only. No connection, OAuth grant,
 /// package install, stdout pipes, subprocess, or tool execution happens here.
+/// Custom endpoints fill gaps for vendors with per-workspace MCP URLs.
+/// This only persists a URL after strict HTTPS/loopback validation.
+async fn mcp_custom_action(
+    State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
+)->Response{
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let (Some(id),Some(url))=(form.custom_id.as_deref(),form.endpoint.as_deref()) else {
+        return (StatusCode::BAD_REQUEST,"MCP ID and endpoint required").into_response()
+    };
+    if ui.inner.lock().is_ok_and(|inner|inner.working||inner.pending_tool.is_some()){
+        return (StatusCode::CONFLICT,"Resolve the active tool request").into_response()
+    }
+    let result=crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite"))
+        .map_err(|e|e.to_string()).and_then(|db|crate::mcp::save_server(&db,id,url));
+    if let Ok(mut inner)=ui.inner.lock(){
+        inner.error=result.err().unwrap_or_default();
+    }
+    reply("/sidebar")
+}
 async fn mcp_catalog_action(
     State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>
 )->Response{
@@ -1056,6 +1078,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/browser/dialog",post(browser_dialog))
                 .route("/browser/skill",post(browser_skill))
                 .route("/mcp/catalog",post(mcp_catalog_action))
+                .route("/mcp/custom",post(mcp_custom_action))
                 .route("/notifications",post(notification_permission))
                 .route("/connect",post(connect))
                 .route("/send",post(send))
@@ -1265,6 +1288,7 @@ mod tests{
         let html=sidebar(&ui).0;
         assert!(html.contains("MCP integrations directory"));
         assert!(html.contains(r#"action="/mcp/catalog""#));
+        assert!(html.contains(r#"action="/mcp/custom""#));
         assert!(html.contains("GitHub"));
         assert!(!html.contains("Authorization: Bearer"));
     }
