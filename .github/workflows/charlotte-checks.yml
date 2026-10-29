@@ -41,11 +41,9 @@ jobs:
         working-directory: server
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: server/go.mod
-      - run: go test ./...
-      - run: go build ./cmd/server
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --all-targets
+      - run: cargo build --release --bins
 
   typecheck:
     runs-on: ubuntu-latest
