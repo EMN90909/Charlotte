@@ -1,4 +1,7 @@
 mod hll;
+mod grpc;
+mod sse;
+mod supabase;
 //! Native Rust HTTP implementation of the Charlotte chat endpoints.
 //! Migration-in-progress: gRPC, SSE, HLL persistence and ops are not ported yet.
 use axum::{
@@ -28,6 +31,8 @@ struct AppState {
     hub: Arc<Mutex<HashMap<String, Room>>>,
     metrics: Arc<Mutex<hll::Metrics>>,
     allowed_origin: Option<String>,
+    streams: Arc<Mutex<HashMap<String,tokio::sync::broadcast::Sender<Message>>>>,
+    subscribers: Arc<std::sync::atomic::AtomicUsize>,
 }
 struct Registry { names: HashSet<String>, path: PathBuf }
 struct Room { seq: u64, messages: VecDeque<Message>, last_publish: u64 }
@@ -141,14 +146,18 @@ async fn send(
         .or_insert_with(|| Room { seq: now, messages: VecDeque::new(), last_publish: now });
     room.seq = room.seq.saturating_add(1);
     room.last_publish = now;
+    let published_seq=room.seq;
+    let published_content=req.content.clone();
     room.messages.push_back(Message {
-        id: id.clone(), seq: room.seq, room: claims.room,
-        sender: claims.username, content: req.content, timestamp: now,
+        id: id.clone(), seq: room.seq, room: claims.room.clone(),
+        sender: claims.username.clone(), content: req.content, timestamp: now,
     });
     while room.messages.len() > 256 ||
         room.messages.front().is_some_and(|m| now.saturating_sub(m.timestamp) > 120_000) {
         room.messages.pop_front();
     }
+    drop(rooms);
+    sse::broadcast(&state,&claims.room,&Message{id:id.clone(),seq:published_seq,room:claims.room,sender:claims.username,content:published_content,timestamp:now});
     Ok(Json(SendResponse { id }))
 }
 async fn poll(
@@ -213,6 +222,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         hub: Arc::new(Mutex::new(HashMap::new())),
         metrics: Arc::new(Mutex::new(metrics)),
         allowed_origin: env::var("CHARLOTTE_WEB_ORIGIN").ok(),
+        streams:Arc::new(Mutex::new(HashMap::new())),
+        subscribers:Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     };
     let persist = state.metrics.clone();
     tokio::spawn(async move {
@@ -220,12 +231,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         loop { ticker.tick().await; if let Ok(m) = persist.lock() { if let Err(e) = m.save() { tracing::error!("metrics persist failed: {e}"); } } }
     });
     let final_metrics = state.metrics.clone();
+    let grpc_state=state.clone();
+    tokio::spawn(async move {if let Err(e)=grpc::serve(grpc_state).await {tracing::error!("gRPC failure: {e}");}});
     let app = Router::new()
         .route("/healthz", get(health))
         .route("/connect", post(connect))
         .route("/send", post(send))
         .route("/poll", get(poll))
         .route("/custom-metrics", get(metrics))
+        .route("/events",get(sse::events))
+        .route("/auth/me",get(supabase::me))
         .with_state(state.clone())
         .layer(axum::middleware::from_fn_with_state(state, cors));
     let listener = TcpListener::bind(address()?).await?;
@@ -280,6 +295,8 @@ mod tests {
             hub: Arc::new(Mutex::new(HashMap::new())),
             metrics: Arc::new(Mutex::new(hll::Metrics::load(String::new(), String::new()).unwrap())),
             allowed_origin: None,
+            streams:Arc::new(Mutex::new(HashMap::new())),
+            subscribers:Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         };
         assert_eq!(verify(&state, &token).unwrap().username, "alice");
     }
