@@ -14,6 +14,8 @@ Usage:
   charlotte-settings bookmark list
   charlotte-settings history list [count]
   charlotte-settings history clear
+  charlotte-settings downloads list [count]
+  charlotte-settings downloads clear
   charlotte-settings profile
 The browser must be restarted for changes to ad blocking; media permissions
 are checked on every CEF media request. Only HTTPS origins or loopback HTTP
@@ -64,6 +66,16 @@ fn run(args: &[String]) -> Result<(), String> {
         ["history", "clear"] => {
             let removed = db.clear_history().map_err(|e|e.to_string())?;
             println!("{removed} history records cleared");
+        }
+        ["downloads", "list"] | ["downloads", "list", _] => {
+            let count = if args.len() > 2 { args[2].parse::<usize>().map_err(|_|"count must be an integer")? } else { 20 };
+            for item in charlotte_native::downloads::recent(&db, count).map_err(|e|e.to_string())? {
+                println!("{}	{:?}	{}	{}	{}", item.finished_at, item.status, item.received_bytes, item.source_url, item.save_path);
+            }
+        }
+        ["downloads", "clear"] => {
+            let removed = db.clear_downloads().map_err(|e|e.to_string())?;
+            println!("{removed} download history records cleared (files are left untouched)");
         }
         _ => return Err(HELP.to_string()),
     }

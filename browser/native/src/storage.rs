@@ -30,6 +30,13 @@ impl Storage {
              CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY, room TEXT NOT NULL, sender TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL);
              CREATE INDEX IF NOT EXISTS messages_room_time ON messages(room, created_at);
              CREATE TABLE IF NOT EXISTS bookmark_folders (id TEXT PRIMARY KEY, name TEXT NOT NULL, parent_id TEXT);
+             CREATE TABLE IF NOT EXISTS downloads (
+                id INTEGER NOT NULL, source_url TEXT NOT NULL, save_path TEXT NOT NULL,
+                received_bytes INTEGER NOT NULL, total_bytes INTEGER NOT NULL,
+                status TEXT NOT NULL, finished_at INTEGER NOT NULL,
+                PRIMARY KEY(id, finished_at)
+             );
+             CREATE INDEX IF NOT EXISTS downloads_recent ON downloads(finished_at DESC);
              COMMIT;",
         )?;
         if version < 2 {
@@ -113,6 +120,35 @@ impl Storage {
     pub fn delete_message(&self, room: &str, id: i64) -> rusqlite::Result<bool> {
         Ok(self.0.execute("DELETE FROM messages WHERE room = ?1 AND id = ?2", params![room, id])? != 0)
     }
+
+    /// Persist only terminal CEF downloads. A download's browser session
+    /// identifier can be reused on restart, so timestamp forms the key.
+    pub fn record_download(&self, id: u32, url: &str, path: &str, received: i64,
+        total: i64, status: &str, finished_at: i64) -> rusqlite::Result<()> {
+        self.0.execute(
+            "INSERT INTO downloads(id,source_url,save_path,received_bytes,total_bytes,status,finished_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7)
+             ON CONFLICT(id,finished_at) DO UPDATE
+             SET received_bytes=excluded.received_bytes,
+                 total_bytes=excluded.total_bytes,status=excluded.status",
+            params![i64::from(id),url,path,received,total,status,finished_at]
+        )?;
+        Ok(())
+    }
+    pub fn recent_downloads(&self, limit: u32) -> rusqlite::Result<Vec<(i64,String,String,i64,i64,String,i64)>> {
+        let mut stmt = self.0.prepare(
+            "SELECT id,source_url,save_path,received_bytes,total_bytes,status,finished_at
+             FROM downloads ORDER BY finished_at DESC,id DESC LIMIT ?1"
+        )?;
+        stmt.query_map([i64::from(limit.min(1000))], |row| Ok((
+            row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,
+            row.get(4)?,row.get(5)?,row.get(6)?
+        )))?.collect()
+    }
+    pub fn clear_downloads(&self) -> rusqlite::Result<usize> {
+        self.0.execute("DELETE FROM downloads", [])
+    }
+
 }
 
 #[cfg(test)]

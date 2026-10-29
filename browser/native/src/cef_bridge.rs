@@ -35,6 +35,9 @@ wrap_client! {
         fn permission_handler(&self) -> Option<PermissionHandler> {
             Some(CharlottePermissionHandler::new())
         }
+        fn download_handler(&self) -> Option<DownloadHandler> {
+            Some(CharlotteDownloadHandler::new())
+        }
     }
 }
 
@@ -49,6 +52,57 @@ fn persist_tabs(state: &TabState) {
     }
 }
 
+
+
+// Chromium owns the file-save dialog and downloaded bytes; the Rust host
+// records only terminal outcomes. Never trust server-provided filenames.
+wrap_download_handler! {
+    struct CharlotteDownloadHandler;
+    impl DownloadHandler {
+        fn can_download(
+            &self, _browser: Option<&mut Browser>, url: Option<&CefString>,
+            _request_method: Option<&CefString>,
+        ) -> i32 {
+            url.map(CefString::to_string)
+                .is_some_and(|url| crate::session::valid_page_url(&url)) as i32
+        }
+        fn on_before_download(
+            &self, _browser: Option<&mut Browser>,
+            _download_item: Option<&mut DownloadItem>,
+            _suggested_name: Option<&CefString>,
+            callback: Option<&mut BeforeDownloadCallback>,
+        ) -> i32 {
+            let Some(callback) = callback else { return 0 };
+            // CEF opens its Save dialog: no untrusted path is provided by Charlotte.
+            callback.cont(None, 1);
+            1
+        }
+        fn on_download_updated(
+            &self, _browser: Option<&mut Browser>,
+            download_item: Option<&mut DownloadItem>,
+            _callback: Option<&mut DownloadItemCallback>,
+        ) {
+            let Some(item) = download_item else { return };
+            let status = if item.is_complete() != 0 {
+                Some(crate::downloads::Status::Completed)
+            } else if item.is_canceled() != 0 {
+                Some(crate::downloads::Status::Canceled)
+            } else if item.is_interrupted() != 0 {
+                Some(crate::downloads::Status::Interrupted)
+            } else { None };
+            let Some(status) = status else { return };
+            let Some(record) = crate::downloads::Download::finished(
+                item.id(), &item.url().to_string(), &item.full_path().to_string(),
+                item.received_bytes(), item.total_bytes(), status,
+            ) else { return };
+            if let Ok(db) = Storage::open(&profile::profile_root().join("charlotte.sqlite")) {
+                if let Err(error) = crate::downloads::record(&db, &record) {
+                    eprintln!("Unable to record download: {error}");
+                }
+            }
+        }
+    }
+}
 
 // Permission requests are always resolved in Rust, never by an untrusted
 // renderer. Desktop/screen capture is not implied by webcam/mic permission.
