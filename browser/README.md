@@ -1,3 +1,21 @@
+## Charlotte MCP integration directory
+
+Charlotte now includes **43 opt-in MCP connection profiles** from the supplied
+33-group integration directory. The sidebar allows choosing a provider or
+entering a verified custom HTTPS endpoint; the settings CLI offers catalog
+listing, enable/disable, credential setup, explicit OAuth 2.1 PKCE
+authorization, and a connection/tool discovery check. Optional, separately
+installed local MCP tools use allowlisted STDIO executables; a native SQLite
+adapter supplies strictly read-only access to one user-selected database.
+
+No third-party accounts are connected automatically. Bearer/OAuth tokens
+are stored in the OS credential store, all tool calls still require explicit
+approval, and no more than five relevant saved MCP profiles are contacted
+per planning request. Vendor availability, OAuth client registration, package
+installation and remote API pricing vary. See the
+[MCP catalog and setup guide](MCP_CATALOG.md) for the 43 individual profiles,
+setup commands and release caveats.
+
 # Charlotte Browser — Rust + CEF
 
 Charlotte's browser source, desktop host and build system are written in **Rust**.
