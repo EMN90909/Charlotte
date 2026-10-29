@@ -268,8 +268,13 @@ fn plan_browser_next(
 )->Result<(),String>{
     let (provider,default_model)=provider_model(&provider_name).ok_or("Unknown AI provider")?;
     let model=if visual&&provider_name=="ollama"{"llava"}else{default_model};
-    let snapshot=context.observe_settled()?;
+    let mut snapshot=context.observe_settled()?;
     let screenshot=if visual {Some(context.screenshot()?)}else{None};
+    if visual {
+        if let Ok(frames)=context.frame_inventory(){
+            snapshot["isolatedFrames"]=serde_json::json!(frames);
+        }
+    }
     let key=crate::credentials::retrieve(&format!("ai:{provider_name}")).ok();
     let history=state.inner.lock().ok().map(|inner|inner.ai.clone()).unwrap_or_default();
     match browser_agent::decide(provider,key.as_deref(),model,&history,
