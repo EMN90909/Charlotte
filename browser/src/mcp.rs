@@ -33,6 +33,14 @@ pub fn tool_risk(tool:&Tool)->ToolRisk{
         "invoice_send"].iter().any(|word|name.contains(word)){
         return ToolRisk::Financial
     }
+    // Tool names are advisory and third-party descriptions are untrusted.
+    // Any mutating verb anywhere in a name overrides a read-looking prefix.
+    if ["delete","remove","create","update","write","patch","edit",
+        "send","publish","post","change","upsert","execute","drop_",
+        "insert","upload","grant","revoke","set_","assign","merge"]
+        .iter().any(|term|name.contains(term)){
+        return ToolRisk::Modifying
+    }
     let read=["get_","list_","search_","read_","fetch_","inspect_",
         "query_","describe_","find_","lookup_","retrieve_"];
     if read.iter().any(|prefix|name.starts_with(prefix)) ||
@@ -363,6 +371,8 @@ mod tests{
         assert_eq!(tool_risk(&tool),ToolRisk::Modifying);
         tool.original_name="list_repos".into();
         assert_eq!(tool_risk(&tool),ToolRisk::ReadOnly);
+        tool.original_name="get_and_delete_records".into();
+        assert_eq!(tool_risk(&tool),ToolRisk::Modifying);
         tool.server_id="paypal".into();
         assert_eq!(tool_risk(&tool),ToolRisk::Financial);
     }
