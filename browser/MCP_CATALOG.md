@@ -1,7 +1,7 @@
-# Charlotte MCP — 43-profile connection directory
+# Charlotte MCP — 52-profile connection directory
 
 Source: *Charlotte MCP.pdf*, eight pages, provided 29 October 2026.
-It describes 33 ranked integration categories; Charlotte has 43 individually
+It describes 33 ranked integration categories; Charlotte has 52 individually
 addressable profiles because several categories have multiple alternatives.
 
 **Important:** A profile is a connection template, not an active account
@@ -10,6 +10,12 @@ guaranteed to remain current**. A catalog entry does not guarantee that the
 provider offers free API usage, full tool access, compatible OAuth, or
 unlimited queries. Published claims of '100% free' and popularity rankings
 in the PDF were not independently audited.
+
+## Google Workspace profiles
+
+The catalog includes individual Gmail, Drive, Calendar, Docs, Sheets, Slides, Chat and Classroom endpoints published by Google. Google labels these MCP servers Developer Preview. Each requires a configured OAuth client; the browser does not claim an account is connected merely because its profile is listed.
+
+YouTube is listed as a custom MCP entry without a guessed server URL. Supply and verify a server endpoint you control or trust. A ChatGPT subscription is not an OpenAI API key and is not listed as a direct account connector; Charlotte's AI provider/API configuration is a separate integration.
 
 ## Implemented native runtime
 

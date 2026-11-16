@@ -97,16 +97,16 @@ fn header_html(title: &str, compact: bool) -> String {
     format!(r#"<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; object-src 'none'">
 <title>{}</title><style>
-:root{{color-scheme:dark;--bg:#1b1b18;--card:#292924;--text:#f5eee0;--sub:#a9a394;--line:#3d3b35;--accent:#cbaa7a}}
+:root{{color-scheme:dark;--bg:#0e0e0e;--card:#1b1b1b;--text:#f5f5f5;--sub:#a3a3a3;--line:#303030;--accent:#dedede}}
 *{{box-sizing:border-box}}body{{width:{};margin:0;background:var(--bg);color:var(--text);font:13px system-ui,-apple-system,Segoe UI,sans-serif}}
-form{{display:inline-flex;align-items:center;gap:7px}}input,select,textarea{{font:inherit;background:#302f29;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:8px;min-width:0}}
-textarea{{width:100%;min-height:92px;resize:vertical}}button{{background:var(--card);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:9px;cursor:pointer}}
+form{{display:inline-flex;align-items:center;gap:7px}}input,select,textarea{{font:inherit;background:#302f29;color:var(--text);border:1px solid var(--line);border-radius:4px;padding:8px;min-width:0}}
+textarea{{width:100%;min-height:92px;resize:vertical}}button{{background:var(--card);border:1px solid var(--line);color:var(--text);padding:8px 10px;border-radius:4px;cursor:pointer}}
 button:hover,button:focus-visible{{border-color:var(--accent)}}button.primary{{background:var(--accent);color:#1b1b18;border-color:var(--accent);font-weight:700}}
 nav{{display:flex;align-items:center;gap:6px;overflow-x:auto;white-space:nowrap}}
 .tab{{max-width:185px;display:inline-block;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}}
 .tab.active{{color:var(--accent);border-color:var(--accent)}}
 small,.muted{{color:var(--sub)}}section{{border-top:1px solid var(--line);padding:17px 14px}}
-.stack{{display:flex;flex-direction:column;gap:10px}}.bubble{{padding:10px;border:1px solid var(--line);background:var(--card);border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}}
+.stack{{display:flex;flex-direction:column;gap:10px}}.bubble{{padding:10px;border:1px solid var(--line);background:var(--card);border-radius:4px;white-space:pre-wrap;overflow-wrap:anywhere}}
 label{{color:var(--sub);font-size:12px}}h2{{font-size:16px;margin:0 0 14px}}.error{{color:#e9aeae}}
 </style></head><body>"#,escape(title),width)
 }
@@ -173,7 +173,7 @@ fn sidebar(ui:&Ui)->Html<String>{
     }
     // Listing a catalog never opens a vendor session, fetches tools, or
     // installs local executables. Connecting is a separate explicit action.
-    html.push_str("<section><h2>MCP integrations directory</h2><p class=\"muted\">Choose from 43 catalog profiles. Enabling saves a connection template only; account authorization, local package installation and any paid vendor usage remain separate.</p>");
+    html.push_str("<section><h2>MCP integrations directory</h2><p class=\"muted\">Choose from 52 opt-in catalog profiles. Enabling saves a connection template only; account authorization, local package installation and any paid vendor usage remain separate.</p>");
     html.push_str(&format!(r#"<form action="/mcp/catalog" method="post">{token}<select name="catalog" aria-label="MCP provider" style="max-width:200px">"#));
     for item in crate::mcp_catalog::PRESETS{
         html.push_str(&format!(r#"<option value="{}">{} — {}</option>"#,

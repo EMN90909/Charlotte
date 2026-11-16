@@ -57,6 +57,16 @@ pub static PRESETS:&[Preset]=&[
     Preset{id:"sequential-thinking",name:"MCP Sequential Thinking",category:"Local tools",endpoint:"local:sequential-thinking",auth:"local",description:"Local reasoning workflow",keywords:"thinking plan"},
     Preset{id:"git",name:"MCP Git",category:"Local tools",endpoint:"local:git",auth:"local",description:"Local Git repository operations",keywords:"git commits"},
 ];
+    // Google Workspace remote servers are in Developer Preview; OAuth client registration is required.
+    Preset{id:"google-gmail",name:"Google Gmail",category:"Productivity",endpoint:"https://gmailmcp.googleapis.com/mcp/v1",auth:"oauth",description:"Google Workspace Gmail MCP (Developer Preview; configure an AI-agent OAuth client)",keywords:"gmail google email"},
+    Preset{id:"google-drive",name:"Google Drive",category:"Productivity",endpoint:"https://drivemcp.googleapis.com/mcp/v1",auth:"oauth",description:"Google Workspace Drive MCP (Developer Preview; configure an AI-agent OAuth client)",keywords:"drive google files"},
+    Preset{id:"google-calendar",name:"Google Calendar",category:"Productivity",endpoint:"https://calendarmcp.googleapis.com/mcp/v1",auth:"oauth",description:"Google Workspace Calendar MCP (Developer Preview; configure an AI-agent OAuth client)",keywords:"calendar google schedule"},
+    Preset{id:"google-docs",name:"Google Docs",category:"Productivity",endpoint:"https://docsmcp.googleapis.com/mcp/v1",auth:"oauth",description:"Google Workspace Docs MCP (Developer Preview; configure an AI-agent OAuth client)",keywords:"docs google documents"},
+    Preset{id:"google-sheets",name:"Google Sheets",category:"Productivity",endpoint:"https://sheetsmcp.googleapis.com/mcp/v1",auth:"oauth",description:"Google Workspace Sheets MCP (Developer Preview; configure an AI-agent OAuth client)",keywords:"sheets spreadsheet google"},
+    Preset{id:"google-slides",name:"Google Slides",category:"Productivity",endpoint:"https://slidesmcp.googleapis.com/mcp/v1",auth:"oauth",description:"Google Workspace Slides MCP (Developer Preview; configure an AI-agent OAuth client)",keywords:"slides presentation google"},
+    Preset{id:"google-chat",name:"Google Chat",category:"Productivity",endpoint:"https://chatmcp.googleapis.com/mcp/v1",auth:"oauth",description:"Google Workspace Chat MCP (Developer Preview; configure an AI-agent OAuth client)",keywords:"chat google workspace"},
+    Preset{id:"google-classroom",name:"Google Classroom",category:"Education",endpoint:"https://classroommcp.googleapis.com/mcp/v1",auth:"oauth",description:"Google Classroom MCP (Developer Preview; configure an AI-agent OAuth client)",keywords:"classroom education google"},
+    Preset{id:"youtube",name:"YouTube (custom MCP)",category:"Media",endpoint:"",auth:"manual",description:"Add a self-hosted or vetted YouTube Data API MCP URL; no first-party hosted MCP URL is assumed",keywords:"youtube video channel media"},
 pub fn get(id:&str)->Option<&'static Preset>{PRESETS.iter().find(|p|p.id==id)}
 pub fn local_command(id:&str)->Option<(&'static str,&'static [&'static str])>{
     match id {

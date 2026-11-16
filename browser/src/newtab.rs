@@ -24,20 +24,20 @@ pub fn render(bookmarks: &[Bookmark]) -> String {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; form-action https://www.google.com; base-uri 'none'">
 <title>New tab — Charlotte</title>
 <style>
-:root{color-scheme:dark;--ink:#f5eee0;--muted:#a9a394;--paper:#1b1b18;--surface:#292924;--line:#393931;--accent:#cbaa7a}
+:root{color-scheme:dark;--ink:#f5f5f5;--muted:#a3a3a3;--paper:#0e0e0e;--surface:#1b1b1b;--line:#303030;--accent:#dedede}
 *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 main{max-width:850px;margin:0 auto;padding:clamp(32px,7vw,80px) 22px 90px}
 .eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.22em;font-weight:650;color:var(--accent)}
 h1{font-size:clamp(54px,9vw,100px);line-height:1.04;font-weight:480;letter-spacing:-.065em;margin:16px 0 20px}
 p{line-height:1.6;color:var(--muted);margin:0 0 40px}
-form{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 18px}
+form{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:14px 18px}
 form:focus-within{border-color:var(--accent)}
 input{font-size:18px;color:var(--ink);background:transparent;outline:0;border:0;flex:1;min-width:0}
 input::placeholder{color:#aaa393}
-button{cursor:pointer;background:var(--accent);border:0;color:#201c18;padding:10px 18px;border-radius:10px;font-weight:700}
+button{cursor:pointer;background:var(--accent);border:0;color:#201c18;padding:10px 18px;border-radius:4px;font-weight:700}
 section{margin-top:56px}h2{font-size:15px;font-weight:600;letter-spacing:.02em;margin:0 0 20px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:12px}
-a{display:flex;min-height:78px;align-items:center;color:var(--ink);text-decoration:none;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow-wrap:anywhere}
+a{display:flex;min-height:78px;align-items:center;color:var(--ink);text-decoration:none;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:4px;overflow-wrap:anywhere}
 a:hover,a:focus-visible{border-color:var(--accent);background:#333128}
 .small{font-size:13px;color:var(--muted);margin-top:18px}
 </style></head><body><main><div class="eyebrow">Charlotte · Native</div><h1>A place to begin.</h1>
