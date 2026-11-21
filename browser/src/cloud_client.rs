@@ -49,6 +49,7 @@ pub enum CloudCommand {
     Observe,
     CaptureScreenshot,
     PushToCloud { task_id: String, prompt: String },
+    FillForm { fields: std::collections::HashMap<String, String> },
     Ping,
 }
 
@@ -177,6 +178,28 @@ impl CloudClient {
                     screenshot_base64: None,
                 }
             }
+            CloudCommand::FillForm { fields } => {
+                let mut clean_fields = std::collections::HashMap::new();
+                let mut payment_blocked = false;
+                for (k, v) in fields {
+                    let lower = k.to_lowercase();
+                    if lower.contains("card") || lower.contains("credit") || lower.contains("cvv") || lower.contains("cvc") || lower.contains("expir") || lower.contains("password") || lower.contains("pin") {
+                        payment_blocked = true;
+                        continue;
+                    }
+                    clean_fields.insert(k, v);
+                }
+                CommandReceipt {
+                    task_id: None,
+                    status: if payment_blocked { "payment_fields_blocked".into() } else { "success".into() },
+                    result: serde_json::json!({
+                        "filled": clean_fields,
+                        "payment_blocked": payment_blocked,
+                        "security_policy": "Charlotte strictly blocks automated access to payment credentials"
+                    }),
+                    screenshot_base64: None,
+                }
+            }
             CloudCommand::Ping => {
                 CommandReceipt {
                     task_id: None,
@@ -219,5 +242,23 @@ mod tests {
         }, &mut engine, 1);
         assert_eq!(nav_res.status, "success");
         assert_eq!(engine.tab_url(1), Some("https://example.com/new"));
+    }
+
+    #[test]
+    fn fill_form_blocks_payment_information() {
+        let mut engine = HeadlessEngine::new();
+        let client = CloudClient::new(CloudConfig::default());
+
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("full_name".into(), "Alice Wanjiku".into());
+        fields.insert("company".into(), "Fintech Africa".into());
+        fields.insert("credit_card".into(), "4111222233334444".into());
+        fields.insert("cvv".into(), "123".into());
+
+        let res = client.handle_command(CloudCommand::FillForm { fields }, &mut engine, 1);
+        assert_eq!(res.status, "payment_fields_blocked");
+        assert_eq!(res.result["payment_blocked"], true);
+        assert!(res.result["filled"]["credit_card"].is_null());
+        assert_eq!(res.result["filled"]["full_name"], "Alice Wanjiku");
     }
 }
