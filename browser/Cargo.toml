@@ -28,11 +28,12 @@ helper_name = "charlotte_helper"
 resources_path = "resources"
 
 [features]
-default = ["sandbox"]
-sandbox = ["cef/sandbox"]
+default = []
+cef-engine = ["dep:cef"]
+sandbox = ["cef-engine", "cef/sandbox"]
 
 [dependencies]
-cef = { version = "=156.2.0+156.0.14", features = ["build-util"] }
+cef = { version = "=156.2.0+156.0.14", features = ["build-util"], optional = true }
 rusqlite = { version = "0.32", features = ["bundled"] }
 adblock = { version = "=0.13.3", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }

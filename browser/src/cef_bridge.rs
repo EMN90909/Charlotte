@@ -1,5 +1,6 @@
 //! CEF browser-process handlers. No Electron IPC, Node, or renderer privileges.
 //! CEF invokes resource handlers on its IO thread; DB writes occur on the UI thread.
+#[cfg(feature = "cef-engine")]
 use cef::*;
 use std::sync::{Arc, Mutex, RwLock, atomic::{AtomicU64,Ordering}};
 use crate::{profile, shield::{Decision, Shield, STARTER_RULES}, shield_lists, storage::Storage, tabs::Tabs};
@@ -61,38 +62,7 @@ pub fn default_filter() -> Filter {
     filter
 }
 
-wrap_client! {
-    pub struct CharlotteClient {
-        filter: Filter,
-        tabs: TabState,
-    }
-    impl Client {
-        fn request_handler(&self) -> Option<RequestHandler> {
-            Some(CharlotteRequestHandler::new(self.filter.clone()))
-        }
-        fn display_handler(&self) -> Option<DisplayHandler> {
-            Some(CharlotteDisplayHandler::new(self.tabs.clone()))
-        }
-        fn life_span_handler(&self) -> Option<LifeSpanHandler> {
-            Some(CharlotteLifeSpanHandler::new(self.tabs.clone()))
-        }
-        fn load_handler(&self) -> Option<LoadHandler> {
-            Some(CharlotteLoadHandler::new(self.filter.clone(), self.tabs.clone()))
-        }
-        fn permission_handler(&self) -> Option<PermissionHandler> {
-            Some(CharlottePermissionHandler::new())
-        }
-        fn download_handler(&self) -> Option<DownloadHandler> {
-            Some(CharlotteDownloadHandler::new())
-        }
-        fn keyboard_handler(&self) -> Option<KeyboardHandler> {
-            Some(CharlotteKeyboardHandler::new())
-        }
-    }
-}
-
-
-fn persist_tabs(state: &TabState) {
+pub fn persist_tabs(state: &TabState) {
     if crate::app::is_restoring(){return}
     if let Ok(tabs) = state.lock() {
         if let Ok(db) = Storage::open(&profile::profile_root().join("charlotte.sqlite")) {
@@ -103,12 +73,47 @@ fn persist_tabs(state: &TabState) {
     }
 }
 
+#[cfg(not(feature = "cef-engine"))]
+pub struct CharlotteClient;
 
+#[cfg(feature = "cef-engine")]
+mod cef_impl {
+    use super::*;
+    use cef::*;
 
+    wrap_client! {
+        pub struct CharlotteClient {
+            filter: Filter,
+            tabs: TabState,
+        }
+        impl Client {
+            fn request_handler(&self) -> Option<RequestHandler> {
+                Some(CharlotteRequestHandler::new(self.filter.clone()))
+            }
+            fn display_handler(&self) -> Option<DisplayHandler> {
+                Some(CharlotteDisplayHandler::new(self.tabs.clone()))
+            }
+            fn life_span_handler(&self) -> Option<LifeSpanHandler> {
+                Some(CharlotteLifeSpanHandler::new(self.tabs.clone()))
+            }
+            fn load_handler(&self) -> Option<LoadHandler> {
+                Some(CharlotteLoadHandler::new(self.filter.clone(), self.tabs.clone()))
+            }
+            fn permission_handler(&self) -> Option<PermissionHandler> {
+                Some(CharlottePermissionHandler::new())
+            }
+            fn download_handler(&self) -> Option<DownloadHandler> {
+                Some(CharlotteDownloadHandler::new())
+            }
+            fn keyboard_handler(&self) -> Option<KeyboardHandler> {
+                Some(CharlotteKeyboardHandler::new())
+            }
+        }
+    }
 
-// Browser shortcuts are intercepted before webpage JavaScript; only known
-// combinations are consumed, so site keyboard events remain functional.
-wrap_keyboard_handler! {
+    // Browser shortcuts are intercepted before webpage JavaScript; only known
+    // combinations are consumed, so site keyboard events remain functional.
+    wrap_keyboard_handler! {
     struct CharlotteKeyboardHandler;
     impl KeyboardHandler {
         fn on_pre_key_event(
@@ -461,3 +466,6 @@ wrap_load_handler! {
         }
     }
 }
+}
+#[cfg(feature = "cef-engine")]
+pub use cef_impl::*;

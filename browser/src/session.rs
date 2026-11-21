@@ -18,6 +18,27 @@ pub fn remember_page(store: &Storage, url: &str) -> rusqlite::Result<()> {
 pub struct SavedTabs {
     pub urls: Vec<String>,
     pub active_index: usize,
+    #[serde(default)]
+    pub layout: crate::tabs::TabLayout,
+    #[serde(default)]
+    pub groups: Vec<crate::tabs::TabGroup>,
+    #[serde(default)]
+    pub workspaces: Vec<crate::tabs::Workspace>,
+    #[serde(default)]
+    pub active_workspace: Option<String>,
+}
+
+impl Default for SavedTabs {
+    fn default() -> Self {
+        Self {
+            urls: Vec::new(),
+            active_index: 0,
+            layout: crate::tabs::TabLayout::Horizontal,
+            groups: Vec::new(),
+            workspaces: Vec::new(),
+            active_workspace: None,
+        }
+    }
 }
 impl SavedTabs {
     pub fn sanitized(self) -> Self {
@@ -32,13 +53,27 @@ impl SavedTabs {
         }
         if valid.is_empty() { new_active = 0; }
         else { new_active = new_active.min(valid.len() - 1); }
-        Self { urls: valid, active_index: new_active }
+        Self {
+            urls: valid,
+            active_index: new_active,
+            layout: self.layout,
+            groups: self.groups,
+            workspaces: self.workspaces,
+            active_workspace: self.active_workspace,
+        }
     }
 }
 pub fn restore_tabs(store: &Storage) -> SavedTabs {
     store.setting(TABS_KEY).ok().flatten()
         .and_then(|s| serde_json::from_str::<SavedTabs>(&s).ok())
-        .unwrap_or(SavedTabs { urls: vec![], active_index: 0 })
+        .unwrap_or(SavedTabs {
+            urls: vec![],
+            active_index: 0,
+            layout: crate::tabs::TabLayout::Horizontal,
+            groups: vec![],
+            workspaces: vec![],
+            active_workspace: None,
+        })
         .sanitized()
 }
 pub fn save_tabs(store: &Storage, tabs: &crate::tabs::Tabs) -> rusqlite::Result<()> {
@@ -46,7 +81,14 @@ pub fn save_tabs(store: &Storage, tabs: &crate::tabs::Tabs) -> rusqlite::Result<
     // When every tab closes during normal shutdown, preserve the last good
     // session rather than overwriting it with an empty array.
     if urls.is_empty() { return Ok(()); }
-    let data = SavedTabs { urls, active_index }.sanitized();
+    let data = SavedTabs {
+        urls,
+        active_index,
+        layout: tabs.layout(),
+        groups: tabs.groups().to_vec(),
+        workspaces: tabs.workspaces().to_vec(),
+        active_workspace: Some(tabs.active_workspace().to_owned()),
+    }.sanitized();
     let serialized = serde_json::to_string(&data)
         .map_err(|_| rusqlite::Error::InvalidQuery)?;
     store.set_setting(TABS_KEY, &serialized)
@@ -97,6 +139,9 @@ mod session_tests {
         assert_eq!(restore_tabs(&db), SavedTabs {
             urls: vec!["https://first.example".into(), "https://second.example".into()],
             active_index: 0,
+            active_workspace: Some("default".into()),
+            workspaces: tabs.workspaces().to_vec(),
+            ..Default::default()
         });
         assert_eq!(start_page(&db), "https://first.example");
     }

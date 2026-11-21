@@ -29,10 +29,16 @@ pub mod advanced_automation;
 pub mod automation_semantics;
 pub mod browser_agent;
 pub mod browser_skills;
+pub mod dark_mode;
+pub mod extensions;
+pub mod resource_manager;
+pub mod engine;
+pub mod cloud_client;
+#[allow(special_module_name)]
 pub mod main;
 pub mod renderer;
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "cef-engine"))]
 fn load_cef_library(helper: bool) -> cef::library_loader::LibraryLoader {
     let loader = cef::library_loader::LibraryLoader::new(
         &std::env::current_exe().expect("current executable"), helper
@@ -42,18 +48,25 @@ fn load_cef_library(helper: bool) -> cef::library_loader::LibraryLoader {
 }
 
 pub fn launch() -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    let _cef_library = load_cef_library(false);
+    #[cfg(feature = "cef-engine")]
+    {
+        #[cfg(target_os = "macos")]
+        let _cef_library = load_cef_library(false);
 
-    let _ = cef::api_hash(cef::sys::CEF_API_VERSION_LAST, 0);
-    let args = cef::args::Args::new();
-    let code = app::run(args.as_main_args(), std::ptr::null_mut());
-    if code == 0 { Ok(()) } else { Err(format!("CEF exited with code {code}")) }
+        let _ = cef::api_hash(cef::sys::CEF_API_VERSION_LAST, 0);
+        let args = cef::args::Args::new();
+        let code = app::run(args.as_main_args(), std::ptr::null_mut());
+        if code == 0 { Ok(()) } else { Err(format!("CEF exited with code {code}")) }
+    }
+    #[cfg(not(feature = "cef-engine"))]
+    {
+        app::run_platform()
+    }
 }
 
 /// Windows CEF sandbox bootstrap entry point. The CEF packager provides
 /// bootstrap.exe and loads this Rust cdylib with a valid sandbox_info.
-#[cfg(all(target_os = "windows", feature = "sandbox"))]
+#[cfg(all(target_os = "windows", feature = "sandbox", feature = "cef-engine"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn RunWinMain(
     instance: cef::sys::HINSTANCE,

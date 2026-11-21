@@ -5,7 +5,19 @@ use crate::storage::Storage;
 use url::Url;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Capability { Camera, Microphone, Geolocation, Notifications }
+pub enum Capability {
+    Camera,
+    Microphone,
+    Geolocation,
+    Notifications,
+    ClipboardRead,
+    ClipboardWrite,
+    Popups,
+    Fullscreen,
+    Midi,
+    Autoplay,
+}
+
 impl Capability {
     pub fn from_name(s: &str) -> Option<Self> {
         match s {
@@ -13,6 +25,12 @@ impl Capability {
             "microphone" => Some(Self::Microphone),
             "geolocation" => Some(Self::Geolocation),
             "notifications" => Some(Self::Notifications),
+            "clipboard_read" | "clipboard-read" => Some(Self::ClipboardRead),
+            "clipboard_write" | "clipboard-write" => Some(Self::ClipboardWrite),
+            "popups" => Some(Self::Popups),
+            "fullscreen" => Some(Self::Fullscreen),
+            "midi" => Some(Self::Midi),
+            "autoplay" => Some(Self::Autoplay),
             _ => None,
         }
     }
@@ -22,7 +40,46 @@ impl Capability {
             Self::Microphone => "microphone",
             Self::Geolocation => "geolocation",
             Self::Notifications => "notifications",
+            Self::ClipboardRead => "clipboard_read",
+            Self::ClipboardWrite => "clipboard_write",
+            Self::Popups => "popups",
+            Self::Fullscreen => "fullscreen",
+            Self::Midi => "midi",
+            Self::Autoplay => "autoplay",
         }
+    }
+}
+
+/// Site isolation policy: enforces process and cookie partitioning boundaries per origin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SiteIsolationPolicy {
+    pub strict_process_isolation: bool,
+    pub partition_cookies_by_top_level: bool,
+}
+
+impl Default for SiteIsolationPolicy {
+    fn default() -> Self {
+        Self {
+            strict_process_isolation: true,
+            partition_cookies_by_top_level: true,
+        }
+    }
+}
+
+impl SiteIsolationPolicy {
+    /// Determines whether two origins are cross-site and must be isolated into distinct process boundaries.
+    pub fn is_cross_site(origin_a: &str, origin_b: &str) -> bool {
+        let (Some(a), Some(b)) = (canonical_origin(origin_a), canonical_origin(origin_b)) else {
+            return true;
+        };
+        a != b
+    }
+
+    /// Evaluates whether a subframe is allowed to navigate or access cross-origin resources.
+    pub fn is_subframe_navigation_allowed(parent_origin: &str, subframe_url: &str) -> bool {
+        let Some(parent) = canonical_origin(parent_origin) else { return false };
+        let Some(sub) = canonical_origin(subframe_url) else { return false };
+        parent.starts_with("http") && sub.starts_with("http")
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

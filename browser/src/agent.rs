@@ -30,7 +30,7 @@ pub fn parse_plan(raw:&str,tools:&[Tool])->Plan {
     let (Some(name),Some(args))=(plan.name,plan.arguments) else {
         return Plan::Answer("Charlotte could not parse that tool request safely.".into())
     };
-    if !args.is_object()||serde_json::to_vec(&args).is_err_or(|v|v.len()>16*1024) {
+    if !args.is_object() || serde_json::to_vec(&args).map_or(true, |v| v.len() > 16*1024) {
         return Plan::Answer("Charlotte rejected invalid or oversized MCP arguments.".into())
     }
     if !tools.iter().any(|tool|tool.name==name){

@@ -56,7 +56,6 @@ pub static PRESETS:&[Preset]=&[
     Preset{id:"filesystem",name:"MCP Filesystem",category:"Local tools",endpoint:"local:filesystem",auth:"local",description:"Requires explicitly configured local filesystem root",keywords:"filesystem files"},
     Preset{id:"sequential-thinking",name:"MCP Sequential Thinking",category:"Local tools",endpoint:"local:sequential-thinking",auth:"local",description:"Local reasoning workflow",keywords:"thinking plan"},
     Preset{id:"git",name:"MCP Git",category:"Local tools",endpoint:"local:git",auth:"local",description:"Local Git repository operations",keywords:"git commits"},
-];
     // Google Workspace remote servers are in Developer Preview; OAuth client registration is required.
     Preset{id:"google-gmail",name:"Google Gmail",category:"Productivity",endpoint:"https://gmailmcp.googleapis.com/mcp/v1",auth:"oauth",description:"Google Workspace Gmail MCP (Developer Preview; configure an AI-agent OAuth client)",keywords:"gmail google email"},
     Preset{id:"google-drive",name:"Google Drive",category:"Productivity",endpoint:"https://drivemcp.googleapis.com/mcp/v1",auth:"oauth",description:"Google Workspace Drive MCP (Developer Preview; configure an AI-agent OAuth client)",keywords:"drive google files"},
@@ -67,6 +66,7 @@ pub static PRESETS:&[Preset]=&[
     Preset{id:"google-chat",name:"Google Chat",category:"Productivity",endpoint:"https://chatmcp.googleapis.com/mcp/v1",auth:"oauth",description:"Google Workspace Chat MCP (Developer Preview; configure an AI-agent OAuth client)",keywords:"chat google workspace"},
     Preset{id:"google-classroom",name:"Google Classroom",category:"Education",endpoint:"https://classroommcp.googleapis.com/mcp/v1",auth:"oauth",description:"Google Classroom MCP (Developer Preview; configure an AI-agent OAuth client)",keywords:"classroom education google"},
     Preset{id:"youtube",name:"YouTube (custom MCP)",category:"Media",endpoint:"",auth:"manual",description:"Add a self-hosted or vetted YouTube Data API MCP URL; no first-party hosted MCP URL is assumed",keywords:"youtube video channel media"},
+];
 pub fn get(id:&str)->Option<&'static Preset>{PRESETS.iter().find(|p|p.id==id)}
 pub fn local_command(id:&str)->Option<(&'static str,&'static [&'static str])>{
     match id {

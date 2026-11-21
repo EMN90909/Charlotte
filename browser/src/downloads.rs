@@ -14,13 +14,26 @@ pub struct Download {
     pub finished_at: i64,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Status { Completed, Canceled, Interrupted }
+pub enum Status { InProgress, Paused, Completed, Canceled, Interrupted }
 impl Status {
-    fn as_str(self) -> &'static str {
-        match self { Self::Completed => "completed", Self::Canceled => "canceled", Self::Interrupted => "interrupted" }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InProgress => "in_progress",
+            Self::Paused => "paused",
+            Self::Completed => "completed",
+            Self::Canceled => "canceled",
+            Self::Interrupted => "interrupted",
+        }
     }
-    fn parse(value: &str) -> Option<Self> {
-        match value { "completed"=>Some(Self::Completed), "canceled"=>Some(Self::Canceled), "interrupted"=>Some(Self::Interrupted), _=>None }
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "in_progress" => Some(Self::InProgress),
+            "paused" => Some(Self::Paused),
+            "completed" => Some(Self::Completed),
+            "canceled" => Some(Self::Canceled),
+            "interrupted" => Some(Self::Interrupted),
+            _ => None,
+        }
     }
 }
 impl Download {

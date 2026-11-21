@@ -95,7 +95,8 @@ impl SqliteConnection{
 mod tests{
     #[test]fn only_readonly_native_sqlite_open_flags_are_used(){
         let src=include_str!("mcp_sqlite.rs");
-        assert!(src.contains("SQLITE_OPEN_READ_ONLY"));
-        assert!(!src.contains("SQLITE_OPEN_READ_WRITE"));
+        let body = &src[..src.find("#[cfg(test)]").unwrap_or(src.len())];
+        assert!(body.contains("SQLITE_OPEN_READ_ONLY"));
+        assert!(!body.contains("SQLITE_OPEN_READ_WRITE"));
     }
 }

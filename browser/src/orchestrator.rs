@@ -18,9 +18,9 @@ pub enum Route {
 #[serde(tag="kind",rename_all="snake_case",deny_unknown_fields)]
 enum Proposal {
     Reply{text:String},
-    PageAnswer,
+    PageAnswer {},
     LocalSkill{name:String},
-    BrowserTask,
+    BrowserTask {},
     BrowserThenMcp{server_id:String},
     McpTask{server_id:String},
     PageToMcp{server_id:String},
@@ -60,9 +60,9 @@ pub fn parse(raw:&str,capabilities:&Capabilities)->Result<Route,String>{
         .map_err(|_|"Charlotte could not safely choose an execution capability".to_owned())?;
     let route=match proposal{
         Proposal::Reply{text}=>Route::Reply(text),
-        Proposal::PageAnswer=>Route::PageAnswer,
+        Proposal::PageAnswer {} =>Route::PageAnswer,
         Proposal::LocalSkill{name}=>Route::LocalSkill{name},
-        Proposal::BrowserTask=>Route::BrowserTask,
+        Proposal::BrowserTask {} =>Route::BrowserTask,
         Proposal::BrowserThenMcp{server_id}=>Route::BrowserThenMcp{server_id},
         Proposal::McpTask{server_id}=>Route::McpTask{server_id},
         Proposal::PageToMcp{server_id}=>Route::PageToMcp{server_id},

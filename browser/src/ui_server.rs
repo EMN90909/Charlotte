@@ -114,6 +114,9 @@ fn footer() -> &'static str {"</body></html>"}
 pub fn resolve_address(raw: &str) -> Option<String> {
     let value=raw.trim();
     if value.is_empty() || value.len()>2048 {return None}
+    if value.starts_with("javascript:") || value.starts_with("data:") || value.starts_with("file:") {
+        return None;
+    }
     let maybe=if value.contains("://"){value.to_owned()}
         else if value.contains(' ')||!value.contains('.') {
             let mut url=url::Url::parse("https://www.google.com/search").ok()?;
@@ -588,6 +591,8 @@ async fn browser_approve(
     }
     let state=ui.clone();
     tokio::task::spawn_blocking(move||{
+        let run_id = pending.run_id.clone();
+        let step = pending.step;
         let mut attempted=false;
         let outcome=(||->Result<(),String>{
             // Check the actual live Chromium URL before executing a selector
@@ -660,8 +665,8 @@ async fn browser_approve(
             }else{error};
             let cancelled=state.inner.lock().ok().map(|inner|
                 inner.cancel_automation.load(Ordering::SeqCst)).unwrap_or(false);
-            checkpoint_status(&pending.run_id,if cancelled{"paused"}else{"interrupted"},&message,pending.step);
-            finish_if_current(&state,&pending.run_id,Some(message));
+            checkpoint_status(&run_id,if cancelled{"paused"}else{"interrupted"},&message,step);
+            finish_if_current(&state,&run_id,Some(message));
         }
     });
     reply("/sidebar")

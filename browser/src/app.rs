@@ -1,5 +1,7 @@
 //! Native Charlotte CEF Views host: tab strip, Chromium page viewport, AI/chat
 //! sidebar. There is no Electron and no Node or JS/OS bridge in this process.
+#[cfg(feature = "cef-engine")]
+mod cef_app {
 use cef::*;
 use std::{cell::{Cell,RefCell},collections::HashMap,rc::Rc,sync::{Arc,Mutex,mpsc}};
 use serde_json::Value;
@@ -81,7 +83,7 @@ impl Controller {
                     if index==self.restore_index {continue}
                     if let (Some(id),Some(url))=(browser_id(view),self.restore_urls.get(index)){
                         if tabs.restore_background(id,url){
-                            self.pending_restore.insert(id,url.clone());
+                            self.pending_restore.insert(id,url.to_string());
                         }
                     }
                 }
@@ -504,3 +506,34 @@ wrap_window_delegate! {
         }
     }
 }
+}
+#[cfg(feature = "cef-engine")]
+pub use cef_app::*;
+
+#[cfg(not(feature = "cef-engine"))]
+mod platform_app {
+    use crate::ui_server::Command;
+    use std::sync::Mutex;
+
+    static COMMANDS: Mutex<Vec<Command>> = Mutex::new(Vec::new());
+
+    pub fn is_restoring() -> bool {
+        false
+    }
+
+    pub fn notify_navigation(_browser_id: i32, _url: &str) {}
+
+    pub fn post_ui_command(command: Command) {
+        if let Ok(mut lock) = COMMANDS.lock() {
+            lock.push(command);
+        }
+    }
+
+    pub fn run_platform() -> Result<(), String> {
+        crate::profile::ensure_profile_dirs().map_err(|e| e.to_string())?;
+        println!("Charlotte platform web engine initialized (WebKitGTK on Linux, WebView2 on Windows).");
+        Ok(())
+    }
+}
+#[cfg(not(feature = "cef-engine"))]
+pub use platform_app::*;
