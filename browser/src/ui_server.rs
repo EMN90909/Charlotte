@@ -25,6 +25,9 @@ pub struct Ui {
     pub token: String,
     pub tabs: TabState,
     pub filter: Filter,
+    pub byok: crate::byok::ByokKeyStore,
+    pub skills: crate::agent_skills::SkillRegistry,
+    pub learning: crate::user_learning::UserLearningEngine,
     inner: Arc<Mutex<UiInner>>,
 }
 #[derive(Clone)]
@@ -201,13 +204,38 @@ fn sidebar(ui:&Ui)->Html<String>{
     html.push_str("</section>");
 
     // BYOK (Bring Your Own Key) Settings Section
-    html.push_str("<section><h2>AI & BYOK Settings</h2><p class=\"muted\">Add your own API keys for Gemini, OpenAI, Claude, DeepSeek, OpenRouter, or Nvidia NIM. Keys are encrypted with a device-derived machine key and never stored in plain text. If your key hits quota or billing errors, Charlotte automatically fails over to the built-in platform model.</p>");
+    html.push_str("<section><h2>AI &amp; BYOK Settings</h2><p class=\"muted\">Add your own API keys for Gemini, OpenAI, Claude, DeepSeek, OpenRouter, or Nvidia NIM. Keys are encrypted with AES-256-GCM (never plain text or one-way hashed) and masked in the UI. If your key hits quota or billing errors, Charlotte automatically fails over to the built-in platform model.</p>");
+    let saved_keys = ui.byok.list_masked_keys();
+    if !saved_keys.is_empty() {
+        html.push_str("<ul style=\"margin:6px 0;padding-left:18px\">");
+        for k in &saved_keys {
+            html.push_str(&format!(
+                "<li><strong>{}</strong>: <code>{}</code> <small class=\"muted\">(fp: {})</small></li>",
+                escape(&k.provider),
+                escape(&k.masked_key),
+                escape(&k.fingerprint)
+            ));
+        }
+        html.push_str("</ul>");
+    }
     html.push_str(&format!(r#"<form action="/settings/byok" method="post" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">{token}<select name="provider" aria-label="AI Provider"><option value="gemini">Google Gemini</option><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic Claude</option><option value="openrouter">OpenRouter</option><option value="nvidia">Nvidia NIM</option></select><input type="password" name="api_key" placeholder="Enter provider API key" maxlength="256" style="flex:1"><button name="command" value="save" class="primary">Save Key</button><button name="command" value="delete">Remove</button></form>"#));
     html.push_str("</section>");
 
-    // Agent Skills Section
-    html.push_str("<section><h2>Agent Skills Management</h2><p class=\"muted\">Save specialized instructions and capabilities for Charlotte agent (e.g. market research, scraping, report creation).</p>");
-    html.push_str(&format!(r#"<form action="/settings/skills" method="post" style="display:flex;flex-direction:column;gap:6px;margin-top:8px">{token}<input name="skill_name" placeholder="Skill Name (e.g. Competitor Scraper)" maxlength="60"><input name="value" placeholder="Trigger Keywords (comma-separated, e.g. competitor, pricing)" maxlength="120"><textarea name="instructions" placeholder="System instructions / prompt guidelines for the agent" maxlength="1000"></textarea><button name="command" value="add" class="primary">Save New Agent Skill</button></form>"#));
+    // Agent Skills Section (starts empty; user-created skills only)
+    html.push_str("<section><h2>Agent Skills Management</h2><p class=\"muted\">Create optional custom instructions and triggers for Charlotte agent. No hardcoded must-have skills are forced.</p>");
+    let saved_skills = ui.skills.list_skills();
+    if !saved_skills.is_empty() {
+        html.push_str("<ul style=\"margin:6px 0;padding-left:18px\">");
+        for s in &saved_skills {
+            html.push_str(&format!(
+                "<li><strong>{}</strong> <small class=\"muted\">[{}]</small></li>",
+                escape(&s.name),
+                escape(&s.trigger_keywords.join(", "))
+            ));
+        }
+        html.push_str("</ul>");
+    }
+    html.push_str(&format!(r#"<form action="/settings/skills" method="post" style="display:flex;flex-direction:column;gap:6px;margin-top:8px">{token}<input name="skill_name" placeholder="Skill Name" maxlength="60"><input name="value" placeholder="Trigger Keywords (comma-separated)" maxlength="120"><textarea name="instructions" placeholder="System instructions / prompt guidelines for the agent" maxlength="1000"></textarea><button name="command" value="add" class="primary">Save New Agent Skill</button></form>"#));
     html.push_str("</section>");
 
     // Behavioral Learning & Privacy Section
@@ -1547,20 +1575,18 @@ async fn settings_byok_action(State(ui):State<Ui>,headers:HeaderMap,Form(form):F
     if !check(&ui,&headers,&form.token){return forbidden()}
     let provider = form.provider.as_deref().unwrap_or("gemini");
     let cmd = form.command.as_deref().unwrap_or("save");
-    let byok = crate::byok::ByokKeyStore::new();
     if cmd == "save" {
         if let Some(key) = form.api_key.as_deref() {
-            let _ = byok.store_key(provider, key);
+            let _ = ui.byok.store_key(provider, key);
         }
     } else if cmd == "delete" {
-        byok.delete_key(provider);
+        ui.byok.delete_key(provider);
     }
     reply("/sidebar")
 }
 
 async fn settings_skills_action(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response {
     if !check(&ui,&headers,&form.token){return forbidden()}
-    let registry = crate::agent_skills::SkillRegistry::new();
     let cmd = form.command.as_deref().unwrap_or("add");
     if cmd == "add" {
         if let Some(name) = form.skill_name {
@@ -1573,7 +1599,7 @@ async fn settings_skills_action(State(ui):State<Ui>,headers:HeaderMap,Form(form)
                     .filter(|s| !s.is_empty())
                     .collect();
                 let instructions = form.instructions.unwrap_or_default();
-                registry.register_skill(crate::agent_skills::AgentSkill {
+                ui.skills.register_skill(crate::agent_skills::AgentSkill {
                     id,
                     name,
                     description: "User custom agent skill".into(),
@@ -1587,7 +1613,7 @@ async fn settings_skills_action(State(ui):State<Ui>,headers:HeaderMap,Form(form)
         }
     } else if cmd == "delete" {
         if let Some(id) = form.skill_id.as_deref() {
-            registry.delete_skill(id);
+            ui.skills.delete_skill(id);
         }
     }
     reply("/sidebar")
@@ -1595,8 +1621,7 @@ async fn settings_skills_action(State(ui):State<Ui>,headers:HeaderMap,Form(form)
 
 async fn settings_learning_action(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response {
     if !check(&ui,&headers,&form.token){return forbidden()}
-    let learning = crate::user_learning::UserLearningEngine::new();
-    learning.clear_learning_data();
+    ui.learning.clear_learning_data();
     reply("/sidebar")
 }
 
@@ -1631,7 +1656,11 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         .ok().and_then(|db|db.messages("ai",100).ok())
         .unwrap_or_default().into_iter().map(|m|Turn{role:m.sender,text:m.body}).collect();
     let ui=Ui{
-        port,token,tabs,filter,inner:Arc::new(Mutex::new(UiInner{
+        port,token,tabs,filter,
+        byok:crate::byok::ByokKeyStore::new(),
+        skills:crate::agent_skills::SkillRegistry::new(),
+        learning:crate::user_learning::UserLearningEngine::new(),
+        inner:Arc::new(Mutex::new(UiInner{
             pending_browser:None,pending_auto:None,auto_handoff:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,provider_status:None,route_status:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),

@@ -37,6 +37,8 @@ pub mod cloud_client;
 pub mod user_learning;
 pub mod byok;
 pub mod agent_skills;
+pub mod windows_compat;
+pub mod installer;
 #[allow(special_module_name)]
 pub mod main;
 pub mod renderer;

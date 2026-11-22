@@ -1,17 +1,9 @@
 //! Charlotte's Agent Skills registry and management.
-//! Allows defining, saving, editing, and matching specialized skills for Charlotte agent.
-//! Each skill defines prompt instructions, trigger keywords, and allowed tools.
+//! Allows users to define, save, toggle, delete, and match custom specialized skills for the agent.
+//! Starts clean with zero forced/hardcoded built-in skills.
 
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-fn now_epoch_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSkill {
@@ -37,47 +29,11 @@ impl Default for SkillRegistry {
 }
 
 impl SkillRegistry {
+    /// Creates a clean, empty skill registry with no mandatory hardcoded skills.
     pub fn new() -> Self {
-        let registry = Self {
+        Self {
             skills: Arc::new(Mutex::new(Vec::new())),
-        };
-
-        // Seed default built-in skills
-        let now = now_epoch_secs();
-        registry.register_skill(AgentSkill {
-            id: "skill-fintech".into(),
-            name: "Fintech & Market Intelligence".into(),
-            description: "Researches fintech startups, compares pricing models and payment APIs".into(),
-            trigger_keywords: vec!["fintech".into(), "pricing".into(), "founders".into(), "market".into()],
-            system_instructions: "Search company directories, navigate to official sites, extract founders and products, and tabulate findings.".into(),
-            allowed_tools: vec!["browser:navigate".into(), "browser:extract".into(), "sheets:create_spreadsheet".into()],
-            enabled: true,
-            created_at: now,
-        });
-
-        registry.register_skill(AgentSkill {
-            id: "skill-spreadsheet".into(),
-            name: "Spreadsheet & Data Exporter".into(),
-            description: "Transforms extracted unstructured web research into structured Google Sheets or CSV rows".into(),
-            trigger_keywords: vec!["spreadsheet".into(), "sheet".into(), "csv".into(), "excel".into()],
-            system_instructions: "Format extracted rows into standard columns, verify cell values, and export clean datasets.".into(),
-            allowed_tools: vec!["sheets:create_spreadsheet".into(), "drive:upload_file".into()],
-            enabled: true,
-            created_at: now,
-        });
-
-        registry.register_skill(AgentSkill {
-            id: "skill-summarizer".into(),
-            name: "Deep Web Summarizer & Fact Extractor".into(),
-            description: "Reads multi-tab articles, removes fluff, and provides structured bulleted summaries".into(),
-            trigger_keywords: vec!["summarize".into(), "summary".into(), "article".into(), "research".into()],
-            system_instructions: "Extract primary claims, key metrics, and references from the active web pages without hallucinations.".into(),
-            allowed_tools: vec!["browser:observe".into(), "browser:extract".into()],
-            enabled: true,
-            created_at: now,
-        });
-
-        registry
+        }
     }
 
     pub fn register_skill(&self, skill: AgentSkill) {
@@ -119,7 +75,7 @@ impl SkillRegistry {
         }
     }
 
-    /// Matches a user goal or prompt against enabled skills by keywords.
+    /// Matches a user goal or prompt against enabled user-defined skills by keywords.
     pub fn match_skill(&self, query: &str) -> Option<AgentSkill> {
         let lower = query.to_lowercase();
         let skills = self.skills.lock().unwrap();
@@ -129,7 +85,8 @@ impl SkillRegistry {
                 continue;
             }
             for kw in &skill.trigger_keywords {
-                if lower.contains(kw) {
+                let kw_lower = kw.trim().to_lowercase();
+                if !kw_lower.is_empty() && lower.contains(&kw_lower) {
                     return Some(skill.clone());
                 }
             }
@@ -143,19 +100,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn skills_registry_crud_and_matching() {
+    fn skills_registry_starts_empty_and_supports_user_skills() {
         let reg = SkillRegistry::new();
 
-        // 1. Check built-ins
-        let skills = reg.list_skills();
-        assert!(skills.len() >= 3);
+        // 1. Starts clean with zero forced built-in skills
+        assert!(reg.list_skills().is_empty());
+        assert!(reg.match_skill("research fintech spreadsheet summarize").is_none());
 
-        // 2. Match skill
-        let matched = reg.match_skill("Please research top 20 Kenyan fintech companies");
-        assert!(matched.is_some());
-        assert_eq!(matched.unwrap().id, "skill-fintech");
-
-        // 3. Register custom skill
+        // 2. Register user custom skill
         let custom = AgentSkill {
             id: "skill-custom-seo".into(),
             name: "SEO Analyzer".into(),
@@ -168,14 +120,15 @@ mod tests {
         };
         reg.register_skill(custom);
 
+        assert_eq!(reg.list_skills().len(), 1);
         assert_eq!(reg.get_skill("skill-custom-seo").unwrap().name, "SEO Analyzer");
         assert!(reg.match_skill("Perform SEO audit").is_some());
 
-        // 4. Toggle skill
+        // 3. Toggle skill
         reg.toggle_skill("skill-custom-seo", false);
         assert!(reg.match_skill("Perform SEO audit").is_none());
 
-        // 5. Delete skill
+        // 4. Delete skill
         assert!(reg.delete_skill("skill-custom-seo"));
         assert!(reg.get_skill("skill-custom-seo").is_none());
     }

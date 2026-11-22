@@ -1,12 +1,13 @@
 //! Desktop browser cloud client.
 //! Connects the Charlotte desktop runtime (Local Execution Agent) to Charlotte Cloud (Go server)
-//! over WebSocket and HTTPS, with support for localhost:8080 and api.charlotte.noethric.xyz.
+//! over WebSocket and HTTPS, hosted on Render (`api-charlotte-server.onrender.com`) with localhost fallback.
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_LOCAL_URL: &str = "http://localhost:8080";
-pub const DEFAULT_REMOTE_URL: &str = "https://api.charlotte.noethric.xyz";
+pub const DEFAULT_REMOTE_URL: &str = "https://api-charlotte-server.onrender.com";
 pub const DEFAULT_LOCAL_WS_URL: &str = "ws://localhost:8080/ws";
-pub const DEFAULT_REMOTE_WS_URL: &str = "wss://api.charlotte.noethric.xyz/ws";
+pub const DEFAULT_REMOTE_WS_URL: &str = "wss://api-charlotte-server.onrender.com/ws";
+pub const MAX_HANDOFF_PAYLOAD_BYTES: usize = 512 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CloudConfig {
@@ -34,6 +35,26 @@ impl CloudConfig {
             ws_url: DEFAULT_REMOTE_WS_URL.into(),
             desktop_id: format!("desktop_{}", rand::random::<u32>()),
             api_token: None,
+        }
+    }
+
+    pub fn from_env() -> Self {
+        let http_url = std::env::var("CHARLOTTE_SERVER_URL")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| DEFAULT_REMOTE_URL.into());
+        let ws_url = if let Some(rest) = http_url.strip_prefix("https://") {
+            format!("wss://{}/ws", rest.trim_end_matches('/'))
+        } else if let Some(rest) = http_url.strip_prefix("http://") {
+            format!("ws://{}/ws", rest.trim_end_matches('/'))
+        } else {
+            DEFAULT_REMOTE_WS_URL.into()
+        };
+        Self {
+            http_url,
+            ws_url,
+            desktop_id: format!("desktop_{}", rand::random::<u32>()),
+            api_token: std::env::var("CHARLOTTE_API_TOKEN").ok(),
         }
     }
 }
@@ -122,7 +143,8 @@ impl CloudClient {
         self.connected = false;
     }
 
-    /// Prepares a handoff package to migrate a running local desktop task to an E2B cloud sandbox.
+    /// Prepares a sanitized handoff package to migrate a running local desktop task to an E2B cloud sandbox.
+    /// Automatically strips desktop cookies, auth headers, tokens, and passwords so local sessions never leak.
     pub fn create_handoff_package(
         &self,
         task_id: &str,
@@ -133,6 +155,7 @@ impl CloudClient {
         remaining_subgoals: &[String],
         extracted_data: serde_json::Value,
     ) -> HandoffPackage {
+        let sanitized_data = sanitize_handoff_value(extracted_data);
         HandoffPackage {
             task_id: task_id.to_string(),
             goal: goal.to_string(),
@@ -140,9 +163,44 @@ impl CloudClient {
             remaining_subgoals: remaining_subgoals.to_vec(),
             current_url: current_url.to_string(),
             open_tabs: open_tabs.to_vec(),
-            extracted_data,
+            extracted_data: sanitized_data,
             execution_log: vec![format!("Local task {task_id} queued and transferred to cloud sandbox.")],
         }
+    }
+
+    /// Validates payload size (<= 512KB) and submits a local-to-cloud handoff package to Charlotte Cloud
+    /// (`POST /api/v1/tasks/{task_id}/handoff`), returning the cloud sandbox HandoffReport.
+    pub fn queue_and_handoff_to_cloud(&self, package: &HandoffPackage) -> Result<HandoffReport, String> {
+        let serialized = serde_json::to_vec(package).map_err(|e| e.to_string())?;
+        if serialized.len() > MAX_HANDOFF_PAYLOAD_BYTES {
+            return Err(format!(
+                "Handoff payload exceeds 512KB boundary ({} bytes > {} bytes)",
+                serialized.len(),
+                MAX_HANDOFF_PAYLOAD_BYTES
+            ));
+        }
+
+        let endpoint = format!(
+            "{}/api/v1/tasks/{}/handoff",
+            self.config.http_url.trim_end_matches('/'),
+            package.task_id
+        );
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let mut req = client.post(&endpoint).json(package);
+        if let Some(token) = &self.config.api_token {
+            req = req.bearer_auth(token);
+        }
+        let resp = req
+            .send()
+            .map_err(|e| format!("Failed to reach Charlotte Cloud ({endpoint}): {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("Charlotte Cloud handoff rejected with HTTP {}", resp.status()));
+        }
+        resp.json::<HandoffReport>()
+            .map_err(|e| format!("Invalid handoff report from Charlotte Cloud: {e}"))
     }
 
     /// Dispatches a command received from cloud controller through the local browser engine.
@@ -279,6 +337,32 @@ impl CloudClient {
     }
 }
 
+fn sanitize_handoff_value(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut clean = serde_json::Map::new();
+            for (k, v) in map {
+                let lower = k.to_lowercase();
+                if lower.contains("cookie")
+                    || lower.contains("token")
+                    || lower.contains("session")
+                    || lower.contains("auth")
+                    || lower.contains("password")
+                    || lower.contains("secret")
+                {
+                    continue;
+                }
+                clean.insert(k, sanitize_handoff_value(v));
+            }
+            serde_json::Value::Object(clean)
+        }
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.into_iter().map(sanitize_handoff_value).collect())
+        }
+        other => other,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,8 +375,8 @@ mod tests {
         assert_eq!(local.ws_url, "ws://localhost:8080/ws");
 
         let remote = CloudConfig::remote();
-        assert_eq!(remote.http_url, "https://api.charlotte.noethric.xyz");
-        assert_eq!(remote.ws_url, "wss://api.charlotte.noethric.xyz/ws");
+        assert_eq!(remote.http_url, "https://api-charlotte-server.onrender.com");
+        assert_eq!(remote.ws_url, "wss://api-charlotte-server.onrender.com/ws");
     }
 
     #[test]
@@ -332,27 +416,34 @@ mod tests {
     #[test]
     fn local_to_cloud_handoff_packaging() {
         let mut engine = HeadlessEngine::new();
-        let client = CloudClient::new(CloudConfig::default());
+        let client = CloudClient::new(CloudConfig::remote());
 
         let handoff = client.create_handoff_package(
             "task-local-1",
-            "Research Kenyan fintech competitors",
-            "https://cellulant.io",
-            &["https://cellulant.io".into(), "https://m-pesa.com".into()],
+            "Research competitors",
+            "https://example.com",
+            &["https://example.com".into(), "https://example.org".into()],
             &["Search directories".into(), "Scrape overview".into()],
             &["Extract pricing".into(), "Generate spreadsheet".into()],
-            serde_json::json!({ "found": 5 }),
+            serde_json::json!({
+                "found": 5,
+                "session_cookie": "secret-should-strip",
+                "auth_token": "bearer-should-strip"
+            }),
         );
 
         assert_eq!(handoff.task_id, "task-local-1");
         assert_eq!(handoff.completed_subgoals.len(), 2);
         assert_eq!(handoff.remaining_subgoals.len(), 2);
         assert_eq!(handoff.open_tabs.len(), 2);
+        assert_eq!(handoff.extracted_data["found"], 5);
+        assert!(handoff.extracted_data.get("session_cookie").is_none());
+        assert!(handoff.extracted_data.get("auth_token").is_none());
 
         let res = client.handle_command(
             CloudCommand::PushToCloud {
                 task_id: "task-local-1".into(),
-                prompt: "Research Kenyan fintech competitors".into(),
+                prompt: "Research competitors".into(),
                 handoff: Some(handoff),
             },
             &mut engine,
