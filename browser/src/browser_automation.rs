@@ -76,6 +76,51 @@ impl Action {
         }
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaptchaStatus {
+    pub detected: bool,
+    pub challenge_type: Option<String>,
+    pub requires_human_action: bool,
+}
+
+pub fn detect_captcha_challenge(page_text: &str) -> CaptchaStatus {
+    let lower = page_text.to_lowercase();
+    if lower.contains("turnstile") || lower.contains("cf-turnstile") || lower.contains("challenges.cloudflare.com") {
+        return CaptchaStatus {
+            detected: true,
+            challenge_type: Some("Cloudflare Turnstile".into()),
+            requires_human_action: true,
+        };
+    }
+    if lower.contains("recaptcha") || lower.contains("google.com/recaptcha") {
+        return CaptchaStatus {
+            detected: true,
+            challenge_type: Some("Google reCAPTCHA".into()),
+            requires_human_action: true,
+        };
+    }
+    if lower.contains("hcaptcha") {
+        return CaptchaStatus {
+            detected: true,
+            challenge_type: Some("hCaptcha".into()),
+            requires_human_action: true,
+        };
+    }
+    if lower.contains("verify you are human") || lower.contains("just a moment...") || lower.contains("security check") {
+        return CaptchaStatus {
+            detected: true,
+            challenge_type: Some("Human Verification Gate".into()),
+            requires_human_action: true,
+        };
+    }
+    CaptchaStatus {
+        detected: false,
+        challenge_type: None,
+        requires_human_action: false,
+    }
+}
+
 /// Never let a model invent an arbitrary CSS selector to click, or repurpose
 /// a text-only element as a form field. Its action must match the last real
 /// Chromium DOM observation. Called again immediately before approval.
@@ -490,5 +535,15 @@ mod tests {
     #[test]fn validates_chromium_reply(){
         assert_eq!(extract_result(&json!({"result":{"value":{"ok":true}}})).unwrap(),json!({"ok":true}));
         assert!(extract_result(&json!({"exceptionDetails":{"text":"bad"}})).is_err());
+    }
+    #[test]fn detects_captcha_and_requests_human_override(){
+        let status=detect_captcha_challenge("Please complete the Cloudflare Turnstile challenge before proceeding");
+        assert!(status.detected);
+        assert!(status.requires_human_action);
+        assert_eq!(status.challenge_type.as_deref(), Some("Cloudflare Turnstile"));
+
+        let normal=detect_captcha_challenge("Welcome to the homepage of Fintech Africa");
+        assert!(!normal.detected);
+        assert!(!normal.requires_human_action);
     }
 }

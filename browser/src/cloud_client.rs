@@ -38,6 +38,30 @@ impl CloudConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandoffPackage {
+    pub task_id: String,
+    pub goal: String,
+    pub completed_subgoals: Vec<String>,
+    pub remaining_subgoals: Vec<String>,
+    pub current_url: String,
+    pub open_tabs: Vec<String>,
+    pub extracted_data: serde_json::Value,
+    pub execution_log: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandoffReport {
+    pub task_id: String,
+    pub sandbox_id: String,
+    pub template_id: String,
+    pub completed_subgoals: Vec<String>,
+    pub current_status: String,
+    pub current_url: String,
+    pub remaining_subgoals: Vec<String>,
+    pub message: String,
+}
+
 /// Incoming commands from the Charlotte Cloud Browser Controller.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
@@ -48,7 +72,12 @@ pub enum CloudCommand {
     Scroll { direction: String, amount: Option<i32> },
     Observe,
     CaptureScreenshot,
-    PushToCloud { task_id: String, prompt: String },
+    PushToCloud {
+        task_id: String,
+        prompt: String,
+        #[serde(default)]
+        handoff: Option<HandoffPackage>,
+    },
     FillForm { fields: std::collections::HashMap<String, String> },
     Ping,
 }
@@ -91,6 +120,29 @@ impl CloudClient {
 
     pub fn disconnect(&mut self) {
         self.connected = false;
+    }
+
+    /// Prepares a handoff package to migrate a running local desktop task to an E2B cloud sandbox.
+    pub fn create_handoff_package(
+        &self,
+        task_id: &str,
+        goal: &str,
+        current_url: &str,
+        open_tabs: &[String],
+        completed_subgoals: &[String],
+        remaining_subgoals: &[String],
+        extracted_data: serde_json::Value,
+    ) -> HandoffPackage {
+        HandoffPackage {
+            task_id: task_id.to_string(),
+            goal: goal.to_string(),
+            completed_subgoals: completed_subgoals.to_vec(),
+            remaining_subgoals: remaining_subgoals.to_vec(),
+            current_url: current_url.to_string(),
+            open_tabs: open_tabs.to_vec(),
+            extracted_data,
+            execution_log: vec![format!("Local task {task_id} queued and transferred to cloud sandbox.")],
+        }
     }
 
     /// Dispatches a command received from cloud controller through the local browser engine.
@@ -170,11 +222,26 @@ impl CloudClient {
                     },
                 }
             }
-            CloudCommand::PushToCloud { task_id, prompt } => {
+            CloudCommand::PushToCloud { task_id, prompt, handoff } => {
+                let report = handoff.as_ref().map(|h| {
+                    serde_json::json!({
+                        "completed_subgoals": h.completed_subgoals,
+                        "remaining_subgoals": h.remaining_subgoals,
+                        "current_url": h.current_url,
+                        "tabs_count": h.open_tabs.len(),
+                        "status": "transferred_to_e2b_cloud_computer"
+                    })
+                });
                 CommandReceipt {
                     task_id: Some(task_id.clone()),
                     status: "pushed_to_cloud".into(),
-                    result: serde_json::json!({ "task_id": task_id, "prompt": prompt, "cloud_sandbox": "e2b" }),
+                    result: serde_json::json!({
+                        "task_id": task_id,
+                        "prompt": prompt,
+                        "cloud_sandbox": "e2b",
+                        "template_id": "charlotte-browser",
+                        "handoff_details": report
+                    }),
                     screenshot_base64: None,
                 }
             }
@@ -260,5 +327,40 @@ mod tests {
         assert_eq!(res.result["payment_blocked"], true);
         assert!(res.result["filled"]["credit_card"].is_null());
         assert_eq!(res.result["filled"]["full_name"], "Alice Wanjiku");
+    }
+
+    #[test]
+    fn local_to_cloud_handoff_packaging() {
+        let mut engine = HeadlessEngine::new();
+        let client = CloudClient::new(CloudConfig::default());
+
+        let handoff = client.create_handoff_package(
+            "task-local-1",
+            "Research Kenyan fintech competitors",
+            "https://cellulant.io",
+            &["https://cellulant.io".into(), "https://m-pesa.com".into()],
+            &["Search directories".into(), "Scrape overview".into()],
+            &["Extract pricing".into(), "Generate spreadsheet".into()],
+            serde_json::json!({ "found": 5 }),
+        );
+
+        assert_eq!(handoff.task_id, "task-local-1");
+        assert_eq!(handoff.completed_subgoals.len(), 2);
+        assert_eq!(handoff.remaining_subgoals.len(), 2);
+        assert_eq!(handoff.open_tabs.len(), 2);
+
+        let res = client.handle_command(
+            CloudCommand::PushToCloud {
+                task_id: "task-local-1".into(),
+                prompt: "Research Kenyan fintech competitors".into(),
+                handoff: Some(handoff),
+            },
+            &mut engine,
+            1,
+        );
+
+        assert_eq!(res.status, "pushed_to_cloud");
+        assert_eq!(res.result["template_id"], "charlotte-browser");
+        assert_eq!(res.result["handoff_details"]["tabs_count"], 2);
     }
 }
