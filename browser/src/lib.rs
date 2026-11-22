@@ -34,6 +34,9 @@ pub mod extensions;
 pub mod resource_manager;
 pub mod engine;
 pub mod cloud_client;
+pub mod user_learning;
+pub mod byok;
+pub mod agent_skills;
 #[allow(special_module_name)]
 pub mod main;
 pub mod renderer;

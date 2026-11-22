@@ -84,6 +84,9 @@ struct ActionForm {
     endpoint: Option<String>,
     api_key: Option<String>,
     model: Option<String>,
+    skill_id: Option<String>,
+    skill_name: Option<String>,
+    instructions: Option<String>,
 }
 fn escape(s: &str) -> String {
     s.replace('&',"&amp;").replace('<',"&lt;").replace('>',"&gt;")
@@ -196,6 +199,22 @@ fn sidebar(ui:&Ui)->Html<String>{
     html.push_str("<section><h2>Browser skills</h2><p class=\"muted\">Repeatable read-only inspections of the current Chromium tab. No AI provider, screenshot sharing or autonomous clicks required.</p>");
     html.push_str(&format!(r#"<form action="/browser/skill" method="post">{token}<select name="skill" aria-label="Read-only browser skill"><option value="summary">Summarize visible page text</option><option value="links">List visible links</option><option value="controls">List interactive controls</option><option value="frames">List page frames</option></select><button class="primary">Run skill</button></form>"#));
     html.push_str("</section>");
+
+    // BYOK (Bring Your Own Key) Settings Section
+    html.push_str("<section><h2>AI & BYOK Settings</h2><p class=\"muted\">Add your own API keys for Gemini, OpenAI, Claude, DeepSeek, OpenRouter, or Nvidia NIM. Keys are encrypted with a device-derived machine key and never stored in plain text. If your key hits quota or billing errors, Charlotte automatically fails over to the built-in platform model.</p>");
+    html.push_str(&format!(r#"<form action="/settings/byok" method="post" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">{token}<select name="provider" aria-label="AI Provider"><option value="gemini">Google Gemini</option><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic Claude</option><option value="openrouter">OpenRouter</option><option value="nvidia">Nvidia NIM</option></select><input type="password" name="api_key" placeholder="Enter provider API key" maxlength="256" style="flex:1"><button name="command" value="save" class="primary">Save Key</button><button name="command" value="delete">Remove</button></form>"#));
+    html.push_str("</section>");
+
+    // Agent Skills Section
+    html.push_str("<section><h2>Agent Skills Management</h2><p class=\"muted\">Save specialized instructions and capabilities for Charlotte agent (e.g. market research, scraping, report creation).</p>");
+    html.push_str(&format!(r#"<form action="/settings/skills" method="post" style="display:flex;flex-direction:column;gap:6px;margin-top:8px">{token}<input name="skill_name" placeholder="Skill Name (e.g. Competitor Scraper)" maxlength="60"><input name="value" placeholder="Trigger Keywords (comma-separated, e.g. competitor, pricing)" maxlength="120"><textarea name="instructions" placeholder="System instructions / prompt guidelines for the agent" maxlength="1000"></textarea><button name="command" value="add" class="primary">Save New Agent Skill</button></form>"#));
+    html.push_str("</section>");
+
+    // Behavioral Learning & Privacy Section
+    html.push_str("<section><h2>Behavioral Learning & Privacy</h2><p class=\"muted\">Charlotte observes workflow habits (frequent sites, button clicks, form fills, contacts) locally on your device. Never records passwords, credit cards, or financial secrets.</p>");
+    html.push_str(&format!(r#"<form action="/settings/learning" method="post">{token}<button name="command" value="clear">Purge Learned Memory</button></form>"#));
+    html.push_str("</section>");
+
     if let Some(result)=&inner.skill_output{
         html.push_str(&format!("<div class=\"bubble\"><strong>Local skill result — not sent to AI</strong><pre style=\"white-space:pre-wrap;overflow-wrap:anywhere\">{}</pre></div>",escape(result)));
     }
@@ -1523,6 +1542,64 @@ async fn send(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)
     });
     reply("/sidebar")
 }
+
+async fn settings_byok_action(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response {
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let provider = form.provider.as_deref().unwrap_or("gemini");
+    let cmd = form.command.as_deref().unwrap_or("save");
+    let byok = crate::byok::ByokKeyStore::new();
+    if cmd == "save" {
+        if let Some(key) = form.api_key.as_deref() {
+            let _ = byok.store_key(provider, key);
+        }
+    } else if cmd == "delete" {
+        byok.delete_key(provider);
+    }
+    reply("/sidebar")
+}
+
+async fn settings_skills_action(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response {
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let registry = crate::agent_skills::SkillRegistry::new();
+    let cmd = form.command.as_deref().unwrap_or("add");
+    if cmd == "add" {
+        if let Some(name) = form.skill_name {
+            if !name.trim().is_empty() {
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+                let id = format!("skill-custom-{}", now);
+                let keywords: Vec<String> = form.value.unwrap_or_default()
+                    .split(',')
+                    .map(|s| s.trim().to_lowercase())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                let instructions = form.instructions.unwrap_or_default();
+                registry.register_skill(crate::agent_skills::AgentSkill {
+                    id,
+                    name,
+                    description: "User custom agent skill".into(),
+                    trigger_keywords: keywords,
+                    system_instructions: instructions,
+                    allowed_tools: vec!["browser:observe".into(), "browser:extract".into()],
+                    enabled: true,
+                    created_at: now,
+                });
+            }
+        }
+    } else if cmd == "delete" {
+        if let Some(id) = form.skill_id.as_deref() {
+            registry.delete_skill(id);
+        }
+    }
+    reply("/sidebar")
+}
+
+async fn settings_learning_action(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response {
+    if !check(&ui,&headers,&form.token){return forbidden()}
+    let learning = crate::user_learning::UserLearningEngine::new();
+    learning.clear_learning_data();
+    reply("/sidebar")
+}
+
 fn response_headers(mut response:Response)->Response{
     let h=response.headers_mut();
     h.insert(header::CACHE_CONTROL,"no-store".parse().unwrap());
@@ -1580,6 +1657,9 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/browser/control",post(browser_control))
                 .route("/browser/dialog",post(browser_dialog))
                 .route("/browser/skill",post(browser_skill))
+                .route("/settings/byok",post(settings_byok_action))
+                .route("/settings/skills",post(settings_skills_action))
+                .route("/settings/learning",post(settings_learning_action))
                 .route("/mcp/catalog",post(mcp_catalog_action))
                 .route("/mcp/custom",post(mcp_custom_action))
                 .route("/notifications",post(notification_permission))

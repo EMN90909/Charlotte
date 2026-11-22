@@ -15,7 +15,8 @@ OutputBaseFilename=Charlotte-Setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesAllowed=x64compatible arm64
+MinVersion=6.1sp1
+ArchitecturesAllowed=x86 x64compatible arm64
 PrivilegesRequired=lowest
 
 [Files]

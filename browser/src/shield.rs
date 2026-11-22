@@ -21,7 +21,23 @@ pub const STARTER_RULES: &str = "\
 ||outbrain.com^\n\
 ||pubmatic.com^\n\
 ||adsrvr.org^\n\
-||google-analytics.com^\n";
+||google-analytics.com^\n\
+||scorecardresearch.com^\n\
+||quantserve.com^\n\
+||moatads.com^\n\
+||rubiconproject.com^\n\
+||amazon-adsystem.com^\n\
+||facebook.net/tr^\n\
+||hotjar.com^\n\
+||clarity.ms^\n\
+||casalemedia.com^\n\
+||openx.net^\n\
+##.ad-banner\n\
+##.sponsored-post\n\
+##.adsbygoogle\n\
+##div[id^=\"google_ads_iframe\"]\n\
+##.ad-container\n";
+
 
 pub struct Shield {
     engine: Engine,
