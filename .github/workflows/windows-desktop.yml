@@ -1,0 +1,61 @@
+name: Charlotte Windows Desktop bundle
+on:
+  pull_request:
+    paths: ['browser/**', '.github/workflows/windows-desktop.yml']
+  push:
+    branches: [main]
+    tags: ['windows-v*']
+    paths: ['browser/**', '.github/workflows/windows-desktop.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  desktop:
+    runs-on: windows-2022
+    defaults:
+      run:
+        working-directory: browser
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-pc-windows-msvc
+      - name: Check all Windows source targets
+        run: cargo check --all-targets
+      - name: Test Rust library
+        run: cargo test --lib
+      - name: Build Windows desktop + installable distribution
+        shell: cmd
+        run: build.bat --dist
+      - name: Audit shipped EXE binaries and resource checksums
+        shell: pwsh
+        run: ./scripts/verify_windows_bundle.ps1
+      - name: Archive entire Windows distribution
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force target | Out-Null
+          Compress-Archive -Path "dist/64-bit/windows/win8-11/*" -DestinationPath "target/Charlotte-Windows-x64.zip" -Force
+          $hash = (Get-FileHash "target/Charlotte-Windows-x64.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Charlotte-Windows-x64.zip" | Set-Content -Path "target/SHA256SUMS-windows.txt" -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Charlotte-Windows-x64-bundle
+          path: |
+            browser/target/Charlotte-Windows-x64.zip
+            browser/target/SHA256SUMS-windows.txt
+          if-no-files-found: error
+  publish:
+    if: startsWith(github.ref, 'refs/tags/windows-v')
+    needs: desktop
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Charlotte-Windows-x64-bundle
+          path: release
+      - uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          files: |
+            release/Charlotte-Windows-x64.zip
+            release/SHA256SUMS-windows.txt
