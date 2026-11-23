@@ -1226,6 +1226,11 @@ pub fn render_updates_page(
         r#"<span class="badge">Server Unreachable</span>"#
     };
 
+    let install_action = if pending_version.is_some_and(|ver|
+        crate::updater::compare_semver(ver, env!("CARGO_PKG_VERSION")) > 0)
+    {
+        format!(r#"<form method="post" action="/updates/install" style="margin:0">{tok}<button class="btn-secondary" type="submit">Install verified update</button></form>"#)
+    } else { String::new() };
     let mut body = render_topbar(ctx, "search", true);
     let _ = write!(
         body,
@@ -1241,6 +1246,7 @@ pub fn render_updates_page(
     </div>
     <div style="display:flex;align-items:center;gap:10px">
       <form method="post" action="/updates/check" style="margin:0">{tok}<button class="btn-secondary">Check Now</button></form>
+      {install_action}
       <form method="post" action="/updates/continue" style="margin:0">
         {tok}<input type="hidden" name="value" value="{}">
         <button type="submit" class="btn-primary">Continue →</button>
