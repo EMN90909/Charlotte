@@ -21,7 +21,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      # Ubuntu runners already include Android command-line tools. Avoid
+      # setup-android's obsolete 'sdkmanager tools' package installation.
+      - name: Android SDK environment
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
