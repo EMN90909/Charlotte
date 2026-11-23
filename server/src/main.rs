@@ -187,7 +187,7 @@ async fn poll(
     };
     let mut response_headers = HeaderMap::new();
     response_headers.insert("x-next-poll-ms", HeaderValue::from_str(&next.to_string()).unwrap());
-    response_headers.insert(header::ETAG, HeaderValue::from_str(&format!("\\\"{new_cursor}\\\"")).unwrap());
+    response_headers.insert(header::ETAG, HeaderValue::from_str(&format!("\"{new_cursor}\"")).unwrap());
     if messages.is_empty() {
         return Ok((StatusCode::NOT_MODIFIED, response_headers).into_response());
     }
