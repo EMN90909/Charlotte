@@ -352,7 +352,8 @@ if errorlevel 1 (
     call :fail "Failed copying Charlotte.exe to dist\64-bit\windows\win8-11\"
     exit /b 1
 )
-copy /Y "%ROOT%\target\release\Charlotte.exe" "%DIR64%\windows\win7-esr\Charlotte.exe" >nul
+rem NEVER relabel modern MSVC binaries as Win7 ESR without the required ABI audit.
+if exist "%DIR64%\windows\win7-esr\Charlotte.exe" del /Q "%DIR64%\windows\win7-esr\Charlotte.exe"
 if exist "%ROOT%\target\release\charlotte-settings.exe" (
     copy /Y "%ROOT%\target\release\charlotte-settings.exe" "%DIR64%\windows\win8-11\charlotte-settings.exe" >nul
 )
@@ -363,7 +364,7 @@ if exist "%ROOT%\target\release\charlotte-installer.exe" (
 if exist "%ROOT%\target\i686-pc-windows-msvc\release\Charlotte.exe" (
     echo [PACK] Staging 32-bit executables into dist\32-bit\windows\...
     copy /Y "%ROOT%\target\i686-pc-windows-msvc\release\Charlotte.exe" "%DIR32%\windows\win8-11\Charlotte.exe" >nul
-    copy /Y "%ROOT%\target\i686-pc-windows-msvc\release\Charlotte.exe" "%DIR32%\windows\win7-esr\Charlotte.exe" >nul
+    if exist "%DIR32%\windows\win7-esr\Charlotte.exe" del /Q "%DIR32%\windows\win7-esr\Charlotte.exe"
 )
 if exist "%ROOT%\target\i686-pc-windows-msvc\release\charlotte-settings.exe" (
     copy /Y "%ROOT%\target\i686-pc-windows-msvc\release\charlotte-settings.exe" "%DIR32%\windows\win8-11\charlotte-settings.exe" >nul
@@ -383,6 +384,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$m64 = @{version='0.4.0'
 rem Build Inno Setup installers if ISCC is installed (passing explicit BundleDir)
 call :find_iscc
 if defined ISCC_EXE (
+  if exist "%DIR64%\windows\win7-esr\Charlotte.exe" (
     echo [PACK] Building Windows 7 SP1 ESR Inno Setup installer x64...
     "%ISCC_EXE%" /DArch=x64 /DBundleDir="%DIR64%\windows\win7-esr" /O"%DIR64%\windows\win7-esr" "%ROOT%\packaging\windows\charlotte.iss"
     if errorlevel 1 echo [WARN] Inno Setup x64 build returned an error.
@@ -391,6 +393,9 @@ if defined ISCC_EXE (
         "%ISCC_EXE%" /DArch=x86 /DBundleDir="%DIR32%\windows\win7-esr" /O"%DIR32%\windows\win7-esr" "%ROOT%\packaging\windows\charlotte.iss"
         if errorlevel 1 echo [WARN] Inno Setup x86 build returned an error.
     )
+  ) else (
+    echo [INFO] Win7 ESR installer skipped: no independently audited Win7-compatible binary supplied.
+  )
 ) else (
     echo [INFO] Inno Setup Compiler ISCC.exe not found. Scripts staged in dist\*\windows\win7-esr\.
 )
