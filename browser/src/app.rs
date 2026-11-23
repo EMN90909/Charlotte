@@ -687,6 +687,8 @@ mod platform_app {
         // owns the main Windows message loop and displays the native window.
         #[cfg(target_os = "windows")]
         let native_ui = ui.clone();
+        #[cfg(target_os = "windows")]
+        let (window_tx, window_rx) = mpsc::channel::<crate::windows_host::HostCommand>();
         let mut next_tab_id = (initial_tabs.len() as i32) + 2;
 
         let worker = move || {
@@ -780,6 +782,9 @@ mod platform_app {
                         ui.page_changed(&url);
                     }
                     Command::Back => {
+                        #[cfg(target_os = "windows")]
+                        let _ = window_tx.send(crate::windows_host::HostCommand::Back);
+                        #[cfg(not(target_os = "windows"))]
                         if let Ok(tabs) = tab_state.lock() {
                             if let Some(active_id) = tabs.active_id() {
                                 let _ = engine.go_back(active_id);
@@ -787,6 +792,9 @@ mod platform_app {
                         }
                     }
                     Command::Forward => {
+                        #[cfg(target_os = "windows")]
+                        let _ = window_tx.send(crate::windows_host::HostCommand::Forward);
+                        #[cfg(not(target_os = "windows"))]
                         if let Ok(tabs) = tab_state.lock() {
                             if let Some(active_id) = tabs.active_id() {
                                 let _ = engine.go_forward(active_id);
@@ -794,6 +802,9 @@ mod platform_app {
                         }
                     }
                     Command::Reload | Command::HardReload => {
+                        #[cfg(target_os = "windows")]
+                        let _ = window_tx.send(crate::windows_host::HostCommand::Reload);
+                        #[cfg(not(target_os = "windows"))]
                         if let Ok(tabs) = tab_state.lock() {
                             if let Some(active_id) = tabs.active_id() {
                                 let _ = engine.reload(active_id, false);
@@ -858,7 +869,7 @@ mod platform_app {
                 .name("charlotte-platform-commands".into())
                 .spawn(worker)
                 .map_err(|e| format!("Failed to start browser commands: {e}"))?;
-            return crate::windows_host::run(&native_ui);
+            return crate::windows_host::run(&native_ui, window_rx);
         }
         #[cfg(not(target_os = "windows"))]
         {
