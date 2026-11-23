@@ -560,6 +560,7 @@ mod platform_app {
 
     pub fn run_platform() -> Result<(), String> {
         let is_private = std::env::args().any(|a| a == "--private" || a == "--incognito");
+        let open_settings = std::env::args().any(|a| a == "--settings");
 
         // 1. Ensure profile directories exist
         crate::profile::ensure_profile_dirs().map_err(|e| e.to_string())?;
@@ -632,6 +633,14 @@ mod platform_app {
                 tabs_inner.activate(upd_id);
                 initial_tabs.push((upd_id, "charlotte://updates".into()));
             }
+        }
+        if open_settings && !is_private {
+            let new_id = initial_tabs.len() as i32 + 1;
+            tabs_inner.open(new_id);
+            tabs_inner.navigate(new_id, "charlotte://settings");
+            tabs_inner.title(new_id, "Charlotte Settings");
+            tabs_inner.activate(new_id);
+            initial_tabs.push((new_id, "charlotte://settings".to_owned()));
         }
         RESTORING.store(false, Ordering::SeqCst);
 
