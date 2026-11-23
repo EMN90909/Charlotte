@@ -3,6 +3,22 @@
 //! process restart is required for future resource permission requests.
 use charlotte_native::{permissions::{self, Capability, Decision}, profile, storage::Storage, shield_lists, mcp};
 use std::{env, process};
+#[cfg(windows)]
+fn launch_settings_window() -> Result<(), String> {
+    let current = env::current_exe().map_err(|e| e.to_string())?;
+    let main_exe = current.parent().ok_or("Settings executable has no parent directory")?
+        .join("Charlotte.exe");
+    if !main_exe.is_file() {
+        return Err(format!("Could not find {} beside charlotte-settings.exe", main_exe.display()));
+    }
+    std::process::Command::new(&main_exe)
+        .arg("--settings")
+        .current_dir(main_exe.parent().unwrap())
+        .spawn()
+        .map_err(|e| format!("Could not open Charlotte Settings: {e}"))?;
+    Ok(())
+}
+
 
 const HELP: &str = "\
 Charlotte native settings
@@ -277,6 +293,16 @@ fn run(args: &[String]) -> Result<(), String> {
 }
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
+    // Double-clicking settings.exe opens the actual Settings UI; command-line
+    // subcommands continue to work as before.
+    #[cfg(windows)]
+    if args.is_empty() {
+        if let Err(error) = launch_settings_window() {
+            eprintln!("{error}");
+            process::exit(2);
+        }
+        return;
+    }
     if let Err(error) = run(&args) {
         eprintln!("{error}");
         process::exit(2);
