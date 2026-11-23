@@ -1597,22 +1597,33 @@ pub fn render_downloads_page(
     wrap_shell("Downloads — charlotte://downloads", ctx, &body)
 }
 
-/// `charlotte://extensions`
+/// `charlotte://extensions` — installed first-party tools and a truthful
+/// marketplace landing page. Third-party installs require a future signed
+/// extension package/download flow and must not be presented as functional.
 pub fn render_extensions_page(ctx: &PageContext) -> String {
     let mut body = render_topbar(ctx, "search", true);
-    body.push_str(
-        r#"<div class="internal-wrap">
+    let shields = if ctx.shields_enabled { "Enabled" } else { "Disabled" };
+    let _ = write!(body, r#"<div class="internal-wrap">
   <div class="internal-card">
     <span class="badge" style="margin-bottom:6px">charlotte://extensions</span>
-    <h1 style="margin:0 0 6px;font-size:24px">Extensions</h1>
-    <p style="margin:0;color:var(--text-muted);font-size:13.5px">Charlotte supports manifest-validated content scripts and sandboxed extensions.</p>
+    <h1 style="margin:0 0 6px;font-size:24px">Extensions Marketplace</h1>
+    <p class="settings-help">Manage Charlotte's built-in browser tools and explore extension support.</p>
   </div>
   <div class="internal-card">
-    <div class="empty-note">No third-party extensions installed. Built-in Charlotte Shields &amp; Agent Runtime are active.</div>
+    <h2 style="font-size:17px">Built into Charlotte</h2>
+    <div class="highlight-grid">
+      <div class="highlight-box"><strong>🛡 Charlotte Shields</strong><p class="settings-help">Privacy and tracker blocking</p><span class="badge">{shields}</span><p><a class="btn-secondary" href="/internal/settings#passwords-security">Manage protection</a></p></div>
+      <div class="highlight-box"><strong>✦ Charlotte AI Agent</strong><p class="settings-help">Agent workspace and provider connections</p><span class="badge">Built in</span><p><a class="btn-secondary" href="/internal/agent">Open Agent</a></p></div>
+      <div class="highlight-box"><strong>⚡ MCP Tools</strong><p class="settings-help">Connected tools are configured in the agent workspace</p><span class="badge">Built in</span><p><a class="btn-secondary" href="/internal/settings#ai-agent">Configure AI</a></p></div>
+    </div>
   </div>
-</div>"#,
-    );
-    wrap_shell("Extensions — charlotte://extensions", ctx, &body)
+  <div class="internal-card">
+    <h2 style="font-size:17px">Third-party extensions</h2>
+    <p class="settings-help">Extension manifests and content-script matching exist in Charlotte's Rust engine, but there is currently no verified marketplace download, install, update, or permission-review pipeline. Third-party installation is not available yet.</p>
+    <div class="empty-note">No third-party extensions installed.</div>
+  </div>
+</div>"#);
+    wrap_shell("Extensions Marketplace — charlotte://extensions", ctx, &body)
 }
 
 /// `charlotte://about`
@@ -1665,6 +1676,19 @@ mod tests {
             current_internal_url: "charlotte://search".into(),
             status_banner: None,
         }
+    }
+
+    #[test]
+    fn settings_navigation_and_sidebar_preferences_are_rendered() {
+        let ctx = sample_ctx(false);
+        let page = render_settings_page(&ctx, &[], TabLayout::Horizontal, "off", "Ready", "https://example.org");
+        assert!(page.contains("Personalization"));
+        assert!(page.contains("Passwords &amp; Security"));
+        assert!(page.contains("Extensions Marketplace"));
+        assert!(page.contains("sidebar_auto_hide"));
+        assert!(!page.contains("Internal Charlotte Pages"));
+        assert!(page.contains("profile-trigger"));
+        assert!(page.contains("rail-pin-toggle"));
     }
 
     #[test]
