@@ -1656,7 +1656,7 @@ async fn settings_byok_action(State(ui):State<Ui>,headers:HeaderMap,Form(form):F
     } else if cmd == "delete" {
         ui.byok.delete_key(provider);
     }
-    reply("/sidebar")
+    Redirect::to("/internal/settings#ai-agent").into_response()
 }
 
 async fn settings_skills_action(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response {
@@ -1757,6 +1757,9 @@ fn build_page_ctx(ui: &Ui, current_url: &str, tab_filter: String, force_private:
         shields_enabled,
         blocked_requests,
         user_initials: "CH".into(),
+        sidebar_auto_hide: open_db()
+            .and_then(|db| db.setting("sidebar_auto_hide").ok().flatten())
+            .as_deref() != Some("off"),
         current_internal_url: current_url.to_owned(),
         status_banner,
     }
@@ -2235,8 +2238,16 @@ async fn settings_update(State(ui): State<Ui>, headers: HeaderMap, Form(form): F
             tabs.set_layout(layout);
         }
     } else if cmd == "dark_mode" {
-        if let Some(db) = open_db() {
-            let _ = db.set_setting("dark_mode", val);
+        if ["off", "system", "always"].contains(&val) {
+            if let Some(db) = open_db() {
+                let _ = db.set_setting("dark_mode", val);
+            }
+        }
+    } else if cmd == "sidebar_auto_hide" {
+        if ["on", "off"].contains(&val) {
+            if let Some(db) = open_db() {
+                let _ = db.set_setting("sidebar_auto_hide", val);
+            }
         }
     }
     Redirect::to("/internal/settings").into_response()
