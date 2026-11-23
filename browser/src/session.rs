@@ -10,6 +10,48 @@ pub fn valid_page_url(value: &str) -> bool {
         matches!(url.scheme(), "https" | "http") && url.host_str().is_some() &&
         url.username().is_empty() && url.password().is_none())
 }
+
+/// Normalizes supported internal Charlotte URLs (including common `charllote://` alias).
+pub fn normalize_internal_url(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.len() > 512 {
+        return None;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let rest = if lower.starts_with("charlotte://") {
+        // preserve path case after host if needed
+        &trimmed["charlotte://".len()..]
+    } else if lower.starts_with("charllote://") {
+        &trimmed["charllote://".len()..]
+    } else {
+        return None;
+    };
+    let rest_trimmed = rest.trim_matches('/');
+    let host_part = rest_trimmed.split('/').next().unwrap_or("").split('?').next().unwrap_or("").to_ascii_lowercase();
+    let allowed = matches!(
+        host_part.as_str(),
+        "" | "newtab" | "search" | "agent" | "private" | "incognito"
+            | "updates" | "history" | "settings" | "bookmarks"
+            | "downloads" | "extensions" | "about" | "version"
+    );
+    if !allowed {
+        return None;
+    }
+    if rest_trimmed.is_empty() {
+        Some("charlotte://search".to_owned())
+    } else {
+        Some(format!("charlotte://{rest_trimmed}"))
+    }
+}
+
+pub fn is_internal_url(value: &str) -> bool {
+    normalize_internal_url(value).is_some()
+}
+
+pub fn valid_navigable_url(value: &str) -> bool {
+    valid_page_url(value) || is_internal_url(value)
+}
+
 pub fn remember_page(store: &Storage, url: &str) -> rusqlite::Result<()> {
     if valid_page_url(url) { store.set_setting(KEY, url) } else { Ok(()) }
 }

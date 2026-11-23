@@ -49,6 +49,8 @@ pub struct Tab {
     #[serde(default)]
     pub sleeping: bool,
     #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
     pub group_id: Option<String>,
     #[serde(default)]
     pub workspace_id: Option<String>,
@@ -80,6 +82,7 @@ pub struct Tabs {
     groups: Vec<TabGroup>,
     workspaces: Vec<Workspace>,
     active_workspace: String,
+    is_private: bool,
 }
 
 impl Default for Tabs {
@@ -99,6 +102,7 @@ impl Default for Tabs {
             groups: Vec::new(),
             workspaces: vec![default_workspace],
             active_workspace: "default".into(),
+            is_private: false,
         }
     }
 }
@@ -110,6 +114,20 @@ impl Tabs {
 
     pub fn set_layout(&mut self, layout: TabLayout) {
         self.layout = layout;
+    }
+
+    pub fn is_private(&self) -> bool {
+        self.is_private
+    }
+
+    pub fn set_private(&mut self, private: bool) {
+        self.is_private = private;
+    }
+
+    pub fn pin_tab(&mut self, id: i32, pinned: bool) -> bool {
+        let Some(tab) = self.open.iter_mut().find(|t| t.id == id) else { return false };
+        tab.pinned = pinned;
+        true
     }
 
     pub fn groups(&self) -> &[TabGroup] {
@@ -136,6 +154,7 @@ impl Tabs {
             url: String::new(),
             loading: true,
             sleeping: false,
+            pinned: false,
             group_id: None,
             workspace_id: Some(ws_id.clone()),
             media_playing: false,
@@ -177,8 +196,9 @@ impl Tabs {
 
     pub fn navigate(&mut self, id: i32, url: &str) -> bool {
         let Some(tab) = self.open.iter_mut().find(|t| t.id == id) else { return false };
-        if !crate::session::valid_page_url(url) { return false; }
-        tab.url = url.to_owned();
+        if !crate::session::valid_navigable_url(url) { return false; }
+        let normalized = crate::session::normalize_internal_url(url).unwrap_or_else(|| url.to_owned());
+        tab.url = normalized;
         tab.loading = true;
         tab.last_accessed_at = current_timestamp_secs();
         true

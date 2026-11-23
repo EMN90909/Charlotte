@@ -559,13 +559,28 @@ mod platform_app {
     }
 
     pub fn run_platform() -> Result<(), String> {
+        let is_private = std::env::args().any(|a| a == "--private" || a == "--incognito");
+
         // 1. Ensure profile directories exist
         crate::profile::ensure_profile_dirs().map_err(|e| e.to_string())?;
         let profile_dir = crate::profile::profile_root();
         let db_path = profile_dir.join("charlotte.sqlite");
         let storage = crate::storage::Storage::open(&db_path).map_err(|e| e.to_string())?;
 
-        // 2. Setup command channel
+        // 2. Check server for new updates automatically on every launch (normal mode)
+        let update_outcome = if !is_private {
+            crate::updater::check_and_install_on_startup(&storage)
+        } else {
+            crate::updater::StartupUpdateOutcome {
+                checked_server: false,
+                update_installed: false,
+                open_updates_page: false,
+                installed_version: None,
+                status_message: "Private browsing window — ephemeral session active".into(),
+            }
+        };
+
+        // 3. Setup command channel
         let (tx, rx): (Sender<Command>, Receiver<Command>) = mpsc::channel();
         if let Ok(mut guard) = COMMAND_SENDER.lock() {
             *guard = Some(tx.clone());
@@ -576,30 +591,47 @@ mod platform_app {
             }
         }
 
-        // 3. Initialize tabs and restore previous session
+        // 4. Initialize tabs and restore previous session (or open charlotte://updates / charlotte://private)
         let mut tabs_inner = Tabs::default();
-        let start_url = crate::session::start_page(&storage);
+        tabs_inner.set_private(is_private);
+        let default_start = if is_private {
+            "charlotte://private".to_owned()
+        } else {
+            "charlotte://search".to_owned()
+        };
 
         RESTORING.store(true, Ordering::SeqCst);
-        let saved_tabs = crate::session::restore_tabs(&storage);
         let mut initial_tabs: Vec<(i32, String)> = Vec::new();
 
-        if !saved_tabs.urls.is_empty() {
-            tabs_inner.set_layout(saved_tabs.layout);
-            for (idx, url) in saved_tabs.urls.iter().enumerate() {
-                let tab_id = (idx as i32) + 1;
-                tabs_inner.open(tab_id);
-                tabs_inner.navigate(tab_id, url);
-                initial_tabs.push((tab_id, url.clone()));
-            }
-            if let Some(&(active_id, _)) = initial_tabs.get(saved_tabs.active_index) {
-                tabs_inner.activate(active_id);
-            }
-        } else {
+        if is_private {
             tabs_inner.open(1);
-            tabs_inner.navigate(1, &start_url);
+            tabs_inner.navigate(1, "charlotte://private");
+            tabs_inner.title(1, "Private search");
             tabs_inner.activate(1);
-            initial_tabs.push((1, start_url.clone()));
+            initial_tabs.push((1, "charlotte://private".into()));
+        } else {
+            let saved_tabs = crate::session::restore_tabs(&storage);
+            if !saved_tabs.urls.is_empty() {
+                tabs_inner.set_layout(saved_tabs.layout);
+                for (idx, url) in saved_tabs.urls.iter().enumerate() {
+                    let tab_id = (idx as i32) + 1;
+                    tabs_inner.open(tab_id);
+                    tabs_inner.navigate(tab_id, url);
+                    tabs_inner.title(tab_id, &crate::internal_pages::domain_from_url(url));
+                    initial_tabs.push((tab_id, url.clone()));
+                }
+                if let Some(&(active_id, _)) = initial_tabs.get(saved_tabs.active_index) {
+                    tabs_inner.activate(active_id);
+                }
+            }
+            if update_outcome.open_updates_page {
+                let upd_id = (initial_tabs.len() as i32) + 1;
+                tabs_inner.open(upd_id);
+                tabs_inner.navigate(upd_id, "charlotte://updates");
+                tabs_inner.title(upd_id, "What's New");
+                tabs_inner.activate(upd_id);
+                initial_tabs.push((upd_id, "charlotte://updates".into()));
+            }
         }
         RESTORING.store(false, Ordering::SeqCst);
 
@@ -608,28 +640,39 @@ mod platform_app {
             *guard = Some(tab_state.clone());
         }
 
-        // 4. Initialize Shield ad/tracker filter and local UI server
+        // 5. Initialize Shield ad/tracker filter and local UI server
         let filter = default_filter();
         let ui = ui_server::start(tab_state.clone(), filter.clone())?;
 
-        // 5. Initialize platform web engine
+        // 6. Initialize platform web engine
         let mut engine = create_platform_engine();
         for (tab_id, url) in &initial_tabs {
             let _ = engine.render_page(*tab_id, url);
         }
 
         println!("========================================================================");
-        println!("Charlotte Browser v{} (Autonomous AI Browser)", env!("CARGO_PKG_VERSION"));
+        if is_private {
+            println!("Charlotte Browser v{} — PRIVATE / INCOGNITO WINDOW (Black Theme)", env!("CARGO_PKG_VERSION"));
+        } else {
+            println!("Charlotte Browser v{} (Autonomous AI Browser)", env!("CARGO_PKG_VERSION"));
+        }
         #[cfg(target_os = "windows")]
         println!("Web Engine: WebView2 COM (Windows 7–11 multi-arch)");
         #[cfg(target_os = "linux")]
         println!("Web Engine: WebKitGTK (Linux x86_64 / i686)");
         #[cfg(not(any(target_os = "windows", target_os = "linux")))]
         println!("Web Engine: Platform Native Engine");
+        println!("Updates:    {}", update_outcome.status_message);
+        println!("App UI:     {}", ui.app_url());
+        println!("Search:     {} (charlotte://search)", ui.internal_url("search"));
+        println!("Agent:      {} (charlotte://agent)", ui.internal_url("agent"));
+        println!("Private:    {} (charlotte://private)", ui.internal_url("private"));
+        println!("Updates UI: {} (charlotte://updates)", ui.internal_url("updates"));
+        println!("History:    {} (charlotte://history)", ui.internal_url("history"));
+        println!("Settings:   {} (charlotte://settings)", ui.internal_url("settings"));
         println!("Chrome UI:  {}", ui.chrome_url());
         println!("AI Sidebar: {}", ui.sidebar_url());
         println!("Profile:    {}", profile_dir.display());
-        println!("Storage:    {}", db_path.display());
         println!("Status:     Running — Ready for navigation & autonomous agent tasks");
         println!("========================================================================");
 
@@ -640,28 +683,38 @@ mod platform_app {
             return Ok(());
         }
 
-        // 6. Platform event loop handling incoming browser commands
+        // 7. Platform event loop handling incoming browser commands
         let mut next_tab_id = (initial_tabs.len() as i32) + 2;
 
         loop {
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(cmd) => match cmd {
                     Command::Sync => {
-                        let _ = crate::cef_bridge::persist_tabs(&tab_state);
+                        if !is_private {
+                            crate::cef_bridge::persist_tabs(&tab_state);
+                        }
                     }
                     Command::New(url) => {
-                        let target_url = if crate::session::valid_page_url(&url) {
+                        let target_url = if crate::session::valid_navigable_url(&url) {
                             url
                         } else {
-                            start_url.clone()
+                            default_start.clone()
                         };
                         let new_id = next_tab_id;
                         next_tab_id += 1;
                         if let Ok(mut tabs) = tab_state.lock() {
                             if tabs.open(new_id) {
                                 tabs.navigate(new_id, &target_url);
+                                let title = if crate::session::is_internal_url(&target_url) {
+                                    "New tab".to_owned()
+                                } else {
+                                    crate::internal_pages::domain_from_url(&target_url)
+                                };
+                                tabs.title(new_id, &title);
                                 let _ = engine.render_page(new_id, &target_url);
-                                let _ = crate::session::save_tabs(&storage, &tabs);
+                                if !is_private {
+                                    let _ = crate::session::save_tabs(&storage, &tabs);
+                                }
                             }
                         }
                         ui.tab_selected(new_id);
@@ -670,7 +723,9 @@ mod platform_app {
                     Command::Select(id) => {
                         if let Ok(mut tabs) = tab_state.lock() {
                             tabs.activate(id);
-                            let _ = crate::session::save_tabs(&storage, &tabs);
+                            if !is_private {
+                                let _ = crate::session::save_tabs(&storage, &tabs);
+                            }
                             if let Some(active) = tabs.active() {
                                 ui.page_changed(&active.url);
                             }
@@ -681,16 +736,41 @@ mod platform_app {
                         if let Ok(mut tabs) = tab_state.lock() {
                             tabs.close(id);
                             let _ = engine.close_tab(id);
-                            let _ = crate::session::save_tabs(&storage, &tabs);
+                            if !is_private {
+                                let _ = crate::session::save_tabs(&storage, &tabs);
+                            }
                         }
                         ui.tab_closed(id);
                     }
                     Command::Navigate(url) => {
                         if let Ok(mut tabs) = tab_state.lock() {
-                            if let Some(active_id) = tabs.active_id() {
-                                tabs.navigate(active_id, &url);
-                                let _ = engine.navigate(active_id, &url);
-                                let _ = crate::session::save_tabs(&storage, &tabs);
+                            let target_id = match tabs.active_id() {
+                                Some(id) => id,
+                                None => {
+                                    let id = next_tab_id;
+                                    next_tab_id += 1;
+                                    tabs.open(id);
+                                    id
+                                }
+                            };
+                            if tabs.navigate(target_id, &url) {
+                                let title = if crate::session::is_internal_url(&url) {
+                                    url.trim_start_matches("charlotte://").to_owned()
+                                } else {
+                                    crate::internal_pages::domain_from_url(&url)
+                                };
+                                tabs.title(target_id, &title);
+                                let _ = engine.navigate(target_id, &url);
+                                if !is_private {
+                                    let _ = crate::session::save_tabs(&storage, &tabs);
+                                    if crate::session::valid_page_url(&url) {
+                                        let now = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default()
+                                            .as_millis() as i64;
+                                        let _ = storage.record_visit(&url, &title, now);
+                                    }
+                                }
                             }
                         }
                         ui.page_changed(&url);

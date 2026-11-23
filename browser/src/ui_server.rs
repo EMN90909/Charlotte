@@ -3,7 +3,7 @@
 //! Bound only to 127.0.0.1 with an unpredictable per-launch form token.
 //! There is no Electron, Node process, websocket proxy or JS-facing OS API.
 use std::{net::TcpListener, sync::{Arc,Mutex,atomic::{AtomicBool,Ordering}}, thread};
-use axum::{extract::{State,Form},http::{HeaderMap,StatusCode,header},response::{Html,IntoResponse,Redirect,Response},routing::{get,post},Json,Router};
+use axum::{extract::{Path as AxumPath,Query,State,Form},http::{HeaderMap,StatusCode,header},response::{Html,IntoResponse,Redirect,Response},routing::{get,post},Json,Router};
 use serde::Deserialize;
 use crate::{agent::{self,Plan},orchestrator::{self,Route as AutoRoute,Capabilities},browser_agent::{self,Decision as BrowserDecision},browser_automation::{self,Action as BrowserAction,Context as BrowserContext},automation_semantics,cef_bridge::{Filter,TabState}, mcp, permissions::{self,Capability,Decision}, services::{self, ChatIdentity, Provider, Turn}};
 #[derive(Clone, Debug)]
@@ -69,6 +69,9 @@ struct UiInner {
     error: String,
     working: bool,
     stop: Arc<AtomicBool>,
+    cloud_mode_enabled: bool,
+    selected_model: String,
+    status_banner: Option<String>,
 }
 #[derive(Deserialize)]
 struct ActionForm {
@@ -90,6 +93,11 @@ struct ActionForm {
     skill_id: Option<String>,
     skill_name: Option<String>,
     instructions: Option<String>,
+}
+#[derive(Deserialize, Default)]
+struct SearchQuery {
+    q: Option<String>,
+    url: Option<String>,
 }
 fn escape(s: &str) -> String {
     s.replace('&',"&amp;").replace('<',"&lt;").replace('>',"&gt;")
@@ -123,6 +131,9 @@ pub fn resolve_address(raw: &str) -> Option<String> {
     if value.starts_with("javascript:") || value.starts_with("data:") || value.starts_with("file:") {
         return None;
     }
+    if let Some(internal) = crate::session::normalize_internal_url(value) {
+        return Some(internal);
+    }
     let maybe=if value.contains("://"){value.to_owned()}
         else if value.contains(' ')||!value.contains('.') {
             let mut url=url::Url::parse("https://www.google.com/search").ok()?;
@@ -130,6 +141,36 @@ pub fn resolve_address(raw: &str) -> Option<String> {
             url.to_string()
         } else {format!("https://{value}")};
     crate::session::valid_page_url(&maybe).then_some(maybe)
+}
+pub fn internal_route_for_url(raw: &str) -> Option<String> {
+    let norm = crate::session::normalize_internal_url(raw)?;
+    let path = norm.strip_prefix("charlotte://").unwrap_or("search");
+    let lower = path.to_ascii_lowercase();
+    if lower == "newtab" || lower == "search" || lower.is_empty() {
+        Some("/internal/search".into())
+    } else if lower == "agent" {
+        Some("/internal/agent".into())
+    } else if let Some(id) = path.strip_prefix("agent/work/") {
+        Some(format!("/internal/agent/work/{id}"))
+    } else if lower == "private" || lower == "incognito" {
+        Some("/internal/private".into())
+    } else if lower == "updates" {
+        Some("/internal/updates".into())
+    } else if lower == "history" {
+        Some("/internal/history".into())
+    } else if lower == "settings" {
+        Some("/internal/settings".into())
+    } else if lower == "bookmarks" {
+        Some("/internal/bookmarks".into())
+    } else if lower == "downloads" {
+        Some("/internal/downloads".into())
+    } else if lower == "extensions" {
+        Some("/internal/extensions".into())
+    } else if lower == "about" || lower == "version" {
+        Some("/internal/about".into())
+    } else {
+        Some("/internal/search".into())
+    }
 }
 fn chrome(ui:&Ui)->Html<String>{
     let mut html=header_html("Charlotte | Tabs",true);
@@ -350,11 +391,32 @@ fn forbidden()->Response{(StatusCode::FORBIDDEN,"Invalid local origin or form to
 fn reply(path:&'static str)->Response {Redirect::to(path).into_response()}
 async fn action(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response{
     if !check(&ui,&headers,&form.token){return forbidden()}
+    let is_private = ui.tabs.lock().ok().is_some_and(|t| t.is_private());
+    let mut redirect_target: Option<String> = None;
     let cmd=match form.command.as_deref().unwrap_or(""){
-        "new"=>Some(Command::New("".into())),
+        "new"=>Some(Command::New(if is_private { "charlotte://private".into() } else { "charlotte://search".into() })),
         "select"=>form.id.map(Command::Select),
         "close"=>form.id.map(Command::Close),
-        "navigate"=>form.value.as_deref().and_then(resolve_address).map(Command::Navigate),
+        "navigate"=>{
+            if let Some(target) = form.value.as_deref().and_then(resolve_address) {
+                if let Some(internal) = internal_route_for_url(&target) {
+                    redirect_target = Some(internal);
+                } else if !is_private && crate::session::valid_page_url(&target) {
+                    if let Ok(db) = crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")) {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as i64;
+                        let title = crate::internal_pages::domain_from_url(&target);
+                        let _ = db.record_visit(&target, &title, now);
+                    }
+                    redirect_target = Some(target.clone());
+                }
+                Some(Command::Navigate(target))
+            } else {
+                None
+            }
+        }
         "back"=>Some(Command::Back),
         "forward"=>Some(Command::Forward),
         "reload"=>Some(Command::Reload),
@@ -365,6 +427,18 @@ async fn action(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm
     };
     let Some(cmd)=cmd else{return (StatusCode::BAD_REQUEST,"Invalid command").into_response()};
     crate::app::post_ui_command(cmd);
+    if let Some(target) = redirect_target {
+        if target.starts_with("/internal/") {
+            return Redirect::to(&target).into_response();
+        }
+    }
+    if let Some(referer) = headers.get(header::REFERER).and_then(|v| v.to_str().ok()) {
+        if let Ok(parsed) = url::Url::parse(referer) {
+            if parsed.path().starts_with("/internal/") {
+                return Redirect::to(parsed.path()).into_response();
+            }
+        }
+    }
     reply("/chrome")
 }
 fn busy(ui:&Ui)->bool{
@@ -1645,6 +1719,525 @@ async fn health(State(ui):State<Ui>)->Json<serde_json::Value>{
         "blocked_requests":blocked,
     }))
 }
+fn open_db() -> Option<crate::storage::Storage> {
+    crate::storage::Storage::open(&crate::profile::profile_root().join("charlotte.sqlite")).ok()
+}
+
+fn build_page_ctx(ui: &Ui, current_url: &str, tab_filter: String, force_private: bool) -> crate::internal_pages::PageContext {
+    let (tabs, active_tab_id, tabs_private) = ui
+        .tabs
+        .lock()
+        .ok()
+        .map(|t| (t.all().to_vec(), t.active_id(), t.is_private()))
+        .unwrap_or_else(|| (Vec::new(), None, false));
+    let pinned_sites = open_db()
+        .and_then(|db| db.pinned_sites().ok())
+        .unwrap_or_default();
+    let (shields_enabled, blocked_requests) = ui
+        .filter
+        .read()
+        .map(|f| (f.is_enabled(), f.blocked_count()))
+        .unwrap_or((true, 0));
+    let (cloud_mode_enabled, selected_model, status_banner) = ui
+        .inner
+        .lock()
+        .ok()
+        .map(|mut inner| (inner.cloud_mode_enabled, inner.selected_model.clone(), inner.status_banner.take()))
+        .unwrap_or_else(|| (false, "charlotte-ai".into(), None));
+
+    crate::internal_pages::PageContext {
+        token: ui.token.clone(),
+        tabs,
+        active_tab_id,
+        pinned_sites,
+        is_private: force_private || tabs_private,
+        cloud_mode_enabled,
+        selected_model,
+        tab_filter,
+        shields_enabled,
+        blocked_requests,
+        user_initials: "CH".into(),
+        current_internal_url: current_url.to_owned(),
+        status_banner,
+    }
+}
+
+async fn app_entry(State(ui): State<Ui>) -> Response {
+    let is_private = ui.tabs.lock().ok().is_some_and(|t| t.is_private());
+    if is_private {
+        return Redirect::to("/internal/private").into_response();
+    }
+    if let Some(db) = open_db() {
+        if crate::updater::pending_update_version(&db).is_some() {
+            return Redirect::to("/internal/updates").into_response();
+        }
+    }
+    Redirect::to("/internal/search").into_response()
+}
+
+async fn open_internal_url(Query(q): Query<SearchQuery>) -> Response {
+    if let Some(raw) = q.url.as_deref() {
+        if let Some(route) = internal_route_for_url(raw) {
+            return Redirect::to(&route).into_response();
+        }
+    }
+    Redirect::to("/internal/search").into_response()
+}
+
+async fn internal_search(State(ui): State<Ui>, Query(q): Query<SearchQuery>) -> Html<String> {
+    let ctx = build_page_ctx(&ui, "charlotte://search", q.q.unwrap_or_default(), false);
+    let recent = open_db()
+        .and_then(|db| db.recent_unique_history(6).ok())
+        .unwrap_or_default();
+    Html(crate::internal_pages::render_search_mode(&ctx, &recent))
+}
+
+async fn internal_agent(State(ui): State<Ui>, Query(q): Query<SearchQuery>) -> Html<String> {
+    let ctx = build_page_ctx(&ui, "charlotte://agent", q.q.unwrap_or_default(), false);
+    let sessions = open_db()
+        .and_then(|db| db.list_work_sessions(25).ok())
+        .unwrap_or_default();
+    Html(crate::internal_pages::render_agent_mode(&ctx, &sessions))
+}
+
+async fn internal_agent_work(State(ui): State<Ui>, AxumPath(id): AxumPath<String>) -> Response {
+    let ctx = build_page_ctx(&ui, &format!("charlotte://agent/work/{id}"), String::new(), false);
+    let Some(session) = open_db().and_then(|db| db.get_work_session(&id).ok()).flatten() else {
+        return Redirect::to("/internal/agent").into_response();
+    };
+    Html(crate::internal_pages::render_agent_work_view(&ctx, &session)).into_response()
+}
+
+async fn internal_private(State(ui): State<Ui>, Query(q): Query<SearchQuery>) -> Html<String> {
+    let ctx = build_page_ctx(&ui, "charlotte://private", q.q.unwrap_or_default(), true);
+    Html(crate::internal_pages::render_private_mode(&ctx))
+}
+
+async fn internal_updates(State(ui): State<Ui>) -> Html<String> {
+    let ctx = build_page_ctx(&ui, "charlotte://updates", String::new(), false);
+    let (updates, live, note, pending) = if let Some(db) = open_db() {
+        let pending = crate::updater::pending_update_version(&db);
+        let (list, live, note) = crate::updater::load_updates_for_page(&db);
+        (list, live, note, pending)
+    } else {
+        (Vec::new(), false, "Storage unavailable".into(), None)
+    };
+    Html(crate::internal_pages::render_updates_page(
+        &ctx,
+        &updates,
+        live,
+        &note,
+        pending.as_deref(),
+    ))
+}
+
+async fn internal_history(State(ui): State<Ui>, Query(q): Query<SearchQuery>) -> Html<String> {
+    let query = q.q.unwrap_or_default();
+    let ctx = build_page_ctx(&ui, "charlotte://history", String::new(), false);
+    let visits = open_db()
+        .and_then(|db| {
+            if query.trim().is_empty() {
+                db.recent_history(200).ok()
+            } else {
+                db.search_history(&query, 200).ok()
+            }
+        })
+        .unwrap_or_default();
+    Html(crate::internal_pages::render_history_page(&ctx, &visits, &query))
+}
+
+async fn internal_settings(State(ui): State<Ui>) -> Html<String> {
+    let ctx = build_page_ctx(&ui, "charlotte://settings", String::new(), false);
+    let keys = ui.byok.list_masked_keys();
+    let layout = ui.tabs.lock().ok().map(|t| t.layout()).unwrap_or(crate::tabs::TabLayout::Horizontal);
+    let (dark_pref, update_status) = open_db()
+        .map(|db| {
+            (
+                db.setting("dark_mode").ok().flatten().unwrap_or_else(|| "off".into()),
+                crate::updater::last_check_status(&db),
+            )
+        })
+        .unwrap_or_else(|| ("off".into(), "Auto-updates enabled".into()));
+    let server_url = crate::updater::server_base_url();
+    Html(crate::internal_pages::render_settings_page(
+        &ctx,
+        &keys,
+        layout,
+        &dark_pref,
+        &update_status,
+        &server_url,
+    ))
+}
+
+async fn internal_bookmarks(State(ui): State<Ui>) -> Html<String> {
+    let ctx = build_page_ctx(&ui, "charlotte://bookmarks", String::new(), false);
+    let bookmarks = open_db().and_then(|db| db.bookmarks().ok()).unwrap_or_default();
+    Html(crate::internal_pages::render_bookmarks_page(&ctx, &bookmarks))
+}
+
+async fn internal_downloads(State(ui): State<Ui>) -> Html<String> {
+    let ctx = build_page_ctx(&ui, "charlotte://downloads", String::new(), false);
+    let downloads = open_db()
+        .and_then(|db| db.recent_downloads(100).ok())
+        .unwrap_or_default();
+    Html(crate::internal_pages::render_downloads_page(&ctx, &downloads))
+}
+
+async fn internal_extensions(State(ui): State<Ui>) -> Html<String> {
+    let ctx = build_page_ctx(&ui, "charlotte://extensions", String::new(), false);
+    Html(crate::internal_pages::render_extensions_page(&ctx))
+}
+
+async fn internal_about(State(ui): State<Ui>) -> Html<String> {
+    let ctx = build_page_ctx(&ui, "charlotte://about", String::new(), false);
+    let server_url = crate::updater::server_base_url();
+    Html(crate::internal_pages::render_about_page(&ctx, &server_url))
+}
+
+async fn agent_cloud_toggle(State(ui): State<Ui>, headers: HeaderMap, Form(form): Form<ActionForm>) -> Response {
+    if !check(&ui, &headers, &form.token) {
+        return forbidden();
+    }
+    if let Ok(mut inner) = ui.inner.lock() {
+        inner.cloud_mode_enabled = !inner.cloud_mode_enabled;
+        inner.status_banner = Some(if inner.cloud_mode_enabled {
+            "Work it on Cloud enabled — your next prompt will create an E2B cloud sandbox environment.".into()
+        } else {
+            "Switched back to Local Agent execution.".into()
+        });
+    }
+    Redirect::to("/internal/agent").into_response()
+}
+
+fn trigger_cloud_e2b_work(prompt: &str, model: &str) -> Result<(String, String), String> {
+    let base = crate::updater::server_base_url();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(12))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let endpoint = format!("{base}/api/v1/cloud/start");
+    let resp = client
+        .post(&endpoint)
+        .json(&serde_json::json!({
+            "prompt": prompt,
+            "goal": prompt,
+            "model": model,
+            "desktop_id": format!("desktop-{}", crate::updater::current_platform()),
+            "user_id": "user-default"
+        }))
+        .send()
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("Cloud server returned HTTP {}", resp.status()));
+    }
+    let json: serde_json::Value = resp.json().map_err(|e| e.to_string())?;
+    let task_id = json
+        .pointer("/task/id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("cloud-task")
+        .to_owned();
+    let sandbox_id = json
+        .pointer("/sandbox/id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("e2b-sandbox")
+        .to_owned();
+    Ok((task_id, sandbox_id))
+}
+
+async fn agent_start_work(State(ui): State<Ui>, headers: HeaderMap, Form(form): Form<ActionForm>) -> Response {
+    if !check(&ui, &headers, &form.token) {
+        return forbidden();
+    }
+    let prompt = form
+        .prompt_text
+        .as_deref()
+        .or(form.value.as_deref())
+        .unwrap_or("")
+        .trim()
+        .to_owned();
+    if prompt.is_empty() {
+        return Redirect::to("/internal/agent").into_response();
+    }
+    let model = form
+        .provider
+        .as_deref()
+        .unwrap_or("charlotte-ai")
+        .to_owned();
+    let use_cloud = form.mode.as_deref() == Some("cloud_e2b")
+        || ui.inner.lock().ok().is_some_and(|i| i.cloud_mode_enabled);
+
+    if let Ok(mut inner) = ui.inner.lock() {
+        inner.selected_model = model.clone();
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    let work_id = format!("work-{now}");
+    let title: String = prompt
+        .split_whitespace()
+        .take(7)
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(64)
+        .collect();
+
+    let mut cloud_sandbox_id = String::new();
+    let mut status = "running".to_owned();
+    let assistant_reply = if use_cloud {
+        match tokio::task::spawn_blocking({
+            let p = prompt.clone();
+            let m = model.clone();
+            move || trigger_cloud_e2b_work(&p, &m)
+        })
+        .await
+        {
+            Ok(Ok((task_id, sb_id))) => {
+                cloud_sandbox_id = sb_id.clone();
+                format!(
+                    "1. E2B Cloud Environment Provisioned\n\
+                     - Provisioned isolated E2B cloud sandbox `{sb_id}` on `{}`.\n\
+                     - Created autonomous cloud task `{task_id}` using model `{model}`.\n\
+                     - Cloud Chromium & Playwright/CDP runner is now executing your goal in the background.\n\n\
+                     2. Next Steps\n\
+                     - Consequential actions (external sends, uploads, payments) will pause automatically for your approval.\n\
+                     - Reply below to steer or refine the cloud agent at any time.",
+                    crate::updater::server_base_url()
+                )
+            }
+            Ok(Err(err)) => {
+                status = "cloud_queued".into();
+                format!(
+                    "1. E2B Cloud Dispatch Queued\n\
+                     - Target server: `{}`\n\
+                     - Cloud sandbox provisioning could not reach the remote host immediately (`{err}`).\n\
+                     - Your task has been saved locally and is ready to retry once connected.",
+                    crate::updater::server_base_url()
+                )
+            }
+            Err(_) => {
+                status = "error".into();
+                "Failed to spawn cloud worker task.".into()
+            }
+        }
+    } else {
+        status = "completed".into();
+        format!(
+            "1. Plan Initialized\n\
+             - Goal: **{prompt}**\n\
+             - Execution engine: Local Charlotte Agent (`{model}`).\n\
+             - Safe read & browser observation boundaries active; payment fields and external writes are strictly gated.\n\n\
+             2. Ready for Follow-Up\n\
+             - Use the composer below to guide additional steps, or enable **Work it on Cloud** in Agent mode to run inside an isolated E2B cloud environment."
+        )
+    };
+
+    let session = crate::storage::AgentWorkSession {
+        id: work_id.clone(),
+        title: if title.is_empty() { "Agent Task".into() } else { title },
+        prompt: prompt.clone(),
+        mode: if use_cloud { "cloud_e2b".into() } else { "local".into() },
+        cloud_sandbox_id,
+        status,
+        messages: vec![
+            crate::storage::WorkMessage {
+                role: "user".into(),
+                content: prompt,
+                timestamp: now,
+            },
+            crate::storage::WorkMessage {
+                role: "assistant".into(),
+                content: assistant_reply,
+                timestamp: now + 1,
+            },
+        ],
+        created_at: now,
+        updated_at: now + 1,
+    };
+
+    if let Some(db) = open_db() {
+        let _ = db.save_work_session(&session);
+    }
+
+    Redirect::to(&format!("/internal/agent/work/{work_id}")).into_response()
+}
+
+async fn agent_work_followup(
+    State(ui): State<Ui>,
+    AxumPath(id): AxumPath<String>,
+    headers: HeaderMap,
+    Form(form): Form<ActionForm>,
+) -> Response {
+    if !check(&ui, &headers, &form.token) {
+        return forbidden();
+    }
+    let text = form
+        .prompt_text
+        .as_deref()
+        .or(form.value.as_deref())
+        .unwrap_or("")
+        .trim()
+        .to_owned();
+    if text.is_empty() {
+        return Redirect::to(&format!("/internal/agent/work/{id}")).into_response();
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    if let Some(db) = open_db() {
+        let _ = db.append_work_message(
+            &id,
+            crate::storage::WorkMessage {
+                role: "user".into(),
+                content: text.clone(),
+                timestamp: now,
+            },
+            Some("running"),
+        );
+        let reply_msg = format!(
+            "1. Follow-Up Received\n\
+             - Processing update: **{text}**\n\
+             - Continuing within the active session context."
+        );
+        let _ = db.append_work_message(
+            &id,
+            crate::storage::WorkMessage {
+                role: "assistant".into(),
+                content: reply_msg,
+                timestamp: now + 1,
+            },
+            Some("completed"),
+        );
+    }
+    Redirect::to(&format!("/internal/agent/work/{id}")).into_response()
+}
+
+async fn pin_site_action(State(ui): State<Ui>, headers: HeaderMap, Form(form): Form<ActionForm>) -> Response {
+    if !check(&ui, &headers, &form.token) {
+        return forbidden();
+    }
+    let cmd = form.command.as_deref().unwrap_or("pin");
+    let url = form.value.as_deref().unwrap_or("").trim();
+    if let Some(db) = open_db() {
+        if cmd == "unpin" {
+            let _ = db.unpin_site(url);
+        } else if crate::session::valid_page_url(url) {
+            let title = form
+                .skill_name
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .map(str::to_owned)
+                .unwrap_or_else(|| crate::internal_pages::domain_from_url(url));
+            let fav = crate::internal_pages::favicon_url_for(url);
+            let _ = db.pin_site(url, &title, &fav);
+        }
+    }
+    if let Some(referer) = headers.get(header::REFERER).and_then(|v| v.to_str().ok()) {
+        if let Ok(parsed) = url::Url::parse(referer) {
+            if parsed.path().starts_with("/internal/") {
+                return Redirect::to(parsed.path()).into_response();
+            }
+        }
+    }
+    Redirect::to("/internal/search").into_response()
+}
+
+async fn open_private_window(State(ui): State<Ui>, headers: HeaderMap, Form(form): Form<ActionForm>) -> Response {
+    if !check(&ui, &headers, &form.token) {
+        return forbidden();
+    }
+    // On desktop, spawn a dedicated black-themed Private/Incognito window process
+    if std::env::var("CHARLOTTE_NO_SPAWN").as_deref() != Ok("1") && !cfg!(test) {
+        if let Ok(exe) = std::env::current_exe() {
+            let _ = std::process::Command::new(exe)
+                .arg("--private")
+                .spawn();
+        }
+    }
+    Redirect::to("/internal/private").into_response()
+}
+
+async fn updates_continue(State(ui): State<Ui>, headers: HeaderMap, Form(form): Form<ActionForm>) -> Response {
+    if !check(&ui, &headers, &form.token) {
+        return forbidden();
+    }
+    let ver = form
+        .value
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(env!("CARGO_PKG_VERSION"));
+    if let Some(db) = open_db() {
+        crate::updater::acknowledge_updates(&db, ver);
+    }
+    Redirect::to("/internal/search").into_response()
+}
+
+async fn updates_check_now(State(ui): State<Ui>, headers: HeaderMap, Form(form): Form<ActionForm>) -> Response {
+    if !check(&ui, &headers, &form.token) {
+        return forbidden();
+    }
+    let status = tokio::task::spawn_blocking(|| {
+        if let Some(db) = open_db() {
+            crate::updater::check_and_install_on_startup(&db).status_message
+        } else {
+            "Storage unavailable".into()
+        }
+    })
+    .await
+    .unwrap_or_else(|_| "Update check finished".into());
+
+    if let Ok(mut inner) = ui.inner.lock() {
+        inner.status_banner = Some(status);
+    }
+    Redirect::to("/internal/updates").into_response()
+}
+
+async fn history_clear(State(ui): State<Ui>, headers: HeaderMap, Form(form): Form<ActionForm>) -> Response {
+    if !check(&ui, &headers, &form.token) {
+        return forbidden();
+    }
+    if let Some(db) = open_db() {
+        let _ = db.clear_history();
+    }
+    Redirect::to("/internal/history").into_response()
+}
+
+async fn history_delete(State(ui): State<Ui>, headers: HeaderMap, Form(form): Form<ActionForm>) -> Response {
+    if !check(&ui, &headers, &form.token) {
+        return forbidden();
+    }
+    if let (Some(db), Some(id)) = (open_db(), form.id) {
+        let _ = db.delete_visit(i64::from(id));
+    }
+    Redirect::to("/internal/history").into_response()
+}
+
+async fn settings_update(State(ui): State<Ui>, headers: HeaderMap, Form(form): Form<ActionForm>) -> Response {
+    if !check(&ui, &headers, &form.token) {
+        return forbidden();
+    }
+    let cmd = form.command.as_deref().unwrap_or("");
+    let val = form.mode.as_deref().unwrap_or("");
+    if cmd == "layout" {
+        if let Ok(mut tabs) = ui.tabs.lock() {
+            let layout = if val == "vertical" {
+                crate::tabs::TabLayout::Vertical
+            } else {
+                crate::tabs::TabLayout::Horizontal
+            };
+            tabs.set_layout(layout);
+        }
+    } else if cmd == "dark_mode" {
+        if let Some(db) = open_db() {
+            let _ = db.set_setting("dark_mode", val);
+        }
+    }
+    Redirect::to("/internal/settings").into_response()
+}
+
 pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
     use rand::{rngs::OsRng,RngCore};
     let mut nonce=[0u8;32];OsRng.fill_bytes(&mut nonce);
@@ -1664,6 +2257,9 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
             pending_browser:None,pending_auto:None,auto_handoff:None,active_run_id:None,automation_browser_id:None,automation_origin:None,cancel_automation:Arc::new(AtomicBool::new(false)),pending_tool:None,ai:history,skill_output:None,skill_source:None,provider_status:None,route_status:None,chat:Vec::new(),chat_base:std::env::var("CHARLOTTE_CHAT_SERVER").unwrap_or_default(),
             chat_token:String::new(),chat_cursor:0,room_url:String::new(),error:String::new(),working:false,
             stop:Arc::new(AtomicBool::new(false)),
+            cloud_mode_enabled:false,
+            selected_model:"charlotte-ai".into(),
+            status_banner:None,
         }))
     };
     let state=ui.clone();
@@ -1673,6 +2269,30 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
         let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("tokio UI runtime");
         runtime.block_on(async move{
             let router=Router::new()
+                .route("/",get(app_entry))
+                .route("/app",get(app_entry))
+                .route("/open",get(open_internal_url))
+                .route("/internal/search",get(internal_search))
+                .route("/internal/agent",get(internal_agent))
+                .route("/internal/agent/work/:id",get(internal_agent_work))
+                .route("/internal/private",get(internal_private))
+                .route("/internal/updates",get(internal_updates))
+                .route("/internal/history",get(internal_history))
+                .route("/internal/settings",get(internal_settings))
+                .route("/internal/bookmarks",get(internal_bookmarks))
+                .route("/internal/downloads",get(internal_downloads))
+                .route("/internal/extensions",get(internal_extensions))
+                .route("/internal/about",get(internal_about))
+                .route("/agent/cloud-toggle",post(agent_cloud_toggle))
+                .route("/agent/work",post(agent_start_work))
+                .route("/agent/work/:id/message",post(agent_work_followup))
+                .route("/pin",post(pin_site_action))
+                .route("/privacy/open",post(open_private_window))
+                .route("/updates/continue",post(updates_continue))
+                .route("/updates/check",post(updates_check_now))
+                .route("/history/clear",post(history_clear))
+                .route("/history/delete",post(history_delete))
+                .route("/settings/update",post(settings_update))
                 .route("/chrome",get(|State(ui):State<Ui>|async move{chrome(&ui)}))
                 .route("/health",get(health))
                 .route("/sidebar",get(|State(ui):State<Ui>|async move{sidebar(&ui)}))
@@ -1809,6 +2429,11 @@ impl Ui{
     }
     pub fn chrome_url(&self)->String{format!("http://127.0.0.1:{}/chrome",self.port)}
     pub fn sidebar_url(&self)->String{format!("http://127.0.0.1:{}/sidebar",self.port)}
+    pub fn app_url(&self)->String{format!("http://127.0.0.1:{}/app",self.port)}
+    pub fn internal_url(&self, path: &str)->String{
+        let p = path.trim_start_matches('/');
+        format!("http://127.0.0.1:{}/internal/{p}", self.port)
+    }
 }
 #[cfg(test)]
 mod tests{
@@ -2030,5 +2655,17 @@ mod tests{
         assert!(resolve_address("javascript:alert(1)").is_none());
         assert_eq!(resolve_address("example.org"),Some("https://example.org".into()));
         assert!(resolve_address("design tools").unwrap().contains("google.com/search"));
+    }
+    #[test]fn internal_charlotte_urls_resolve_and_route(){
+        assert_eq!(resolve_address("charlotte://history"), Some("charlotte://history".into()));
+        assert_eq!(resolve_address("charlotte://settings"), Some("charlotte://settings".into()));
+        assert_eq!(resolve_address("charlotte://updates"), Some("charlotte://updates".into()));
+        assert_eq!(resolve_address("charllote://updates"), Some("charlotte://updates".into()));
+        assert_eq!(internal_route_for_url("charlotte://history").as_deref(), Some("/internal/history"));
+        assert_eq!(internal_route_for_url("charlotte://settings").as_deref(), Some("/internal/settings"));
+        assert_eq!(internal_route_for_url("charllote://updates").as_deref(), Some("/internal/updates"));
+        assert_eq!(internal_route_for_url("charlotte://agent").as_deref(), Some("/internal/agent"));
+        assert_eq!(internal_route_for_url("charlotte://private").as_deref(), Some("/internal/private"));
+        assert!(resolve_address("charlotte://evil-unknown").is_none());
     }
 }

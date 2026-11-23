@@ -39,6 +39,8 @@ pub mod byok;
 pub mod agent_skills;
 pub mod windows_compat;
 pub mod installer;
+pub mod updater;
+pub mod internal_pages;
 #[allow(special_module_name)]
 pub mod main;
 pub mod renderer;

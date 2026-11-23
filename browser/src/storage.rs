@@ -11,6 +11,35 @@ pub struct Visit { pub id: i64, pub url: String, pub title: String, pub visited_
 #[derive(Debug, PartialEq, Eq)]
 pub struct Message { pub id: i64, pub room: String, pub sender: String, pub body: String, pub created_at: i64 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PinnedSite {
+    pub url: String,
+    pub title: String,
+    pub favicon_url: String,
+    pub position: i64,
+    pub pinned_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WorkMessage {
+    pub role: String, // "user" | "assistant" | "system"
+    pub content: String,
+    pub timestamp: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AgentWorkSession {
+    pub id: String,
+    pub title: String,
+    pub prompt: String,
+    pub mode: String, // "local" | "cloud_e2b"
+    pub cloud_sandbox_id: String,
+    pub status: String, // "running" | "completed" | "awaiting_approval" | "error"
+    pub messages: Vec<WorkMessage>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 /// A durable automation progress marker. No screenshots, cookies, field
 /// values or approval tokens are ever written to the run log.
 #[derive(Debug,Clone,PartialEq,Eq)]
@@ -58,6 +87,26 @@ impl Storage {
              );
              CREATE INDEX IF NOT EXISTS automation_runs_recent
                 ON automation_runs(updated_at DESC);
+             CREATE TABLE IF NOT EXISTS pinned_sites (
+                url TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                favicon_url TEXT NOT NULL DEFAULT '',
+                position INTEGER NOT NULL DEFAULT 0,
+                pinned_at INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS pinned_sites_pos ON pinned_sites(position ASC, pinned_at ASC);
+             CREATE TABLE IF NOT EXISTS agent_work_sessions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                prompt TEXT NOT NULL,
+                mode TEXT NOT NULL DEFAULT 'local',
+                cloud_sandbox_id TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'running',
+                messages_json TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS agent_work_recent ON agent_work_sessions(updated_at DESC);
              COMMIT;",
         )?;
         if version < 2 {
@@ -229,6 +278,204 @@ impl Storage {
         self.0.execute("DELETE FROM downloads", [])
     }
 
+    // --- Pinned Websites (only populated when user explicitly pins a site) ---
+
+    pub fn pin_site(&self, url: &str, title: &str, favicon_url: &str) -> rusqlite::Result<()> {
+        if !crate::session::valid_page_url(url) {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        let next_pos: i64 = self.0.query_row(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM pinned_sites",
+            [],
+            |row| row.get(0),
+        )?;
+        self.0.execute(
+            "INSERT INTO pinned_sites(url, title, favicon_url, position, pinned_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(url) DO UPDATE SET title=excluded.title, favicon_url=excluded.favicon_url",
+            params![url, title, favicon_url, next_pos, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn unpin_site(&self, url: &str) -> rusqlite::Result<bool> {
+        Ok(self.0.execute("DELETE FROM pinned_sites WHERE url = ?1", [url])? != 0)
+    }
+
+    pub fn is_pinned(&self, url: &str) -> rusqlite::Result<bool> {
+        Ok(self.0.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pinned_sites WHERE url = ?1)",
+            [url],
+            |row| row.get::<_, i64>(0),
+        )? != 0)
+    }
+
+    pub fn pinned_sites(&self) -> rusqlite::Result<Vec<PinnedSite>> {
+        let mut stmt = self.0.prepare(
+            "SELECT url, title, favicon_url, position, pinned_at
+             FROM pinned_sites ORDER BY position ASC, pinned_at ASC LIMIT 24",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(PinnedSite {
+                url: row.get(0)?,
+                title: row.get(1)?,
+                favicon_url: row.get(2)?,
+                position: row.get(3)?,
+                pinned_at: row.get(4)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    // --- History helpers for Last Pages Visited & charlotte://history ---
+
+    pub fn recent_unique_history(&self, limit: u32) -> rusqlite::Result<Vec<Visit>> {
+        let mut stmt = self.0.prepare(
+            "SELECT h.id, h.url, h.title, h.visited_at
+             FROM history h
+             INNER JOIN (
+                 SELECT url, MAX(visited_at) AS max_ts
+                 FROM history
+                 GROUP BY url
+             ) latest ON h.url = latest.url AND h.visited_at = latest.max_ts
+             GROUP BY h.url
+             ORDER BY h.visited_at DESC, h.id DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([i64::from(limit.min(500))], |row| {
+            Ok(Visit {
+                id: row.get(0)?,
+                url: row.get(1)?,
+                title: row.get(2)?,
+                visited_at: row.get(3)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn search_history(&self, query: &str, limit: u32) -> rusqlite::Result<Vec<Visit>> {
+        let pattern = format!("%{}%", query.trim());
+        let mut stmt = self.0.prepare(
+            "SELECT id, url, title, visited_at
+             FROM history
+             WHERE url LIKE ?1 OR title LIKE ?1
+             ORDER BY visited_at DESC, id DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![pattern, i64::from(limit.min(1000))], |row| {
+            Ok(Visit {
+                id: row.get(0)?,
+                url: row.get(1)?,
+                title: row.get(2)?,
+                visited_at: row.get(3)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn delete_visit(&self, id: i64) -> rusqlite::Result<bool> {
+        Ok(self.0.execute("DELETE FROM history WHERE id = ?1", [id])? != 0)
+    }
+
+    // --- Agent Work Sessions ("Previous work" & Active Work Thread) ---
+
+    pub fn save_work_session(&self, session: &AgentWorkSession) -> rusqlite::Result<()> {
+        let messages_json = serde_json::to_string(&session.messages)
+            .map_err(|_| rusqlite::Error::InvalidQuery)?;
+        self.0.execute(
+            "INSERT INTO agent_work_sessions
+             (id, title, prompt, mode, cloud_sandbox_id, status, messages_json, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(id) DO UPDATE SET
+             title=excluded.title, prompt=excluded.prompt, mode=excluded.mode,
+             cloud_sandbox_id=excluded.cloud_sandbox_id, status=excluded.status,
+             messages_json=excluded.messages_json, updated_at=excluded.updated_at",
+            params![
+                session.id,
+                session.title,
+                session.prompt,
+                session.mode,
+                session.cloud_sandbox_id,
+                session.status,
+                messages_json,
+                session.created_at,
+                session.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_work_sessions(&self, limit: u32) -> rusqlite::Result<Vec<AgentWorkSession>> {
+        let mut stmt = self.0.prepare(
+            "SELECT id, title, prompt, mode, cloud_sandbox_id, status, messages_json, created_at, updated_at
+             FROM agent_work_sessions
+             ORDER BY updated_at DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([i64::from(limit.min(200))], |row| {
+            let msg_raw: String = row.get(6)?;
+            let messages: Vec<WorkMessage> = serde_json::from_str(&msg_raw).unwrap_or_default();
+            Ok(AgentWorkSession {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                prompt: row.get(2)?,
+                mode: row.get(3)?,
+                cloud_sandbox_id: row.get(4)?,
+                status: row.get(5)?,
+                messages,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn get_work_session(&self, id: &str) -> rusqlite::Result<Option<AgentWorkSession>> {
+        self.0
+            .query_row(
+                "SELECT id, title, prompt, mode, cloud_sandbox_id, status, messages_json, created_at, updated_at
+                 FROM agent_work_sessions WHERE id = ?1",
+                [id],
+                |row| {
+                    let msg_raw: String = row.get(6)?;
+                    let messages: Vec<WorkMessage> = serde_json::from_str(&msg_raw).unwrap_or_default();
+                    Ok(AgentWorkSession {
+                        id: row.get(0)?,
+                        title: row.get(1)?,
+                        prompt: row.get(2)?,
+                        mode: row.get(3)?,
+                        cloud_sandbox_id: row.get(4)?,
+                        status: row.get(5)?,
+                        messages,
+                        created_at: row.get(7)?,
+                        updated_at: row.get(8)?,
+                    })
+                },
+            )
+            .optional()
+    }
+
+    pub fn append_work_message(&self, id: &str, msg: WorkMessage, status: Option<&str>) -> rusqlite::Result<bool> {
+        let Some(mut session) = self.get_work_session(id)? else {
+            return Ok(false);
+        };
+        session.updated_at = msg.timestamp;
+        session.messages.push(msg);
+        if let Some(st) = status {
+            session.status = st.to_owned();
+        }
+        self.save_work_session(&session)?;
+        Ok(true)
+    }
+
+    pub fn delete_work_session(&self, id: &str) -> rusqlite::Result<bool> {
+        Ok(self.0.execute("DELETE FROM agent_work_sessions WHERE id = ?1", [id])? != 0)
+    }
+
 }
 
 #[cfg(test)]
@@ -300,5 +547,56 @@ mod tests {
         drop(db);
         assert!(Storage::open(&path).is_err());
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn pinned_sites_and_work_sessions_start_empty_and_persist() {
+        let db = Storage::open(Path::new(":memory:")).unwrap();
+        assert!(db.pinned_sites().unwrap().is_empty());
+        assert!(db.list_work_sessions(10).unwrap().is_empty());
+
+        db.pin_site("https://github.com", "GitHub", "https://github.com/favicon.ico").unwrap();
+        assert_eq!(db.pinned_sites().unwrap().len(), 1);
+        assert!(db.is_pinned("https://github.com").unwrap());
+        assert!(db.unpin_site("https://github.com").unwrap());
+        assert!(db.pinned_sites().unwrap().is_empty());
+
+        db.record_visit("https://rust-lang.org", "Rust", 100).unwrap();
+        db.record_visit("https://rust-lang.org", "Rust Lang", 200).unwrap();
+        db.record_visit("https://github.com", "GitHub", 150).unwrap();
+        let uniq = db.recent_unique_history(5).unwrap();
+        assert_eq!(uniq.len(), 2);
+        assert_eq!(uniq[0].url, "https://rust-lang.org");
+
+        let sess = AgentWorkSession {
+            id: "work-1".into(),
+            title: "Cloud research".into(),
+            prompt: "Research solar providers".into(),
+            mode: "cloud_e2b".into(),
+            cloud_sandbox_id: "sb-123".into(),
+            status: "running".into(),
+            messages: vec![WorkMessage {
+                role: "user".into(),
+                content: "Research solar providers".into(),
+                timestamp: 1000,
+            }],
+            created_at: 1000,
+            updated_at: 1000,
+        };
+        db.save_work_session(&sess).unwrap();
+        assert_eq!(db.list_work_sessions(10).unwrap().len(), 1);
+        db.append_work_message(
+            "work-1",
+            WorkMessage {
+                role: "assistant".into(),
+                content: "Provisioned E2B sandbox".into(),
+                timestamp: 1005,
+            },
+            Some("completed"),
+        )
+        .unwrap();
+        let loaded = db.get_work_session("work-1").unwrap().unwrap();
+        assert_eq!(loaded.messages.len(), 2);
+        assert_eq!(loaded.status, "completed");
     }
 }
