@@ -4,9 +4,10 @@
 //! --install requires an explicit user action and a SHA256-verified HTTPS EXE.
 use charlotte_native::{profile, storage::Storage, updater};
 use sha2::{Digest, Sha256};
-use std::{env, fs::{self, File}, io::{Read, Write}, path::PathBuf, process::Command, time::Duration};
+use std::{env, fs::{self, File}, io::{Read, Write}, path::{Path, PathBuf}, process::Command, time::Duration};
 
 const MAX_INSTALLER_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_UNPACKED_BYTES: u64 = 1024 * 1024 * 1024;
 const STATUS_KEY: &str = "updates.last_check_status";
 const PENDING_KEY: &str = "updates.pending_notice_version";
 
@@ -19,13 +20,13 @@ fn is_hex_sha256(hash: &str) -> bool {
     hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-fn verified_installer_url(value: &str) -> Result<url::Url, String> {
+fn verified_package_url(value: &str) -> Result<url::Url, String> {
     let parsed = url::Url::parse(value).map_err(|_| "Invalid update URL")?;
     if parsed.scheme() != "https" || parsed.host_str().is_none() {
         return Err("Installer must use an HTTPS URL".into());
     }
-    if !parsed.path().to_ascii_lowercase().ends_with(".exe") {
-        return Err("Only verified Windows installer .exe assets are currently supported".into());
+    if !parsed.path().to_ascii_lowercase().ends_with(".zip") {
+        return Err("Windows updates require a complete ZIP bundle containing the installer and resources".into());
     }
     Ok(parsed)
 }
@@ -35,15 +36,15 @@ fn download_verified(update: &updater::BrowserUpdate) -> Result<PathBuf, String>
     if !is_hex_sha256(&update.sha256) {
         return Err("Release must declare a 64-character SHA-256 before downloading".into());
     }
-    let url = verified_installer_url(&update.download_url)?;
+    let url = verified_package_url(&update.download_url)?;
     let version: String = update.version.chars()
         .filter(|c| c.is_ascii_alphanumeric() || ['.', '-', '_'].contains(c))
         .collect();
     if version.is_empty() { return Err("Invalid release version".into()); }
     let dir = profile::profile_root().join("updates").join(version);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let partial = dir.join("charlotte-installer.download");
-    let completed = dir.join("charlotte-installer-verified.exe");
+    let partial = dir.join("charlotte-release.download");
+    let completed = dir.join("charlotte-release-verified.zip");
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(120))
         .build().map_err(|e| e.to_string())?;
@@ -79,7 +80,55 @@ fn download_verified(update: &updater::BrowserUpdate) -> Result<PathBuf, String>
     }
     if completed.exists() { fs::remove_file(&completed).map_err(|e| e.to_string())?; }
     fs::rename(&partial, &completed).map_err(|e| e.to_string())?;
-    Ok(completed)
+    unpack_verified_archive(&completed, &dir.join("payload"))
+}
+
+/// Extract only paths enclosed by the trusted archive. Reject symlinks and
+/// decompression bombs. The installer requires Charlotte.exe and the full
+/// resources/asset folders alongside it.
+fn unpack_verified_archive(archive_path: &Path, target: &Path) -> Result<PathBuf, String> {
+    let archive_file = File::open(archive_path).map_err(|e| e.to_string())?;
+    let mut archive = zip::ZipArchive::new(archive_file).map_err(|e| e.to_string())?;
+    if archive.len() > 4000 { return Err("Too many files in update archive".into()); }
+    // Clean stale staged contents only inside Charlotte's version-specific cache.
+    if target.exists() { fs::remove_dir_all(target).map_err(|e| e.to_string())?; }
+    fs::create_dir_all(target).map_err(|e| e.to_string())?;
+    let mut total = 0u64;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let relative = entry.enclosed_name().ok_or("Unsafe path in update ZIP")?;
+        if entry.unix_mode().is_some_and(|mode| (mode & 0o170000) == 0o120000) {
+            return Err("Archive links are not allowed".into());
+        }
+        if entry.size() > MAX_UNPACKED_BYTES.saturating_sub(total) {
+            return Err("Extracted release exceeds 1 GiB safety limit".into());
+        }
+        total += entry.size();
+        let output = target.join(relative);
+        if entry.is_dir() {
+            fs::create_dir_all(&output).map_err(|e| e.to_string())?;
+        } else {
+            if let Some(parent) = output.parent() {
+                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            let mut f = File::create(&output).map_err(|e| e.to_string())?;
+            let written = std::io::copy(&mut entry, &mut f).map_err(|e| e.to_string())?;
+            if written > entry.size() { return Err("Invalid decompressed file size".into()); }
+            f.sync_all().map_err(|e| e.to_string())?;
+        }
+    }
+    let setup = target.join(if cfg!(target_arch = "x86") {
+        "charlotte-installer-x86.exe"
+    } else {
+        "charlotte-installer-x64.exe"
+    });
+    for name in ["Charlotte.exe", "charlotte-updater.exe", "assets/icon.ico", "resources/windows/app.manifest"] {
+        if !target.join(name).is_file() {
+            return Err(format!("Incomplete update archive: missing {name}"));
+        }
+    }
+    if !setup.is_file() { return Err("Incomplete update archive: missing native installer".into()); }
+    Ok(setup)
 }
 
 fn run(install: bool) -> Result<(), String> {
@@ -141,9 +190,9 @@ fn main() {
 mod tests {
     use super::*;
     #[test] fn reject_non_https_and_packages_without_installer() {
-        assert!(verified_installer_url("http://example.org/setup.exe").is_err());
-        assert!(verified_installer_url("https://example.org/release.zip").is_err());
-        assert!(verified_installer_url("https://example.org/Charlotte-Setup.exe").is_ok());
+        assert!(verified_package_url("http://example.org/release.zip").is_err());
+        assert!(verified_package_url("https://example.org/installer.exe").is_err());
+        assert!(verified_package_url("https://example.org/Charlotte-Windows-x64.zip").is_ok());
     }
     #[test] fn validate_hash_format() {
         assert!(is_hex_sha256(&"a".repeat(64)));
