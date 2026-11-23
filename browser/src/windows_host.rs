@@ -13,7 +13,7 @@ use tao::{
 };
 use wry::{
     dpi::{PhysicalPosition, PhysicalSize},
-    Rect, WebView, WebViewBuilder,
+    PageLoadEvent, Rect, WebView, WebViewBuilder,
 };
 
 const TOOLBAR_HEIGHT: u32 = 100;
@@ -78,7 +78,26 @@ pub fn run(ui: &Ui, commands: Receiver<HostCommand>) -> Result<(), String> {
         .with_bounds(rect(0, 0, size.width, TOOLBAR_HEIGHT))
         .build_as_child(&window)
         .map_err(|err| format!("Could not initialize Charlotte WebView2 toolbar: {err}"))?;
+    let load_tabs = ui.tabs.clone();
+    let loopback = base.clone();
     let page = WebViewBuilder::new()
+        .with_on_page_load_handler(move |event, loaded_url| {
+            if !matches!(event, PageLoadEvent::Finished)
+                || loaded_url.starts_with(&loopback)
+                || !crate::session::valid_page_url(&loaded_url)
+            {
+                return;
+            }
+            // Links clicked inside a real WebView2 page must also update
+            // Charlotte's active tab URL; avoid inventing navigation results.
+            if let Ok(mut tabs) = load_tabs.lock() {
+                if let Some(id) = tabs.active_id() {
+                    if tabs.active().map(|t| t.url.as_str()) != Some(loaded_url.as_str()) {
+                        tabs.navigate(id, &loaded_url);
+                    }
+                }
+            }
+        })
         .with_url(&initial_url)
         .with_bounds(rect(0, TOOLBAR_HEIGHT, size.width, size.height.saturating_sub(TOOLBAR_HEIGHT)))
         .build_as_child(&window)
@@ -112,8 +131,13 @@ pub fn run(ui: &Ui, commands: Receiver<HostCommand>) -> Result<(), String> {
                 let current = active_url(&tabs);
                 if current != last_tab_url {
                     let target = current.as_deref().unwrap_or("charlotte://search");
-                    if let Err(err) = page.load_url(&display_url(target, &base)) {
-                        eprintln!("Charlotte navigation failed: {err}");
+                    let target_url = display_url(target, &base);
+                    // An in-page link may already have navigated this WebView;
+                    // never reload it needlessly when syncing the tab state.
+                    if page.url().ok().as_deref() != Some(target_url.as_str()) {
+                        if let Err(err) = page.load_url(&target_url) {
+                            eprintln!("Charlotte navigation failed: {err}");
+                        }
                     }
                     last_tab_url = current;
                     // Refresh native tab strip after navigation/selection.
@@ -121,7 +145,7 @@ pub fn run(ui: &Ui, commands: Receiver<HostCommand>) -> Result<(), String> {
                     last_refresh = Instant::now();
                 }
                 let count = tabs.lock().ok().map(|state| state.all().len()).unwrap_or(0);
-                if count != last_tab_count || last_refresh.elapsed() >= Duration::from_secs(5) {
+                if count != last_tab_count || last_refresh.elapsed() >= Duration::from_secs(30) {
                     let _ = chrome.load_url(&format!("{base}/chrome"));
                     last_refresh = Instant::now();
                     last_tab_count = count;
@@ -129,7 +153,7 @@ pub fn run(ui: &Ui, commands: Receiver<HostCommand>) -> Result<(), String> {
             }
             _ => {}
         }
-    });
+    })
 }
 
 #[cfg(test)]
