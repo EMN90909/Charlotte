@@ -116,6 +116,11 @@ if [ -f "${BROWSER_DIR}/target/release/charlotte-updater" ]; then
   chmod +x "${LINUX_64}/charlotte-updater"
 fi
 
+# Ship the original desktop assets and native resource declarations in
+# the tarball itself, not after the archive has already been created.
+cp -Rf "${BROWSER_DIR}/assets" "${LINUX_64}/"
+cp -Rf "${BROWSER_DIR}/resources" "${LINUX_64}/"
+
 # Create freedesktop desktop shortcut
 cat << 'EOF' > "${LINUX_64}/charlotte.desktop"
 [Desktop Entry]
@@ -184,11 +189,9 @@ if [ -f "${BROWSER_DIR}/target/release/charlotte-updater.exe" ]; then
 fi
 if [ -d "${BROWSER_DIR}/assets" ]; then
   cp -Rf "${BROWSER_DIR}/assets" "${DIR_64}/windows/win8-11/"
-  cp -Rf "${BROWSER_DIR}/assets" "${DIR_64}/linux/"
 fi
 if [ -d "${BROWSER_DIR}/resources" ]; then
   cp -Rf "${BROWSER_DIR}/resources" "${DIR_64}/windows/win8-11/"
-  cp -Rf "${BROWSER_DIR}/resources" "${DIR_64}/linux/"
 fi
 if [ -f "${BROWSER_DIR}/target/release/charlotte-installer.exe" ]; then
   cp -f "${BROWSER_DIR}/target/release/charlotte-installer.exe" "${DIR_64}/windows/win8-11/charlotte-installer-x64.exe" 2>/dev/null || true
