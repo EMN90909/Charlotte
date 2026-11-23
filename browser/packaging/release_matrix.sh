@@ -111,6 +111,15 @@ if [ -f "${BROWSER_DIR}/target/release/charlotte-installer" ]; then
   cp -f "${BROWSER_DIR}/target/release/charlotte-installer" "${LINUX_64}/charlotte-installer"
   chmod +x "${LINUX_64}/charlotte-installer"
 fi
+if [ -f "${BROWSER_DIR}/target/release/charlotte-updater" ]; then
+  cp -f "${BROWSER_DIR}/target/release/charlotte-updater" "${LINUX_64}/charlotte-updater"
+  chmod +x "${LINUX_64}/charlotte-updater"
+fi
+
+# Ship the original desktop assets and native resource declarations in
+# the tarball itself, not after the archive has already been created.
+cp -Rf "${BROWSER_DIR}/assets" "${LINUX_64}/"
+cp -Rf "${BROWSER_DIR}/resources" "${LINUX_64}/"
 
 # Create freedesktop desktop shortcut
 cat << 'EOF' > "${LINUX_64}/charlotte.desktop"
@@ -174,7 +183,15 @@ EOF
 if [ -f "${BROWSER_DIR}/target/release/Charlotte.exe" ]; then
   echo "Copying Windows release binaries to dist/..."
   cp -f "${BROWSER_DIR}/target/release/Charlotte.exe" "${DIR_64}/windows/win8-11/Charlotte.exe" 2>/dev/null || true
-  cp -f "${BROWSER_DIR}/target/release/Charlotte.exe" "${DIR_64}/windows/win7-esr/Charlotte.exe" 2>/dev/null || true
+fi
+if [ -f "${BROWSER_DIR}/target/release/charlotte-updater.exe" ]; then
+  cp -f "${BROWSER_DIR}/target/release/charlotte-updater.exe" "${DIR_64}/windows/win8-11/charlotte-updater.exe"
+fi
+if [ -d "${BROWSER_DIR}/assets" ]; then
+  cp -Rf "${BROWSER_DIR}/assets" "${DIR_64}/windows/win8-11/"
+fi
+if [ -d "${BROWSER_DIR}/resources" ]; then
+  cp -Rf "${BROWSER_DIR}/resources" "${DIR_64}/windows/win8-11/"
 fi
 if [ -f "${BROWSER_DIR}/target/release/charlotte-installer.exe" ]; then
   cp -f "${BROWSER_DIR}/target/release/charlotte-installer.exe" "${DIR_64}/windows/win8-11/charlotte-installer-x64.exe" 2>/dev/null || true

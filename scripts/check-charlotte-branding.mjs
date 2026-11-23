@@ -19,7 +19,7 @@ assert.ok(existsSync('server/Cargo.toml'));
 assert.ok(!existsSync('server/go.mod'));
 for (const legacy of ['browser/package.json','browser/package-lock.json','browser/forge.config.ts',
                        'browser/src/main/index.ts','browser/src/preload/chrome.ts']){
-    assert.ok(!existsSync(legacy),\`Legacy Electron source is still active: \${legacy}\`);
+    assert.ok(!existsSync(legacy),`Legacy Electron source is still active: ${legacy}`);
 }
 assert.match(read('website/src/lib/site.ts'),/name: 'Charlotte'/);
 assert.match(read('website/src/app/licensing/page.tsx'),/Samuel Abolo/);
@@ -36,11 +36,11 @@ function scan(dir='.'){
     for(const ent of readdirSync(dir,{withFileTypes:true})){
         if(ent.isDirectory()&&ignoredDirs.has(ent.name)) continue;
         const filename=path.join(dir,ent.name).replaceAll('\\','/').replace(/^\.\//,'');
-        assert.ok(!legacyName.test(filename),\`Unexpected legacy file name: \${filename}\`);
+        assert.ok(!legacyName.test(filename),`Unexpected legacy file name: ${filename}`);
         if(ent.isDirectory()){scan(filename);continue;}
         if(!ent.isFile()||binary.test(filename))continue;
         if(legacyName.test(read(filename))){
-            assert.ok(intentional.has(filename),\`Legacy branding in: \${filename}\`);
+            assert.ok(intentional.has(filename),`Legacy branding in: ${filename}`);
         }
     }
 }

@@ -76,7 +76,7 @@ impl Supervisor {
     async fn launch_and_check(&self,path:&Path)->Result<Child,String>{
         let mut process=Self::spawn(path).map_err(|e|e.to_string())?;
         tokio::time::sleep(Duration::from_secs(10)).await;
-        if !self.healthy(){let _=process.kill().await;return Err("new binary never became healthy".into());}
+        if !self.healthy().await{let _=process.kill().await;return Err("new binary never became healthy".into());}
         Ok(process)
     }
     async fn resume_or_bootstrap(&mut self){

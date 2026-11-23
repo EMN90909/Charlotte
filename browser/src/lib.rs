@@ -38,6 +38,8 @@ pub mod user_learning;
 pub mod byok;
 pub mod agent_skills;
 pub mod windows_compat;
+#[cfg(all(target_os = "windows", not(feature = "cef-engine")))]
+pub mod windows_host;
 pub mod installer;
 pub mod updater;
 pub mod internal_pages;

@@ -1,0 +1,117 @@
+name: Charlotte Android APK
+on:
+  pull_request:
+    paths: ['android/**', '.github/workflows/android-apk.yml']
+  push:
+    branches: [main]
+    tags: ['android-v*']
+    paths: ['android/**', '.github/workflows/android-apk.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      # Ubuntu runners already include Android command-line tools. Avoid
+      # setup-android's obsolete 'sdkmanager tools' package installation.
+      - name: Android SDK environment
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Install Android compile SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+      - name: Build installable debug APK
+        run: gradle --no-daemon --stacktrace assembleDebug
+      - name: Verify APK installation metadata, signature, and shipped assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q "launchable-activity"
+          unzip -l "$APK" | grep -q 'assets/start.html'
+          mkdir -p ../release-assets
+          cp "$APK" ../release-assets/charlotte-android-preview.apk
+          (cd ../release-assets && sha256sum charlotte-android-preview.apk > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Charlotte-Android-installable-preview
+          path: release-assets/*
+          if-no-files-found: error
+      - name: Prepare release signing key
+        if: startsWith(github.ref, 'refs/tags/android-v')
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_B64" || { echo "Missing Android release signing key" >&2; exit 1; }
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/charlotte-release.jks"
+      - name: Build signed release APK
+        if: startsWith(github.ref, 'refs/tags/android-v')
+        shell: bash
+        env:
+          CHARLOTTE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          CHARLOTTE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CHARLOTTE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$CHARLOTTE_KEYSTORE_PASSWORD"
+          test -n "$CHARLOTTE_KEY_ALIAS"
+          test -n "$CHARLOTTE_KEY_PASSWORD"
+          export CHARLOTTE_KEYSTORE_PATH="$RUNNER_TEMP/charlotte-release.jks"
+          gradle --no-daemon --stacktrace assembleRelease
+          APK=app/build/outputs/apk/release/app-release.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$APK"
+          cp "$APK" ../release-assets/Charlotte-Android.apk
+          (cd ../release-assets && sha256sum Charlotte-Android.apk >> SHA256SUMS.txt)
+      - name: Publish verified, signed Android APK
+        if: startsWith(github.ref, 'refs/tags/android-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          files: |
+            release-assets/Charlotte-Android.apk
+            release-assets/SHA256SUMS.txt
+
+  emulator-smoke:
+    needs: apk
+    runs-on: ubuntu-24.04
+    # Exercise actual APK install and Activity startup for explicit release runs.
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/android-v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Charlotte-Android-installable-preview
+          path: preview
+      - name: Enable hardware virtualization
+        run: sudo chmod 666 /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          script: |
+            adb install -r preview/charlotte-android-preview.apk
+            adb shell am start -W -n com.noethric.charlotte.debug/com.noethric.charlotte.MainActivity
+            adb shell pidof com.noethric.charlotte.debug | grep -Eq '^[0-9]+$'

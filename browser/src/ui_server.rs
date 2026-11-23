@@ -1656,7 +1656,7 @@ async fn settings_byok_action(State(ui):State<Ui>,headers:HeaderMap,Form(form):F
     } else if cmd == "delete" {
         ui.byok.delete_key(provider);
     }
-    reply("/sidebar")
+    Redirect::to("/internal/settings#ai-agent").into_response()
 }
 
 async fn settings_skills_action(State(ui):State<Ui>,headers:HeaderMap,Form(form):Form<ActionForm>)->Response {
@@ -1757,6 +1757,9 @@ fn build_page_ctx(ui: &Ui, current_url: &str, tab_filter: String, force_private:
         shields_enabled,
         blocked_requests,
         user_initials: "CH".into(),
+        sidebar_auto_hide: open_db()
+            .and_then(|db| db.setting("sidebar_auto_hide").ok().flatten())
+            .as_deref() != Some("off"),
         current_internal_url: current_url.to_owned(),
         status_banner,
     }
@@ -2183,19 +2186,24 @@ async fn updates_check_now(State(ui): State<Ui>, headers: HeaderMap, Form(form):
     if !check(&ui, &headers, &form.token) {
         return forbidden();
     }
-    let status = tokio::task::spawn_blocking(|| {
-        if let Some(db) = open_db() {
-            crate::updater::check_and_install_on_startup(&db).status_message
-        } else {
-            "Storage unavailable".into()
-        }
-    })
-    .await
-    .unwrap_or_else(|_| "Update check finished".into());
+    let status = match crate::updater::spawn_standalone_check() {
+        Ok(()) => "Update check started in charlotte-updater".to_owned(),
+        Err(error) => format!("Unable to start updater: {error}"),
+    };
 
     if let Ok(mut inner) = ui.inner.lock() {
         inner.status_banner = Some(status);
     }
+    Redirect::to("/internal/updates").into_response()
+}
+
+async fn updates_install(State(ui): State<Ui>, headers: HeaderMap, Form(form): Form<ActionForm>) -> Response {
+    if !check(&ui, &headers, &form.token) { return forbidden(); }
+    let status = match crate::updater::spawn_standalone_install() {
+        Ok(()) => "Verified release installer was requested; approve the Windows installer when prompted".to_owned(),
+        Err(error) => format!("Unable to launch updater: {error}"),
+    };
+    if let Ok(mut inner) = ui.inner.lock() { inner.status_banner = Some(status); }
     Redirect::to("/internal/updates").into_response()
 }
 
@@ -2235,8 +2243,16 @@ async fn settings_update(State(ui): State<Ui>, headers: HeaderMap, Form(form): F
             tabs.set_layout(layout);
         }
     } else if cmd == "dark_mode" {
-        if let Some(db) = open_db() {
-            let _ = db.set_setting("dark_mode", val);
+        if ["off", "system", "always"].contains(&val) {
+            if let Some(db) = open_db() {
+                let _ = db.set_setting("dark_mode", val);
+            }
+        }
+    } else if cmd == "sidebar_auto_hide" {
+        if ["on", "off"].contains(&val) {
+            if let Some(db) = open_db() {
+                let _ = db.set_setting("sidebar_auto_hide", val);
+            }
         }
     }
     Redirect::to("/internal/settings").into_response()
@@ -2294,6 +2310,7 @@ pub fn start(tabs:TabState,filter:Filter)->Result<Ui,String>{
                 .route("/privacy/open",post(open_private_window))
                 .route("/updates/continue",post(updates_continue))
                 .route("/updates/check",post(updates_check_now))
+                .route("/updates/install",post(updates_install))
                 .route("/history/clear",post(history_clear))
                 .route("/history/delete",post(history_delete))
                 .route("/settings/update",post(settings_update))

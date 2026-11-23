@@ -560,6 +560,7 @@ mod platform_app {
 
     pub fn run_platform() -> Result<(), String> {
         let is_private = std::env::args().any(|a| a == "--private" || a == "--incognito");
+        let open_settings = std::env::args().any(|a| a == "--settings");
 
         // 1. Ensure profile directories exist
         crate::profile::ensure_profile_dirs().map_err(|e| e.to_string())?;
@@ -579,6 +580,14 @@ mod platform_app {
                 status_message: "Private browsing window — ephemeral session active".into(),
             }
         };
+
+        // Update checks now run in charlotte-updater.exe. Never download or
+        // report a staged package as installed from the browser process.
+        if !is_private {
+            if let Err(error) = crate::updater::spawn_standalone_check() {
+                eprintln!("Charlotte update helper: {error}");
+            }
+        }
 
         // 3. Setup command channel
         let (tx, rx): (Sender<Command>, Receiver<Command>) = mpsc::channel();
@@ -633,6 +642,14 @@ mod platform_app {
                 initial_tabs.push((upd_id, "charlotte://updates".into()));
             }
         }
+        if open_settings && !is_private {
+            let new_id = initial_tabs.len() as i32 + 1;
+            tabs_inner.open(new_id);
+            tabs_inner.navigate(new_id, "charlotte://settings");
+            tabs_inner.title(new_id, "Charlotte Settings");
+            tabs_inner.activate(new_id);
+            initial_tabs.push((new_id, "charlotte://settings".to_owned()));
+        }
         RESTORING.store(false, Ordering::SeqCst);
 
         let tab_state: TabState = Arc::new(Mutex::new(tabs_inner));
@@ -657,7 +674,7 @@ mod platform_app {
             println!("Charlotte Browser v{} (Autonomous AI Browser)", env!("CARGO_PKG_VERSION"));
         }
         #[cfg(target_os = "windows")]
-        println!("Web Engine: WebView2 COM (Windows 7–11 multi-arch)");
+        println!("Web Engine: Native Win32 + WebView2 (Windows 10/11; legacy ESR not verified)");
         #[cfg(target_os = "linux")]
         println!("Web Engine: WebKitGTK (Linux x86_64 / i686)");
         #[cfg(not(any(target_os = "windows", target_os = "linux")))]
@@ -683,9 +700,15 @@ mod platform_app {
             return Ok(());
         }
 
-        // 7. Platform event loop handling incoming browser commands
+        // 7. Keep the Rust command processor active while Win32/WebView2
+        // owns the main Windows message loop and displays the native window.
+        #[cfg(target_os = "windows")]
+        let native_ui = ui.clone();
+        #[cfg(target_os = "windows")]
+        let (window_tx, window_rx) = mpsc::channel::<crate::windows_host::HostCommand>();
         let mut next_tab_id = (initial_tabs.len() as i32) + 2;
 
+        let worker = move || {
         loop {
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(cmd) => match cmd {
@@ -776,6 +799,9 @@ mod platform_app {
                         ui.page_changed(&url);
                     }
                     Command::Back => {
+                        #[cfg(target_os = "windows")]
+                        let _ = window_tx.send(crate::windows_host::HostCommand::Back);
+                        #[cfg(not(target_os = "windows"))]
                         if let Ok(tabs) = tab_state.lock() {
                             if let Some(active_id) = tabs.active_id() {
                                 let _ = engine.go_back(active_id);
@@ -783,6 +809,9 @@ mod platform_app {
                         }
                     }
                     Command::Forward => {
+                        #[cfg(target_os = "windows")]
+                        let _ = window_tx.send(crate::windows_host::HostCommand::Forward);
+                        #[cfg(not(target_os = "windows"))]
                         if let Ok(tabs) = tab_state.lock() {
                             if let Some(active_id) = tabs.active_id() {
                                 let _ = engine.go_forward(active_id);
@@ -790,6 +819,9 @@ mod platform_app {
                         }
                     }
                     Command::Reload | Command::HardReload => {
+                        #[cfg(target_os = "windows")]
+                        let _ = window_tx.send(crate::windows_host::HostCommand::Reload);
+                        #[cfg(not(target_os = "windows"))]
                         if let Ok(tabs) = tab_state.lock() {
                             if let Some(active_id) = tabs.active_id() {
                                 let _ = engine.reload(active_id, false);
@@ -846,8 +878,21 @@ mod platform_app {
                 }
             }
         }
+        };
 
-        Ok(())
+        #[cfg(target_os = "windows")]
+        {
+            std::thread::Builder::new()
+                .name("charlotte-platform-commands".into())
+                .spawn(worker)
+                .map_err(|e| format!("Failed to start browser commands: {e}"))?;
+            return crate::windows_host::run(&native_ui, window_rx);
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            worker();
+            Ok(())
+        }
     }
 }
 #[cfg(not(feature = "cef-engine"))]

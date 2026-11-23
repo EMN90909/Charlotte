@@ -2,7 +2,7 @@
 name = "Charlotte"
 version = "0.4.0"
 edition = "2024"
-description = "Charlotte Native — Rust desktop browser powered by CEF"
+description = "Charlotte Native — Rust desktop browser with CEF and WebView2 hosts"
 license-file = "LICENSE"
 authors = ["Noethric <engineering@noethric.com>"]
 build = "build.rs"
@@ -26,6 +26,10 @@ path = "src/bin/charlotte_helper.rs"
 [[bin]]
 name = "charlotte-installer"
 path = "src/bin/charlotte_installer.rs"
+
+[[bin]]
+name = "charlotte-updater"
+path = "src/bin/charlotte_updater.rs"
 
 [package.metadata.cef.bundle]
 helper_name = "charlotte_helper"
@@ -51,6 +55,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 sha2 = "0.10"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
 ring = "0.17"
 url = "2"
 axum = { version = "0.7", features = ["form"] }
@@ -58,6 +63,11 @@ tokio = { version = "1.42", features = ["rt", "macros", "net"] }
 rand = "0.8"
 rpassword = "7"
 keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync-secret-service"] }
+
+# Real native Win32 + WebView2 window host for the default non-CEF build.
+[target.'cfg(target_os = "windows")'.dependencies]
+tao = "0.37.3"
+wry = { version = "0.57.3", default-features = false, features = ["os-webview"] }
 
 [build-dependencies]
 embed-resource = "3.0.2"
