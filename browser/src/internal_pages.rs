@@ -26,6 +26,7 @@ pub struct PageContext {
     pub shields_enabled: bool,
     pub blocked_requests: u64,
     pub user_initials: String,
+    pub sidebar_auto_hide: bool,
     pub current_internal_url: String,
     pub status_banner: Option<String>,
 }
@@ -244,7 +245,7 @@ button,input,textarea,select{{font:inherit;color:inherit}}
   width:214px;min-width:214px;background:var(--sidebar);
   border-right:1px solid var(--divider);
   display:flex;flex-direction:column;padding:18px 14px 14px;
-  gap:14px;position:sticky;top:0;height:100vh;overflow-y:auto;
+  gap:14px;position:sticky;top:0;height:100vh;overflow:visible;
 }}
 .rail-label{{
   font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--text-muted);
@@ -280,7 +281,7 @@ button,input,textarea,select{{font:inherit;color:inherit}}
 }}
 .rail-search input::placeholder{{color:var(--text-subtle)}}
 .rail-divider{{height:1px;background:var(--divider);margin:2px 0}}
-.tabs-list{{display:flex;flex-direction:column;gap:4px;flex:1;min-height:40px}}
+.tabs-list{{display:flex;flex-direction:column;gap:4px;flex:1;min-height:40px;overflow:auto}}
 .tab-row{{
   position:relative;display:flex;align-items:center;gap:6px;
   border-radius:13px;padding:7px 9px;transition:background .12s ease;
@@ -327,7 +328,12 @@ button,input,textarea,select{{font:inherit;color:inherit}}
   width:30px;height:30px;border-radius:999px;background:#d6d4f7;color:#4f46e5;
   display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;
 }}
-.menu-details{{position:relative}}
+.menu-details{{position:relative;width:100%}}
+.profile-trigger{{display:flex;align-items:center;gap:10px;width:100%;list-style:none;cursor:pointer}}
+.profile-trigger::-webkit-details-marker{{display:none}}
+.profile-copy{{flex:1;font-size:12px;font-weight:600;white-space:nowrap}}
+.profile-chevron{{color:var(--text-muted);font-size:14px}}
+.profile-trigger:focus-visible,.rail-pin-toggle:focus-visible{{outline:2px solid #3b82f6;outline-offset:3px}}
 .menu-details summary{{
   list-style:none;cursor:pointer;padding:4px 7px;border-radius:8px;
   color:var(--text-muted);font-weight:700;letter-spacing:.1em;
@@ -335,7 +341,7 @@ button,input,textarea,select{{font:inherit;color:inherit}}
 .menu-details summary::-webkit-details-marker{{display:none}}
 .menu-details summary:hover{{background:var(--card);color:var(--text)}}
 .menu-popover{{
-  position:absolute;bottom:42px;left:-125px;width:190px;
+  position:absolute;bottom:44px;left:0;width:240px;
   background:var(--surface);border:1px solid var(--card-border);
   border-radius:14px;padding:6px;box-shadow:var(--shadow);z-index:40;
   display:flex;flex-direction:column;gap:2px;
@@ -580,6 +586,29 @@ button,input,textarea,select{{font:inherit;color:inherit}}
   padding:9px 12px;border-radius:10px;border:1px solid var(--card-border);
   background:var(--surface);color:var(--text);font-size:13.5px;outline:0;
 }}
+/* Settings navigation and layout */
+.settings-layout{{display:grid;grid-template-columns:218px minmax(0,1fr);gap:22px;width:100%;max-width:1130px;margin:0 auto}}
+.settings-menu{{display:flex;flex-direction:column;gap:6px;position:sticky;top:20px;align-self:start;padding:16px 12px;border-radius:18px;background:var(--sidebar);border:1px solid var(--divider)}}
+.settings-menu a{{padding:11px 12px;border-radius:10px;font-size:13.5px;color:var(--text-muted)}}
+.settings-menu a:hover,.settings-menu a:focus-visible{{background:var(--surface);color:var(--text);outline:0}}
+.settings-menu strong{{padding:5px 12px 11px;font-size:14px}}
+.settings-content{{display:flex;flex-direction:column;gap:18px;min-width:0}}
+.settings-content .internal-card{{scroll-margin-top:20px}}
+.settings-content h2{{font-size:17px;margin:0 0 12px}}
+.settings-help{{font-size:12.5px;color:var(--text-muted);line-height:1.55}}
+/* A CSS-only pinned/hovering rail: no script or new local server needed. */
+.rail-pin-input{{position:absolute;width:1px;height:1px;opacity:0}}
+.rail-pin-toggle{{position:fixed;left:17px;top:7px;z-index:80;padding:7px 10px;border-radius:9px;cursor:pointer;background:var(--sidebar);border:1px solid var(--divider);font-size:16px}}
+.rail{{padding-top:46px;transition:width .19s ease,min-width .19s ease}}
+.sidebar-auto-hide .rail{{width:56px;min-width:56px;padding-left:7px;padding-right:7px}}
+.sidebar-auto-hide .rail > :not(.rail-footer){{opacity:0;pointer-events:none;white-space:nowrap}}
+.sidebar-auto-hide .rail .profile-copy,.sidebar-auto-hide .rail .profile-chevron{{display:none}}
+.sidebar-auto-hide .rail .profile-pill{{padding:5px;justify-content:center}}
+.sidebar-auto-hide .rail:is(:hover,:focus-within),.sidebar-auto-hide .rail-pin-input:checked ~ .shell .rail{{width:214px;min-width:214px;padding-left:14px;padding-right:14px}}
+.sidebar-auto-hide .rail:is(:hover,:focus-within) > :not(.rail-footer),.sidebar-auto-hide .rail-pin-input:checked ~ .shell .rail > :not(.rail-footer){{opacity:1;pointer-events:auto;white-space:normal}}
+.sidebar-auto-hide .rail:is(:hover,:focus-within) .profile-copy,.sidebar-auto-hide .rail:is(:hover,:focus-within) .profile-chevron,.sidebar-auto-hide .rail-pin-input:checked ~ .shell .rail .profile-copy,.sidebar-auto-hide .rail-pin-input:checked ~ .shell .rail .profile-chevron{{display:inline}}
+.sidebar-auto-hide .rail:is(:hover,:focus-within) .profile-pill,.sidebar-auto-hide .rail-pin-input:checked ~ .shell .rail .profile-pill{{padding:7px 11px;justify-content:space-between}}
+@media(max-width:900px){{.settings-layout{{grid-template-columns:1fr}}.settings-menu{{position:static;flex-direction:row;flex-wrap:wrap}}}}
 @media(max-width:840px){{
   .rail{{width:180px;min-width:180px}}
   .visited-grid{{grid-template-columns:1fr}}
@@ -726,17 +755,20 @@ fn render_sidebar_rail(ctx: &PageContext) -> String {
         out,
         r#"<div class="rail-footer">
   <div class="profile-pill">
-    <span class="avatar">{}</span>
     <details class="menu-details">
-      <summary aria-label="Browser menu">•••</summary>
+      <summary class="profile-trigger" aria-label="Open Charlotte profile menu" title="Charlotte profile">
+        <span class="avatar">{}</span><span class="profile-copy">Charlotte Profile</span><span class="profile-chevron">⌄</span>
+      </summary>
       <div class="menu-popover">
-        <a href="/internal/history"><span>History</span><span style="font-size:11px;color:var(--text-subtle)">charlotte://history</span></a>
-        <a href="/internal/bookmarks"><span>Bookmarks</span><span style="font-size:11px;color:var(--text-subtle)">saved</span></a>
-        <a href="/internal/downloads"><span>Downloads</span><span style="font-size:11px;color:var(--text-subtle)">files</span></a>
-        <a href="/internal/extensions"><span>Extensions</span><span style="font-size:11px;color:var(--text-subtle)">tools</span></a>
-        <a href="/internal/updates"><span>Updates</span><span style="font-size:11px;color:var(--text-subtle)">v{}</span></a>
-        <a href="/internal/settings"><span>Settings</span><span style="font-size:11px;color:var(--text-subtle)">prefs</span></a>
-        <a href="/internal/about"><span>About Charlotte</span><span style="font-size:11px;color:var(--text-subtle)">info</span></a>
+        <a href="/internal/settings#personalization"><span>Personalization</span><span>⚙</span></a>
+        <a href="/internal/settings#passwords-security"><span>Passwords &amp; Security</span><span>🛡</span></a>
+        <a href="/internal/settings#ai-agent"><span>AI &amp; Agent</span><span>✦</span></a>
+        <a href="/internal/extensions"><span>Extensions Marketplace</span><span>＋</span></a>
+        <a href="/internal/history"><span>History</span><span>↺</span></a>
+        <a href="/internal/bookmarks"><span>Bookmarks</span><span>☆</span></a>
+        <a href="/internal/downloads"><span>Downloads</span><span>↓</span></a>
+        <a href="/internal/updates"><span>Updates</span><span>v{}</span></a>
+        <a href="/internal/about"><span>About Charlotte</span><span>ⓘ</span></a>
       </div>
     </details>
   </div>
@@ -751,10 +783,11 @@ fn render_sidebar_rail(ctx: &PageContext) -> String {
 fn wrap_shell(title: &str, ctx: &PageContext, main_content: &str) -> String {
     let css = shared_css(ctx.is_private);
     let rail = render_sidebar_rail(ctx);
+    let rail_mode = if ctx.sidebar_auto_hide { "sidebar-auto-hide" } else { "sidebar-pinned" };
     format!(
         r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src https: http: data:; form-action 'self' https://www.google.com; base-uri 'none'; object-src 'none'">
-<title>{}</title><style>{css}</style></head><body><div class="shell">{rail}<main class="canvas">{main_content}</main></div></body></html>"#,
+<title>{}</title><style>{css}</style></head><body class="{rail_mode}"><input type="checkbox" id="rail-pin" class="rail-pin-input" aria-label="Pin sidebar open"><label for="rail-pin" class="rail-pin-toggle" title="Toggle sidebar pin">☰</label><div class="shell">{rail}<main class="canvas">{main_content}</main></div></body></html>"#,
         esc(title)
     )
 }
@@ -1355,6 +1388,8 @@ pub fn render_settings_page(
 ) -> String {
     let tok = hidden("token", &ctx.token);
     let mut body = render_topbar(ctx, "search", true);
+    let sidebar_next = if ctx.sidebar_auto_hide { "off" } else { "on" };
+    let sidebar_label = if ctx.sidebar_auto_hide { "Enabled" } else { "Disabled" };
     let shields_next = if ctx.shields_enabled {
         "shields-off"
     } else {
@@ -1372,15 +1407,23 @@ pub fn render_settings_page(
 
     let _ = write!(
         body,
-        r#"<div class="internal-wrap">
+        r#"<div class="settings-layout">
+  <nav class="settings-menu" aria-label="Settings categories">
+    <strong>⚙ Settings</strong>
+    <a href='#personalization'>Personalization</a>
+    <a href='#passwords-security'>Passwords &amp; Security</a>
+    <a href='#ai-agent'>AI &amp; Agent</a>
+    <a href='#extensions-marketplace'>Extensions Marketplace</a>
+  </nav>
+  <div class="settings-content">
   <div class="internal-card">
     <span class="badge" style="margin-bottom:6px">charlotte://settings</span>
     <h1 style="margin:0 0 6px;font-size:24px">Charlotte Settings</h1>
     <p style="margin:0;color:var(--text-muted);font-size:13.5px">Manage privacy, updates, appearance, cloud endpoint, and encrypted BYOK keys.</p>
   </div>
 
-  <div class="internal-card">
-    <h2 style="margin:0 0 10px;font-size:16px">General &amp; Privacy</h2>
+  <div class="internal-card" id='personalization'>
+    <h2 style="margin:0 0 10px;font-size:16px">Personalization</h2>
     <div class="internal-row">
       <div><strong>Charlotte Shields (Ad &amp; Tracker Blocker)</strong><div style="font-size:12.5px;color:var(--text-muted)">{} blocked requests this session</div></div>
       <form method="post" action="/action">{tok}<button name="command" value="{shields_next}" class="btn-secondary">{shields_label}</button></form>
@@ -1391,6 +1434,10 @@ pub fn render_settings_page(
         <select name="mode" class="input-std"><option value="vertical">Vertical Sidebar</option><option value="horizontal">Horizontal Strip</option></select>
         <button name="command" value="layout" class="btn-secondary">Save</button>
       </form>
+    </div>
+    <div class="internal-row">
+      <div><strong>Sidebar Auto-Hide</strong><div class="settings-help">Collapse the sidebar when you are not using it. Hover to expand or use the ☰ pin.</div></div>
+      <form method="post" action="/settings/update">{tok}<input type="hidden" name="mode" value="{sidebar_next}"><button name="command" value="sidebar_auto_hide" class="btn-secondary">{sidebar_label} · Toggle</button></form>
     </div>
     <div class="internal-row">
       <div><strong>Forced Dark Mode for Web Pages</strong><div style="font-size:12.5px;color:var(--text-muted)">Current: {}</div></div>
@@ -1408,8 +1455,11 @@ pub fn render_settings_page(
     </div>
   </div>
 
-  <div class="internal-card">
-    <h2 style="margin:0 0 8px;font-size:16px">BYOK API Keys (AES-256-GCM Encrypted)</h2>
+  <div class="internal-card" id='ai-agent'>
+    <h2 style="margin:0 0 8px;font-size:16px">AI &amp; Agent</h2>
+    <p class="settings-help">Manage your AI providers and open Charlotte's agent workspace.</p>
+    <p><a href="/internal/agent" class="btn-secondary">Open AI Agent</a></p>
+    <h3 style="font-size:14px;margin-top:18px">BYOK API Keys (AES-256-GCM Encrypted)</h3>
     <p style="margin:0 0 12px;font-size:13px;color:var(--text-muted)">Keys are encrypted with AES-256-GCM and masked in the UI. Raw keys are never displayed after saving.</p>"#,
         ctx.blocked_requests,
         esc(dark_mode_pref),
@@ -1450,19 +1500,17 @@ pub fn render_settings_page(
     </form>
   </div>
 
-  <div class="internal-card">
-    <h2 style="margin:0 0 8px;font-size:16px">Internal Charlotte Pages</h2>
-    <div style="display:flex;flex-wrap:wrap;gap:8px">
-      <a class="btn-secondary" href="/internal/search">charlotte://search</a>
-      <a class="btn-secondary" href="/internal/agent">charlotte://agent</a>
-      <a class="btn-secondary" href="/internal/private">charlotte://private</a>
-      <a class="btn-secondary" href="/internal/updates">charlotte://updates</a>
-      <a class="btn-secondary" href="/internal/history">charlotte://history</a>
-      <a class="btn-secondary" href="/internal/bookmarks">charlotte://bookmarks</a>
-      <a class="btn-secondary" href="/internal/downloads">charlotte://downloads</a>
-      <a class="btn-secondary" href="/internal/extensions">charlotte://extensions</a>
-      <a class="btn-secondary" href="/internal/about">charlotte://about</a>
-    </div>
+  <div class="internal-card" id='passwords-security'>
+    <h2>Passwords &amp; Security</h2>
+    <p class="settings-help">Charlotte keeps AI provider credentials in encrypted local storage. Saved website passwords are not yet managed by Charlotte; do not enter website passwords into an API key field.</p>
+    <div class="internal-row"><div><strong>Tracker Protection</strong><div class="settings-help">Charlotte Shields is available from Personalization above.</div></div><span class="badge">Local</span></div>
+    <div class="internal-row"><div><strong>Private Browsing</strong><div class="settings-help">Open a private browsing session.</div></div><form method="post" action="/privacy/open">{tok}<button class="btn-secondary">Open Private</button></form></div>
+  </div>
+  <div class="internal-card" id='extensions-marketplace'>
+    <h2>Extensions Marketplace</h2>
+    <p class="settings-help">Explore built-in Charlotte capabilities and extension support. Installing third-party extensions is not yet enabled in this build.</p>
+    <a class="btn-primary" href="/internal/extensions">Browse Extensions</a>
+  </div>
   </div>
 </div>"#
     );
@@ -1613,6 +1661,7 @@ mod tests {
             shields_enabled: true,
             blocked_requests: 0,
             user_initials: "CH".into(),
+            sidebar_auto_hide: true,
             current_internal_url: "charlotte://search".into(),
             status_banner: None,
         }
