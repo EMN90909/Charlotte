@@ -581,6 +581,14 @@ mod platform_app {
             }
         };
 
+        // Update checks now run in charlotte-updater.exe. Never download or
+        // report a staged package as installed from the browser process.
+        if !is_private {
+            if let Err(error) = crate::updater::spawn_standalone_check() {
+                eprintln!("Charlotte update helper: {error}");
+            }
+        }
+
         // 3. Setup command channel
         let (tx, rx): (Sender<Command>, Receiver<Command>) = mpsc::channel();
         if let Ok(mut guard) = COMMAND_SENDER.lock() {
