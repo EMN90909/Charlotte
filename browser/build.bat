@@ -361,6 +361,20 @@ if exist "%ROOT%\target\release\charlotte-installer.exe" (
     copy /Y "%ROOT%\target\release\charlotte-installer.exe" "%DIR64%\windows\win8-11\charlotte-installer-x64.exe" >nul
 )
 
+rem The updater and all runtime resources must travel with Charlotte.exe.
+if not exist "%ROOT%\target\release\charlotte-updater.exe" (
+    call :fail "Missing target\release\charlotte-updater.exe (build all bins)."
+    exit /b 1
+)
+copy /Y "%ROOT%\target\release\charlotte-updater.exe" "%DIR64%\windows\win8-11\charlotte-updater.exe" >nul
+if errorlevel 1 exit /b 1
+xcopy "%ROOT%\assets" "%DIR64%\windows\win8-11\assets" /E /I /Y /Q >nul
+if errorlevel 1 exit /b 1
+xcopy "%ROOT%\resources" "%DIR64%\windows\win8-11\resources" /E /I /Y /Q >nul
+if errorlevel 1 exit /b 1
+if not exist "%DIR64%\windows\win8-11\assets\icon.ico" exit /b 1
+if not exist "%DIR64%\windows\win8-11\resources\windows\app.manifest" exit /b 1
+
 if exist "%ROOT%\target\i686-pc-windows-msvc\release\Charlotte.exe" (
     echo [PACK] Staging 32-bit executables into dist\32-bit\windows\...
     copy /Y "%ROOT%\target\i686-pc-windows-msvc\release\Charlotte.exe" "%DIR32%\windows\win8-11\Charlotte.exe" >nul
@@ -371,6 +385,11 @@ if exist "%ROOT%\target\i686-pc-windows-msvc\release\charlotte-settings.exe" (
 )
 if exist "%ROOT%\target\i686-pc-windows-msvc\release\charlotte-installer.exe" (
     copy /Y "%ROOT%\target\i686-pc-windows-msvc\release\charlotte-installer.exe" "%DIR32%\windows\win8-11\charlotte-installer-x86.exe" >nul
+)
+if exist "%ROOT%\target\i686-pc-windows-msvc\release\charlotte-updater.exe" (
+    copy /Y "%ROOT%\target\i686-pc-windows-msvc\release\charlotte-updater.exe" "%DIR32%\windows\win8-11\charlotte-updater.exe" >nul
+    xcopy "%ROOT%\assets" "%DIR32%\windows\win8-11\assets" /E /I /Y /Q >nul
+    xcopy "%ROOT%\resources" "%DIR32%\windows\win8-11\resources" /E /I /Y /Q >nul
 )
 
 copy /Y "%ROOT%\packaging\windows\charlotte.iss" "%DIR32%\windows\win7-esr\charlotte-x86.iss" >nul
