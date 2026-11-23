@@ -11,7 +11,7 @@ async fn main()->Result<(),Box<dyn std::error::Error>>{
     let room=args.get("url").ok_or("usage: charlotte-chat -url <room-url> -username <name> [-token JWT] [-server URL]")?;
     if !args.contains_key("username")&&!args.contains_key("token"){return Err("set -username or -token".into())}
     let transport=args.get("transport").map(String::as_str).unwrap_or("sse").to_string();
-    if !matches!(transport,"sse"|"poll"){return Err("-transport must be sse or poll".into())}
+    if !matches!(transport.as_str(),"sse"|"poll"){return Err("-transport must be sse or poll".into())}
     let session=args.get("session").cloned().unwrap_or_else(||{
         let n=SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
         format!("cli-{}-{n}",std::process::id())
