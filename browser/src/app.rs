@@ -657,7 +657,7 @@ mod platform_app {
             println!("Charlotte Browser v{} (Autonomous AI Browser)", env!("CARGO_PKG_VERSION"));
         }
         #[cfg(target_os = "windows")]
-        println!("Web Engine: WebView2 COM (Windows 7–11 multi-arch)");
+        println!("Web Engine: Native Win32 + WebView2 (Windows 10/11; legacy ESR not verified)");
         #[cfg(target_os = "linux")]
         println!("Web Engine: WebKitGTK (Linux x86_64 / i686)");
         #[cfg(not(any(target_os = "windows", target_os = "linux")))]
