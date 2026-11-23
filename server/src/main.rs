@@ -1,9 +1,9 @@
+//! Native Rust HTTP implementation of the Charlotte chat endpoints.
+//! Migration-in-progress: gRPC, SSE, HLL persistence and ops are not ported yet.
 mod hll;
 mod grpc;
 mod sse;
 mod supabase;
-//! Native Rust HTTP implementation of the Charlotte chat endpoints.
-//! Migration-in-progress: gRPC, SSE, HLL persistence and ops are not ported yet.
 use axum::{
     extract::{Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
@@ -129,7 +129,10 @@ async fn connect(
     };
     let token = encode(&Header::new(Algorithm::HS256), &claims, &EncodingKey::from_secret(&state.secret))
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "could not generate token"))?;
-    let cursor = seq(&lock(&state.hub).map_err(|s| (s, "hub lock failed"))?, &room);
+    let cursor = {
+        let hub = lock(&state.hub).map_err(|s| (s, "hub lock failed"))?;
+        seq(&hub, &room)
+    };
     Ok(Json(ConnectResponse { token, cursor }))
 }
 async fn send(
