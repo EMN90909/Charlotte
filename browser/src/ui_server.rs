@@ -1815,13 +1815,17 @@ async fn internal_private(State(ui): State<Ui>, Query(q): Query<SearchQuery>) ->
 
 async fn internal_updates(State(ui): State<Ui>) -> Html<String> {
     let ctx = build_page_ctx(&ui, "charlotte://updates", String::new(), false);
-    let (updates, live, note, pending) = if let Some(db) = open_db() {
-        let pending = crate::updater::pending_update_version(&db);
-        let (list, live, note) = crate::updater::load_updates_for_page(&db);
-        (list, live, note, pending)
-    } else {
-        (Vec::new(), false, "Storage unavailable".into(), None)
-    };
+    let (updates, live, note, pending) = tokio::task::spawn_blocking(|| {
+        if let Some(db) = open_db() {
+            let pending = crate::updater::pending_update_version(&db);
+            let (list, live, note) = crate::updater::load_updates_for_page(&db);
+            (list, live, note, pending)
+        } else {
+            (Vec::new(), false, "Storage unavailable".into(), None)
+        }
+    })
+    .await
+    .unwrap_or_else(|_| (Vec::new(), false, "Update fetch interrupted".into(), None));
     Html(crate::internal_pages::render_updates_page(
         &ctx,
         &updates,

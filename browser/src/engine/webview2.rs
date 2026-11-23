@@ -66,7 +66,7 @@ impl WebEngine for WebView2Engine {
     }
 
     fn navigate(&mut self, tab_id: i32, url: &str) -> Result<(), String> {
-        if !crate::session::valid_page_url(url) {
+        if !crate::session::valid_navigable_url(url) {
             return Err("Invalid page URL for WebView2".into());
         }
         self.active_urls.insert(tab_id, url.to_owned());

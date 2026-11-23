@@ -22,34 +22,43 @@ pub struct UpdateHighlight {
     pub description: String,
 }
 
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    T: Default + Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    let opt = Option::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BrowserUpdate {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub id: String,
     pub version: String,
-    #[serde(default = "default_channel")]
+    #[serde(default = "default_channel", deserialize_with = "deserialize_null_default")]
     pub channel: String,
-    #[serde(default = "default_all")]
+    #[serde(default = "default_all", deserialize_with = "deserialize_null_default")]
     pub platform: String,
-    #[serde(default = "default_all")]
+    #[serde(default = "default_all", deserialize_with = "deserialize_null_default")]
     pub arch: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub title: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub summary: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub release_notes: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub highlights: Vec<UpdateHighlight>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub download_url: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub sha256: String,
     #[serde(default)]
     pub file_size_bytes: i64,
     #[serde(default)]
     pub is_mandatory: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub published_at: String,
 }
 
@@ -67,7 +76,7 @@ pub struct UpdateCheckResponse {
     pub current_version: String,
     pub latest_version: String,
     pub latest: Option<BrowserUpdate>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub recent_updates: Vec<BrowserUpdate>,
     #[serde(default)]
     pub auto_install: bool,
@@ -75,7 +84,7 @@ pub struct UpdateCheckResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct UpdatesListResponse {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     updates: Vec<BrowserUpdate>,
 }
 
@@ -217,64 +226,36 @@ pub fn fetch_updates_from_server(base_url: &str) -> Result<Vec<BrowserUpdate>, S
     Ok(parsed.updates)
 }
 
-/// Loads updates for `charlotte://updates`: fetches fresh data from server first,
-/// updates the SQLite cache, and falls back to cached or built-in release notes if offline.
-pub fn load_updates_for_page(store: &Storage) -> (Vec<BrowserUpdate>, bool, String) {
+/// Loads updates for `charlotte://updates` in realtime directly from the server.
+/// Never fabricates placeholder updates: returns the live server list (possibly empty)
+/// or an empty list with the exact server connection error if unreachable.
+pub fn load_updates_for_page(_store: &Storage) -> (Vec<BrowserUpdate>, bool, String) {
     let base = server_base_url();
-    let skip_network = std::env::var("CHARLOTTE_OFFLINE_UPDATES").as_deref() == Ok("1");
-    if !skip_network {
-        if let Ok(live) = fetch_updates_from_server(&base) {
-            if !live.is_empty() {
-                if let Ok(json) = serde_json::to_string(&live) {
-                    let _ = store.set_setting(KEY_CACHED_UPDATES_JSON, &json);
-                }
-                return (live, true, format!("Loaded live from {base}"));
+    if std::env::var("CHARLOTTE_OFFLINE_UPDATES").as_deref() == Ok("1") {
+        return (
+            Vec::new(),
+            false,
+            format!("Realtime update fetch paused in offline mode (server: {base})"),
+        );
+    }
+    match fetch_updates_from_server(&base) {
+        Ok(live) => {
+            if live.is_empty() {
+                (
+                    Vec::new(),
+                    true,
+                    format!("Connected to {base} — no updates published yet"),
+                )
+            } else {
+                (live, true, format!("Loaded in realtime from {base}"))
             }
         }
+        Err(err) => (
+            Vec::new(),
+            false,
+            format!("Unable to load realtime updates from {base}: {err}"),
+        ),
     }
-    if let Ok(Some(cached)) = store.setting(KEY_CACHED_UPDATES_JSON) {
-        if let Ok(list) = serde_json::from_str::<Vec<BrowserUpdate>>(&cached) {
-            if !list.is_empty() {
-                return (list, false, "Loaded from cached update metadata".into());
-            }
-        }
-    }
-    (
-        vec![BrowserUpdate {
-            id: format!("local-{}", current_version()),
-            version: current_version().to_owned(),
-            channel: current_channel(),
-            platform: current_platform().to_owned(),
-            arch: current_arch().to_owned(),
-            title: format!("Charlotte {} — Up to Date", current_version()),
-            summary: "Search & Agent workspace, E2B Cloud execution, Private Search dark windows, internal charlotte:// URLs, and automatic updates.".into(),
-            release_notes: "- Unified Search & Agent mode switcher with vertical tabs and pinned sites\n- Work it on Cloud toggle to launch autonomous agents directly in E2B sandboxes\n- Black-themed Private Search windows that never save history\n- Internal browser pages: charlotte://updates, charlotte://history, charlotte://settings, charlotte://bookmarks, charlotte://downloads".into(),
-            highlights: vec![
-                UpdateHighlight {
-                    category: "Search & Agent".into(),
-                    title: "Unified Mode Switcher".into(),
-                    description: "Switch seamlessly between Search mode and Agent mode from the top pill bar.".into(),
-                },
-                UpdateHighlight {
-                    category: "Cloud Agent".into(),
-                    title: "Work it on Cloud (E2B)".into(),
-                    description: "Click Work it on Cloud in Agent mode to spin up an E2B cloud sandbox for your prompt.".into(),
-                },
-                UpdateHighlight {
-                    category: "Privacy".into(),
-                    title: "Private Search Windows".into(),
-                    description: "Click the privacy icon to launch a black-themed incognito window.".into(),
-                },
-            ],
-            download_url: String::new(),
-            sha256: String::new(),
-            file_size_bytes: 0,
-            is_mandatory: false,
-            published_at: String::new(),
-        }],
-        false,
-        format!("Offline fallback (server: {base})"),
-    )
 }
 
 fn staging_dir_for_version(version: &str) -> PathBuf {

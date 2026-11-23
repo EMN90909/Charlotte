@@ -1188,9 +1188,9 @@ pub fn render_updates_page(
         .or_else(|| updates.first().map(|u| u.version.as_str()))
         .unwrap_or(env!("CARGO_PKG_VERSION"));
     let sync_badge = if loaded_from_server {
-        r#"<span class="badge green">Synced from Server</span>"#
+        r#"<span class="badge green">Realtime Server</span>"#
     } else {
-        r#"<span class="badge">Cached Release Notes</span>"#
+        r#"<span class="badge">Server Unreachable</span>"#
     };
 
     let mut body = render_topbar(ctx, "search", true);
@@ -1203,7 +1203,7 @@ pub fn render_updates_page(
         <span class="badge cloud">charlotte://updates</span>
         {sync_badge}
       </div>
-      <h1 style="margin:0 0 6px;font-size:26px;letter-spacing:-.02em">What's New in Charlotte v{}</h1>
+      <h1 style="margin:0 0 6px;font-size:26px;letter-spacing:-.02em">Charlotte Updates (v{})</h1>
       <p style="margin:0;color:var(--text-muted);font-size:14px">{}</p>
     </div>
     <div style="display:flex;align-items:center;gap:10px">
@@ -1218,6 +1218,19 @@ pub fn render_updates_page(
         esc(source_note),
         esc(latest_ver),
     );
+
+    if updates.is_empty() {
+        let empty_msg = if loaded_from_server {
+            "No updates have been published to the server yet. New releases saved in Supabase will appear here automatically in realtime."
+        } else {
+            source_note
+        };
+        let _ = write!(
+            body,
+            r#"<div class="internal-card"><div class="empty-note">{}</div></div>"#,
+            esc(empty_msg)
+        );
+    }
 
     for rel in updates {
         let mut highlights_html = String::new();
