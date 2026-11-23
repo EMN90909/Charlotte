@@ -683,9 +683,13 @@ mod platform_app {
             return Ok(());
         }
 
-        // 7. Platform event loop handling incoming browser commands
+        // 7. Keep the Rust command processor active while Win32/WebView2
+        // owns the main Windows message loop and displays the native window.
+        #[cfg(target_os = "windows")]
+        let native_ui = ui.clone();
         let mut next_tab_id = (initial_tabs.len() as i32) + 2;
 
+        let worker = move || {
         loop {
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(cmd) => match cmd {
@@ -846,8 +850,21 @@ mod platform_app {
                 }
             }
         }
+        };
 
-        Ok(())
+        #[cfg(target_os = "windows")]
+        {
+            std::thread::Builder::new()
+                .name("charlotte-platform-commands".into())
+                .spawn(worker)
+                .map_err(|e| format!("Failed to start browser commands: {e}"))?;
+            return crate::windows_host::run(&native_ui);
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            worker();
+            Ok(())
+        }
     }
 }
 #[cfg(not(feature = "cef-engine"))]
