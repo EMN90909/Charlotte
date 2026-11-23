@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.noethric.charlotte'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.noethric.charlotte'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.4.0'
+    }
+
+    signingConfigs {
+        release {
+            if (System.getenv('CHARLOTTE_KEYSTORE_PATH')) {
+                storeFile file(System.getenv('CHARLOTTE_KEYSTORE_PATH'))
+                storePassword System.getenv('CHARLOTTE_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('CHARLOTTE_KEY_ALIAS')
+                keyPassword System.getenv('CHARLOTTE_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            // A store-release APK must be signed with the repository's
+            // private signing key; unsigned output must never be published.
+            if (System.getenv('CHARLOTTE_KEYSTORE_PATH')) {
+                signingConfig signingConfigs.release
+            }
+        }
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
