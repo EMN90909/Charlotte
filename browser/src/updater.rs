@@ -268,132 +268,59 @@ fn staging_dir_for_version(version: &str) -> PathBuf {
         .join(if safe_ver.is_empty() { "latest".into() } else { safe_ver })
 }
 
-/// Automatically downloads (when a download URL is published), verifies SHA-256,
-/// stages the update package locally, and reports an install receipt to the server.
-pub fn auto_install_update(base_url: &str, update: &BrowserUpdate) -> Result<PathBuf, String> {
-    let stage_dir = staging_dir_for_version(&update.version);
-    std::fs::create_dir_all(&stage_dir).map_err(|e| e.to_string())?;
-
-    if !update.download_url.trim().is_empty() && crate::session::valid_page_url(&update.download_url) {
-        let client = http_client(20)?;
-        let resp = client.get(&update.download_url).send().map_err(|e| e.to_string())?;
-        if !resp.status().is_success() {
-            return Err(format!("Update download returned HTTP {}", resp.status()));
-        }
-        let bytes = resp.bytes().map_err(|e| e.to_string())?;
-        if !verify_sha256(&bytes, &update.sha256) {
-            return Err("Update SHA-256 verification failed; aborting auto-install".into());
-        }
-        let pkg_path = stage_dir.join("charlotte-update.pkg");
-        std::fs::write(&pkg_path, &bytes).map_err(|e| e.to_string())?;
+/// Launch the independent updater without blocking the desktop UI or
+/// attempting to modify the running browser executable. A missing updater
+/// is reported, never treated as a successful update.
+pub fn spawn_standalone_check() -> Result<(), String> {
+    if std::env::var("CHARLOTTE_OFFLINE_UPDATES").as_deref() == Ok("1")
+        || std::env::var("CHARLOTTE_TEST_EXIT").as_deref() == Ok("1")
+        || std::env::var("CHARLOTTE_HEADLESS_RUN_ONCE").as_deref() == Ok("1")
+    {
+        return Ok(());
     }
-
-    let manifest_path = stage_dir.join("installed_update.json");
-    let manifest = serde_json::to_string_pretty(update).map_err(|e| e.to_string())?;
-    std::fs::write(&manifest_path, manifest).map_err(|e| e.to_string())?;
-
-    // Report install receipt to server (best-effort)
-    if let Ok(client) = http_client(3) {
-        let receipt_url = format!("{}/api/v1/updates/receipt", base_url.trim_end_matches('/'));
-        let _ = client
-            .post(&receipt_url)
-            .json(&serde_json::json!({
-                "desktop_id": format!("desktop-{}", current_platform()),
-                "from_version": current_version(),
-                "to_version": update.version,
-                "platform": current_platform(),
-                "arch": current_arch(),
-                "channel": update.channel,
-                "status": "installed"
-            }))
-            .send();
+    let current = std::env::current_exe().map_err(|e| e.to_string())?;
+    let sibling = current.parent().ok_or("Charlotte executable has no parent directory")?
+        .join(if cfg!(windows) { "charlotte-updater.exe" } else { "charlotte-updater" });
+    if !sibling.is_file() {
+        return Err(format!("Updater unavailable at {} (check packaged resources)", sibling.display()));
     }
-
-    Ok(stage_dir)
+    let mut cmd = std::process::Command::new(sibling);
+    cmd.arg("--check");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW for routine checks
+    }
+    cmd.spawn().map_err(|e| format!("Unable to start separate updater: {e}"))?;
+    Ok(())
 }
 
-/// Called every time Charlotte launches.
-/// 1. Checks server for any newer update.
-/// 2. If a newer update exists, installs it automatically and marks `charlotte://updates` to open.
-/// 3. If a previously auto-installed update hasn't been acknowledged via "Continue" yet, opens `charlotte://updates`.
+/// Request a verified update installation in a *separate* updater process.
+/// Call only in response to explicit user action, not on startup.
+pub fn spawn_standalone_install() -> Result<(), String> {
+    let current = std::env::current_exe().map_err(|e| e.to_string())?;
+    let sibling = current.parent().ok_or("Charlotte executable has no parent directory")?
+        .join(if cfg!(windows) { "charlotte-updater.exe" } else { "charlotte-updater" });
+    if !sibling.is_file() { return Err("Standalone updater executable is not installed".into()); }
+    std::process::Command::new(sibling)
+        .arg("--install")
+        .spawn().map_err(|e| format!("Could not launch update installer: {e}"))?;
+    Ok(())
+}
+
+/// Called by the browser during startup. Reading locally cached metadata is
+/// safe and immediate; all network update checking happens in the companion
+/// charlotte-updater executable. An update notice is not proof it was installed.
 pub fn check_and_install_on_startup(store: &Storage) -> StartupUpdateOutcome {
-    let already_pending = store
-        .setting(KEY_PENDING_UPDATES_VERSION)
-        .ok()
-        .flatten()
-        .filter(|s| !s.trim().is_empty());
-
-    let skip_network = std::env::var("CHARLOTTE_OFFLINE_UPDATES").as_deref() == Ok("1")
-        || std::env::var("CHARLOTTE_TEST_EXIT").as_deref() == Ok("1");
-
-    if skip_network {
-        return StartupUpdateOutcome {
-            checked_server: false,
-            update_installed: false,
-            open_updates_page: already_pending.is_some(),
-            installed_version: already_pending,
-            status_message: "Skipped network update check in test/offline mode".into(),
-        };
-    }
-
-    let base = server_base_url();
-    match check_server_updates(&base, current_version()) {
-        Ok(res) => {
-            if !res.recent_updates.is_empty() {
-                if let Ok(json) = serde_json::to_string(&res.recent_updates) {
-                    let _ = store.set_setting(KEY_CACHED_UPDATES_JSON, &json);
-                }
-            }
-            if res.update_available {
-                if let Some(latest) = res.latest.as_ref() {
-                    match auto_install_update(&base, latest) {
-                        Ok(_) => {
-                            let _ = store.set_setting(KEY_PENDING_UPDATES_VERSION, &latest.version);
-                            let msg = format!("Automatically installed Charlotte v{}", latest.version);
-                            let _ = store.set_setting(KEY_LAST_CHECK_STATUS, &msg);
-                            return StartupUpdateOutcome {
-                                checked_server: true,
-                                update_installed: true,
-                                open_updates_page: true,
-                                installed_version: Some(latest.version.clone()),
-                                status_message: msg,
-                            };
-                        }
-                        Err(err) => {
-                            let msg = format!("Update v{} detected but install deferred: {err}", latest.version);
-                            let _ = store.set_setting(KEY_LAST_CHECK_STATUS, &msg);
-                            return StartupUpdateOutcome {
-                                checked_server: true,
-                                update_installed: false,
-                                open_updates_page: already_pending.is_some(),
-                                installed_version: already_pending,
-                                status_message: msg,
-                            };
-                        }
-                    }
-                }
-            }
-            let msg = format!("Up to date (v{})", current_version());
-            let _ = store.set_setting(KEY_LAST_CHECK_STATUS, &msg);
-            StartupUpdateOutcome {
-                checked_server: true,
-                update_installed: false,
-                open_updates_page: already_pending.is_some(),
-                installed_version: already_pending,
-                status_message: msg,
-            }
-        }
-        Err(err) => {
-            let msg = format!("Update check deferred: {err}");
-            let _ = store.set_setting(KEY_LAST_CHECK_STATUS, &msg);
-            StartupUpdateOutcome {
-                checked_server: false,
-                update_installed: false,
-                open_updates_page: already_pending.is_some(),
-                installed_version: already_pending,
-                status_message: msg,
-            }
-        }
+    let pending = store.setting(KEY_PENDING_UPDATES_VERSION)
+        .ok().flatten().filter(|value| !value.trim().is_empty());
+    StartupUpdateOutcome {
+        checked_server: false,
+        update_installed: false,
+        open_updates_page: pending.as_ref()
+            .is_some_and(|ver| compare_semver(ver, current_version()) > 0),
+        installed_version: None,
+        status_message: last_check_status(store),
     }
 }
 
