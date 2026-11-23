@@ -4,7 +4,7 @@
 #![cfg(target_os = "windows")]
 
 use crate::{cef_bridge::TabState, ui_server::Ui};
-use std::{sync::mpsc::Receiver, time::{Duration, Instant}};
+use std::{net::{SocketAddr, TcpStream}, sync::{Arc, Mutex, mpsc::Receiver}, time::{Duration, Instant}};
 use tao::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -68,6 +68,17 @@ pub fn run(ui: &Ui, commands: Receiver<HostCommand>) -> Result<(), String> {
         .build(&event_loop)
         .map_err(|err| format!("Could not create Charlotte window: {err}"))?;
 
+    // Wait until axum is accepting connections before WebView2 navigates.
+    let socket = SocketAddr::from(([127, 0, 0, 1], ui.port));
+    let mut server_ready = false;
+    for _ in 0..40 {
+        if TcpStream::connect_timeout(&socket, Duration::from_millis(75)).is_ok() {
+            server_ready = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(75));
+    }
+    if !server_ready { return Err("Charlotte local UI server did not become ready".to_owned()); }
     let base = format!("http://127.0.0.1:{}", ui.port);
     let initial_url = active_url(&ui.tabs)
         .map(|url| display_url(&url, &base))
@@ -80,14 +91,14 @@ pub fn run(ui: &Ui, commands: Receiver<HostCommand>) -> Result<(), String> {
         .map_err(|err| format!("Could not initialize Charlotte WebView2 toolbar: {err}"))?;
     let load_tabs = ui.tabs.clone();
     let loopback = base.clone();
+    let loaded = Arc::new(Mutex::new(initial_url.clone()));
+    let latest_loaded = loaded.clone();
     let page = WebViewBuilder::new()
         .with_on_page_load_handler(move |event, loaded_url| {
-            if !matches!(event, PageLoadEvent::Finished)
-                || loaded_url.starts_with(&loopback)
-                || !crate::session::valid_page_url(&loaded_url)
-            {
-                return;
-            }
+            if !matches!(event, PageLoadEvent::Finished) { return; }
+            if let Ok(mut current) = latest_loaded.lock() { *current = loaded_url.clone(); }
+            if loaded_url.starts_with(&loopback)
+                || !crate::session::valid_page_url(&loaded_url) { return; }
             // Links clicked inside a real WebView2 page must also update
             // Charlotte's active tab URL; avoid inventing navigation results.
             if let Ok(mut tabs) = load_tabs.lock() {
@@ -134,7 +145,10 @@ pub fn run(ui: &Ui, commands: Receiver<HostCommand>) -> Result<(), String> {
                     let target_url = display_url(target, &base);
                     // An in-page link may already have navigated this WebView;
                     // never reload it needlessly when syncing the tab state.
-                    if page.url().ok().as_deref() != Some(target_url.as_str()) {
+                    let already_loaded = loaded.lock().ok()
+                        .is_some_and(|url| url.as_str() == target_url);
+                    if !already_loaded {
+                        if let Ok(mut url) = loaded.lock() { *url = target_url.clone(); }
                         if let Err(err) = page.load_url(&target_url) {
                             eprintln!("Charlotte navigation failed: {err}");
                         }
