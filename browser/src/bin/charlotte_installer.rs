@@ -37,6 +37,44 @@ fn copy_if_present(from: &Path, to: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Wait for any running Charlotte.exe to release its Windows image mapping.
+/// The user must close the old browser; we never kill it or lose open tabs.
+#[cfg(windows)]
+fn wait_until_browser_stops(path: &Path) -> Result<(), String> {
+    if !path.is_file() { return Ok(()); }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
+    loop {
+        match fs::OpenOptions::new().write(true).open(path) {
+            Ok(_) => return Ok(()),
+            Err(error) if std::time::Instant::now() >= deadline => {
+                return Err(format!("Close all Charlotte windows before installing the update: {error}"));
+            }
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(450)),
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn wait_until_browser_stops(_path: &Path) -> Result<(), String> { Ok(()) }
+
+/// Never replace the executable via in-place copy; stage bytes first and
+/// restore the old file if the final rename fails.
+fn replace_executable(src: &Path, dest: &Path) -> Result<(), String> {
+    let stage = dest.with_extension("pending");
+    let backup = dest.with_extension("previous");
+    if stage.exists() { fs::remove_file(&stage).map_err(|e| e.to_string())?; }
+    fs::copy(src, &stage).map_err(|e| format!("Could not stage executable: {e}"))?;
+    if backup.exists() { fs::remove_file(&backup).map_err(|e| e.to_string())?; }
+    let had_old = dest.exists();
+    if had_old { fs::rename(dest, &backup).map_err(|e| format!("Could not move old browser: {e}"))?; }
+    if let Err(error) = fs::rename(&stage, dest) {
+        if had_old { let _ = fs::rename(&backup, dest); }
+        return Err(format!("Could not activate new browser: {error}"));
+    }
+    if had_old { let _ = fs::remove_file(&backup); }
+    Ok(())
+}
+
 fn copy_resource_tree(source: &Path, destination: &Path) -> Result<(), String> {
     if !source.is_dir() { return Err(format!("Missing packaged resources: {}", source.display())); }
     fs::create_dir_all(destination).map_err(|e| e.to_string())?;
@@ -143,7 +181,11 @@ fn run() -> Result<(), String> {
     }
     fs::create_dir_all(&target).map_err(|e| format!("Could not create install directory: {e}"))?;
     let installed_exe = target.join("Charlotte.exe");
-    copy_if_present(&source, &installed_exe)?;
+    if installed_exe.exists() && !silent {
+        popup("Before updating, save your tabs and close every Charlotte Browser window. The installer will wait up to 90 seconds for the browser to exit.", "Close Charlotte to Update", 0x40);
+    }
+    wait_until_browser_stops(&installed_exe)?;
+    if source != installed_exe { replace_executable(&source, &installed_exe)?; }
     copy_if_present(&bundle.join("charlotte-settings.exe"), &target.join("charlotte-settings.exe"))?;
     copy_if_present(&bundle.join("installer_channels.json"), &target.join("installer_channels.json"))?;
     let updater = bundle.join("charlotte-updater.exe");
