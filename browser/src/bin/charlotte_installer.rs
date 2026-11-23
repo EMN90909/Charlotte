@@ -37,6 +37,24 @@ fn copy_if_present(from: &Path, to: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn copy_resource_tree(source: &Path, destination: &Path) -> Result<(), String> {
+    if !source.is_dir() { return Err(format!("Missing packaged resources: {}", source.display())); }
+    fs::create_dir_all(destination).map_err(|e| e.to_string())?;
+    for item in fs::read_dir(source).map_err(|e| e.to_string())? {
+        let entry = item.map_err(|e| e.to_string())?;
+        let ty = entry.file_type().map_err(|e| e.to_string())?;
+        // Never traverse links from an untrusted adjacent directory.
+        if ty.is_symlink() { return Err("Symlink in bundled resources is not allowed".into()); }
+        let target = destination.join(entry.file_name());
+        if ty.is_dir() {
+            copy_resource_tree(&entry.path(), &target)?;
+        } else if ty.is_file() {
+            fs::copy(entry.path(), &target).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(windows)]
 fn make_shortcuts(exe: &Path, dir: &Path) -> Result<(), String> {
     // Passed through environment variables, not concatenated into PowerShell
@@ -128,6 +146,11 @@ fn run() -> Result<(), String> {
     copy_if_present(&source, &installed_exe)?;
     copy_if_present(&bundle.join("charlotte-settings.exe"), &target.join("charlotte-settings.exe"))?;
     copy_if_present(&bundle.join("installer_channels.json"), &target.join("installer_channels.json"))?;
+    let updater = bundle.join("charlotte-updater.exe");
+    if !updater.is_file() { return Err("Missing charlotte-updater.exe from release bundle".into()); }
+    copy_if_present(&updater, &target.join("charlotte-updater.exe"))?;
+    copy_resource_tree(&bundle.join("assets"), &target.join("assets"))?;
+    copy_resource_tree(&bundle.join("resources"), &target.join("resources"))?;
     let manifest = serde_json::json!({
         "app": "Charlotte",
         "version": env!("CARGO_PKG_VERSION"),
