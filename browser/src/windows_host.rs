@@ -4,7 +4,7 @@
 #![cfg(target_os = "windows")]
 
 use crate::{cef_bridge::TabState, ui_server::Ui};
-use std::time::{Duration, Instant};
+use std::{sync::mpsc::Receiver, time::{Duration, Instant}};
 use tao::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -17,6 +17,14 @@ use wry::{
 };
 
 const TOOLBAR_HEIGHT: u32 = 100;
+
+/// Commands which must run on the Win32/WebView2 UI thread, never on the
+/// background Rust server command thread.
+pub enum HostCommand {
+    Back,
+    Forward,
+    Reload,
+}
 
 fn rect(x: u32, y: u32, width: u32, height: u32) -> Rect {
     Rect {
@@ -51,7 +59,7 @@ fn resize_views(chrome: &WebView, page: &WebView, width: u32, height: u32) {
 
 /// This must run on the main Windows GUI/COM thread. The command processor
 /// runs on a worker thread and updates the shared active tab state.
-pub fn run(ui: &Ui) -> Result<(), String> {
+pub fn run(ui: &Ui, commands: Receiver<HostCommand>) -> Result<(), String> {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_title("Charlotte Browser")
@@ -91,6 +99,16 @@ pub fn run(ui: &Ui) -> Result<(), String> {
                 resize_views(&chrome, &page, size.width, size.height);
             }
             Event::MainEventsCleared => {
+                while let Ok(command) = commands.try_recv() {
+                    let outcome = match command {
+                        HostCommand::Back => page.go_back(),
+                        HostCommand::Forward => page.go_forward(),
+                        HostCommand::Reload => page.reload(),
+                    };
+                    if let Err(err) = outcome {
+                        eprintln!("Charlotte WebView2 control error: {err}");
+                    }
+                }
                 let current = active_url(&tabs);
                 if current != last_tab_url {
                     let target = current.as_deref().unwrap_or("charlotte://search");
