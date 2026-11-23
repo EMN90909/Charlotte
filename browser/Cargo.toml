@@ -2,7 +2,7 @@
 name = "Charlotte"
 version = "0.4.0"
 edition = "2024"
-description = "Charlotte Native — Rust desktop browser powered by CEF"
+description = "Charlotte Native — Rust desktop browser with CEF and WebView2 hosts"
 license-file = "LICENSE"
 authors = ["Noethric <engineering@noethric.com>"]
 build = "build.rs"
