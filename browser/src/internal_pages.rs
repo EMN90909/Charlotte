@@ -1646,7 +1646,7 @@ pub fn render_about_page(ctx: &PageContext, server_url: &str) -> String {
         crate::updater::current_platform(),
         crate::updater::current_arch(),
         if cfg!(target_os = "windows") {
-            "WebView2 COM (Windows 7–11 ESR / Evergreen)"
+            "Native WebView2 (Windows 10/11; legacy ESR unverified)"
         } else {
             "WebKitGTK (Linux)"
         },
