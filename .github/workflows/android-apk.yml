@@ -85,3 +85,27 @@ jobs:
           files: |
             release-assets/Charlotte-Android.apk
             release-assets/SHA256SUMS.txt
+
+  emulator-smoke:
+    needs: apk
+    runs-on: ubuntu-24.04
+    # Exercise actual APK install and Activity startup for explicit release runs.
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/android-v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Charlotte-Android-installable-preview
+          path: preview
+      - name: Enable hardware virtualization
+        run: sudo chmod 666 /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          script: |
+            adb install -r preview/charlotte-android-preview.apk
+            adb shell am start -W -n com.noethric.charlotte.debug/com.noethric.charlotte.MainActivity
+            adb shell pidof com.noethric.charlotte.debug | grep -Eq '^[0-9]+$'
