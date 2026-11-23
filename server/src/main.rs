@@ -8,6 +8,7 @@ use axum::{
     extract::{Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     routing::{get, post},
+    response::{IntoResponse, Response},
     Json, Router,
 };
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
@@ -167,28 +168,32 @@ async fn poll(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(query): Query<PollQuery>,
-) -> Result<(StatusCode, HeaderMap, Option<Json<PollResponse>>), StatusCode> {
+) -> Result<Response, StatusCode> {
     let claims = verify(&state, bearer(&headers)?)?;
     let cursor = query.cursor.as_deref().unwrap_or("0").parse::<u64>()
         .map_err(|_| StatusCode::BAD_REQUEST)?;
-    let rooms = lock(&state.hub)?;
-    let room = rooms.get(&claims.room);
-    let next = room.map(|r| match now_ms().saturating_sub(r.last_publish) {
-        0..=9_999 => 1_000, 10_000..=59_999 => 5_000,
-        60_000..=299_999 => 20_000, _ => 30_000,
-    }).unwrap_or(30_000);
-    let messages: Vec<Message> = room.into_iter().flat_map(|r| r.messages.iter())
-        .filter(|m| m.seq > cursor).cloned().collect();
-    let new_cursor = messages.last().map(|m| m.seq).unwrap_or(cursor);
+    // All room locks end before constructing the async HTTP response.
+    let (next, messages, new_cursor) = {
+        let rooms = lock(&state.hub)?;
+        let room = rooms.get(&claims.room);
+        let next = room.map(|r| match now_ms().saturating_sub(r.last_publish) {
+            0..=9_999 => 1_000, 10_000..=59_999 => 5_000,
+            60_000..=299_999 => 20_000, _ => 30_000,
+        }).unwrap_or(30_000);
+        let messages: Vec<Message> = room.into_iter().flat_map(|r| r.messages.iter())
+            .filter(|m| m.seq > cursor).cloned().collect();
+        let new_cursor = messages.last().map(|m| m.seq).unwrap_or(cursor);
+        (next, messages, new_cursor)
+    };
     let mut response_headers = HeaderMap::new();
     response_headers.insert("x-next-poll-ms", HeaderValue::from_str(&next.to_string()).unwrap());
-    response_headers.insert(header::ETAG, HeaderValue::from_str(&format!("\"{new_cursor}\"")).unwrap());
+    response_headers.insert(header::ETAG, HeaderValue::from_str(&format!("\\\"{new_cursor}\\\"")).unwrap());
     if messages.is_empty() {
-        return Ok((StatusCode::NOT_MODIFIED, response_headers, None));
+        return Ok((StatusCode::NOT_MODIFIED, response_headers).into_response());
     }
-    Ok((StatusCode::OK, response_headers, Some(Json(PollResponse {
+    Ok((StatusCode::OK, response_headers, Json(PollResponse {
         messages, cursor: new_cursor, next_poll_ms: next,
-    }))))
+    })).into_response())
 }
 async fn metrics(State(state): State<AppState>) -> Result<Json<Metrics>, StatusCode> {
     let (rooms,users) = lock(&state.metrics)?.snapshot();
