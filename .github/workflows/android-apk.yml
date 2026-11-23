@@ -30,7 +30,13 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Install Android compile SDK
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
       - name: Build installable debug APK
         run: gradle --no-daemon --stacktrace assembleDebug
       - name: Verify APK installation metadata, signature, and shipped assets
