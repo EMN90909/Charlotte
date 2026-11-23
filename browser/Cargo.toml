@@ -31,6 +31,12 @@ path = "src/bin/charlotte_installer.rs"
 helper_name = "charlotte_helper"
 resources_path = "resources"
 
+# Platform Web Engine Routing:
+# - Linux: WebKitGTK engine links with system GTK 3 & WebKitGTK (pkg-config `gtk+-3.0`, `webkit2gtk-4.1` / `4.0`).
+#   Dev packages: `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `pkg-config`.
+# - Windows: WebView2 engine connects via COM interfaces to WebView2Loader (Evergreen on Win10/11;
+#   Fixed Version 109 ESR on Windows 7/8/8.1 x86 & x64).
+# - CEF: Optional Chromium Embedded Framework feature ("cef-engine").
 [features]
 default = []
 cef-engine = ["dep:cef"]

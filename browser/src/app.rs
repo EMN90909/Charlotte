@@ -512,26 +512,261 @@ pub use cef_app::*;
 
 #[cfg(not(feature = "cef-engine"))]
 mod platform_app {
-    use crate::ui_server::Command;
-    use std::sync::Mutex;
+    use crate::{
+        cef_bridge::{default_filter, TabState},
+        engine::create_platform_engine,
+        tabs::Tabs,
+        ui_server::{self, Command},
+    };
+    use std::{
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            mpsc::{self, Receiver, Sender},
+            Arc, Mutex,
+        },
+        time::Duration,
+    };
 
-    static COMMANDS: Mutex<Vec<Command>> = Mutex::new(Vec::new());
+    static RESTORING: AtomicBool = AtomicBool::new(false);
+    static COMMAND_SENDER: Mutex<Option<Sender<Command>>> = Mutex::new(None);
+    static PENDING_COMMANDS: Mutex<Vec<Command>> = Mutex::new(Vec::new());
+    static ACTIVE_TABS: Mutex<Option<TabState>> = Mutex::new(None);
 
     pub fn is_restoring() -> bool {
-        false
+        RESTORING.load(Ordering::Relaxed)
     }
 
-    pub fn notify_navigation(_browser_id: i32, _url: &str) {}
+    pub fn notify_navigation(browser_id: i32, url: &str) {
+        if let Ok(guard) = ACTIVE_TABS.lock() {
+            if let Some(ref tabs_arc) = *guard {
+                if let Ok(mut tabs) = tabs_arc.lock() {
+                    tabs.navigate(browser_id, url);
+                }
+            }
+        }
+    }
 
     pub fn post_ui_command(command: Command) {
-        if let Ok(mut lock) = COMMANDS.lock() {
+        if let Ok(guard) = COMMAND_SENDER.lock() {
+            if let Some(ref tx) = *guard {
+                let _ = tx.send(command);
+                return;
+            }
+        }
+        if let Ok(mut lock) = PENDING_COMMANDS.lock() {
             lock.push(command);
         }
     }
 
     pub fn run_platform() -> Result<(), String> {
+        // 1. Ensure profile directories exist
         crate::profile::ensure_profile_dirs().map_err(|e| e.to_string())?;
-        println!("Charlotte platform web engine initialized (WebKitGTK on Linux, WebView2 on Windows).");
+        let profile_dir = crate::profile::profile_root();
+        let db_path = profile_dir.join("charlotte.sqlite");
+        let storage = crate::storage::Storage::open(&db_path).map_err(|e| e.to_string())?;
+
+        // 2. Setup command channel
+        let (tx, rx): (Sender<Command>, Receiver<Command>) = mpsc::channel();
+        if let Ok(mut guard) = COMMAND_SENDER.lock() {
+            *guard = Some(tx.clone());
+        }
+        if let Ok(mut pending) = PENDING_COMMANDS.lock() {
+            for cmd in pending.drain(..) {
+                let _ = tx.send(cmd);
+            }
+        }
+
+        // 3. Initialize tabs and restore previous session
+        let mut tabs_inner = Tabs::default();
+        let start_url = crate::session::start_page(&storage);
+
+        RESTORING.store(true, Ordering::SeqCst);
+        let saved_tabs = crate::session::restore_tabs(&storage);
+        let mut initial_tabs: Vec<(i32, String)> = Vec::new();
+
+        if !saved_tabs.urls.is_empty() {
+            tabs_inner.set_layout(saved_tabs.layout);
+            for (idx, url) in saved_tabs.urls.iter().enumerate() {
+                let tab_id = (idx as i32) + 1;
+                tabs_inner.open(tab_id);
+                tabs_inner.navigate(tab_id, url);
+                initial_tabs.push((tab_id, url.clone()));
+            }
+            if let Some(&(active_id, _)) = initial_tabs.get(saved_tabs.active_index) {
+                tabs_inner.activate(active_id);
+            }
+        } else {
+            tabs_inner.open(1);
+            tabs_inner.navigate(1, &start_url);
+            tabs_inner.activate(1);
+            initial_tabs.push((1, start_url.clone()));
+        }
+        RESTORING.store(false, Ordering::SeqCst);
+
+        let tab_state: TabState = Arc::new(Mutex::new(tabs_inner));
+        if let Ok(mut guard) = ACTIVE_TABS.lock() {
+            *guard = Some(tab_state.clone());
+        }
+
+        // 4. Initialize Shield ad/tracker filter and local UI server
+        let filter = default_filter();
+        let ui = ui_server::start(tab_state.clone(), filter.clone())?;
+
+        // 5. Initialize platform web engine
+        let mut engine = create_platform_engine();
+        for (tab_id, url) in &initial_tabs {
+            let _ = engine.render_page(*tab_id, url);
+        }
+
+        println!("========================================================================");
+        println!("Charlotte Browser v{} (Autonomous AI Browser)", env!("CARGO_PKG_VERSION"));
+        #[cfg(target_os = "windows")]
+        println!("Web Engine: WebView2 COM (Windows 7–11 multi-arch)");
+        #[cfg(target_os = "linux")]
+        println!("Web Engine: WebKitGTK (Linux x86_64 / i686)");
+        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+        println!("Web Engine: Platform Native Engine");
+        println!("Chrome UI:  {}", ui.chrome_url());
+        println!("AI Sidebar: {}", ui.sidebar_url());
+        println!("Profile:    {}", profile_dir.display());
+        println!("Storage:    {}", db_path.display());
+        println!("Status:     Running — Ready for navigation & autonomous agent tasks");
+        println!("========================================================================");
+
+        // Immediate exit mode for tests / CI smoke checks
+        if std::env::var("CHARLOTTE_TEST_EXIT").as_deref() == Ok("1")
+            || std::env::var("CHARLOTTE_HEADLESS_RUN_ONCE").as_deref() == Ok("1")
+        {
+            return Ok(());
+        }
+
+        // 6. Platform event loop handling incoming browser commands
+        let mut next_tab_id = (initial_tabs.len() as i32) + 2;
+
+        loop {
+            match rx.recv_timeout(Duration::from_millis(50)) {
+                Ok(cmd) => match cmd {
+                    Command::Sync => {
+                        let _ = crate::cef_bridge::persist_tabs(&tab_state);
+                    }
+                    Command::New(url) => {
+                        let target_url = if crate::session::valid_page_url(&url) {
+                            url
+                        } else {
+                            start_url.clone()
+                        };
+                        let new_id = next_tab_id;
+                        next_tab_id += 1;
+                        if let Ok(mut tabs) = tab_state.lock() {
+                            if tabs.open(new_id) {
+                                tabs.navigate(new_id, &target_url);
+                                let _ = engine.render_page(new_id, &target_url);
+                                let _ = crate::session::save_tabs(&storage, &tabs);
+                            }
+                        }
+                        ui.tab_selected(new_id);
+                        ui.page_changed(&target_url);
+                    }
+                    Command::Select(id) => {
+                        if let Ok(mut tabs) = tab_state.lock() {
+                            tabs.activate(id);
+                            let _ = crate::session::save_tabs(&storage, &tabs);
+                            if let Some(active) = tabs.active() {
+                                ui.page_changed(&active.url);
+                            }
+                        }
+                        ui.tab_selected(id);
+                    }
+                    Command::Close(id) => {
+                        if let Ok(mut tabs) = tab_state.lock() {
+                            tabs.close(id);
+                            let _ = engine.close_tab(id);
+                            let _ = crate::session::save_tabs(&storage, &tabs);
+                        }
+                        ui.tab_closed(id);
+                    }
+                    Command::Navigate(url) => {
+                        if let Ok(mut tabs) = tab_state.lock() {
+                            if let Some(active_id) = tabs.active_id() {
+                                tabs.navigate(active_id, &url);
+                                let _ = engine.navigate(active_id, &url);
+                                let _ = crate::session::save_tabs(&storage, &tabs);
+                            }
+                        }
+                        ui.page_changed(&url);
+                    }
+                    Command::Back => {
+                        if let Ok(tabs) = tab_state.lock() {
+                            if let Some(active_id) = tabs.active_id() {
+                                let _ = engine.go_back(active_id);
+                            }
+                        }
+                    }
+                    Command::Forward => {
+                        if let Ok(tabs) = tab_state.lock() {
+                            if let Some(active_id) = tabs.active_id() {
+                                let _ = engine.go_forward(active_id);
+                            }
+                        }
+                    }
+                    Command::Reload | Command::HardReload => {
+                        if let Ok(tabs) = tab_state.lock() {
+                            if let Some(active_id) = tabs.active_id() {
+                                let _ = engine.reload(active_id, false);
+                            }
+                        }
+                    }
+                    Command::Shields(enabled) => {
+                        let _ = storage.set_setting("shields", if enabled { "on" } else { "off" });
+                        if let Ok(mut shield) = filter.write() {
+                            shield.set_enabled(enabled);
+                        }
+                    }
+                    Command::Automation {
+                        request_id: _,
+                        browser_id,
+                        expected_origin: _,
+                        method,
+                        params,
+                        reply,
+                    } => {
+                        let res = match method.as_str() {
+                            "Runtime.evaluate" => {
+                                let expr = params.get("expression").and_then(|v| v.as_str()).unwrap_or_default();
+                                engine.execute_script(browser_id, expr)
+                            }
+                            "Page.navigate" => {
+                                let target = params.get("url").and_then(|v| v.as_str()).unwrap_or_default();
+                                engine.navigate(browser_id, target).map(|_| serde_json::json!({"frameId": "main"}))
+                            }
+                            "Page.captureScreenshot" => {
+                                engine.capture_screenshot(browser_id).map(|bytes| {
+                                    serde_json::json!({
+                                        "data": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes)
+                                    })
+                                })
+                            }
+                            _ => Err(format!("Unsupported method {} in platform engine", method)),
+                        };
+                        let _ = reply.send(res);
+                    }
+                    Command::AutomationFinished(_) => {}
+                    Command::BrowserClosed(id) => {
+                        ui.tab_closed(id);
+                    }
+                    Command::BrowserCrashed(id) => {
+                        ui.tab_crashed(id);
+                    }
+                },
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    // Idle tick: tab state persistence & periodic cleanup
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    break;
+                }
+            }
+        }
+
         Ok(())
     }
 }

@@ -90,20 +90,107 @@ cat << EOF > "${DIR_64}/windows/win8-11/installer_channels.json"
 }
 EOF
 
-# 4. Generate Linux archives
-echo "Charlotte Desktop Native Runtime v${VERSION} (32-bit Linux i686)" > "${DIR_32}/linux/README.txt"
-tar -czf "${DIR_32}/linux/charlotte-${VERSION}-linux-i686.tar.gz" -C "${DIR_32}/linux" README.txt
+# 4. Generate Linux release bundles
+echo "Packaging Linux releases..."
+LINUX_64="${DIR_64}/linux"
+LINUX_32="${DIR_32}/linux"
 
-echo "Charlotte Desktop Native Runtime v${VERSION} (64-bit Linux x86_64)" > "${DIR_64}/linux/README.txt"
-tar -czf "${DIR_64}/linux/charlotte-${VERSION}-linux-x86_64.tar.gz" -C "${DIR_64}/linux" README.txt
+# Copy compiled 64-bit binaries if present in target/release
+if [ -f "${BROWSER_DIR}/target/release/Charlotte" ]; then
+  echo "Copying 64-bit Linux release binaries to ${LINUX_64}..."
+  cp -f "${BROWSER_DIR}/target/release/Charlotte" "${LINUX_64}/Charlotte"
+  chmod +x "${LINUX_64}/Charlotte"
+fi
 
-# 5. Generate SHA256 Checksums
+if [ -f "${BROWSER_DIR}/target/release/charlotte-settings" ]; then
+  cp -f "${BROWSER_DIR}/target/release/charlotte-settings" "${LINUX_64}/charlotte-settings"
+  chmod +x "${LINUX_64}/charlotte-settings"
+fi
+
+if [ -f "${BROWSER_DIR}/target/release/charlotte-installer" ]; then
+  cp -f "${BROWSER_DIR}/target/release/charlotte-installer" "${LINUX_64}/charlotte-installer"
+  chmod +x "${LINUX_64}/charlotte-installer"
+fi
+
+# Create freedesktop desktop shortcut
+cat << 'EOF' > "${LINUX_64}/charlotte.desktop"
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Charlotte
+Comment=Autonomous AI Browser with Multi-Tab and Cloud Agent Support
+Exec=Charlotte %U
+Terminal=false
+Icon=web-browser
+Categories=Network;WebBrowser;
+MimeType=text/html;text/xml;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
+StartupWMClass=Charlotte
+EOF
+
+# Create standalone startup wrapper
+cat << 'EOF' > "${LINUX_64}/charlotte.sh"
+#!/usr/bin/env sh
+# Charlotte launcher wrapper
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+export CHARLOTTE_SERVER_URL="${CHARLOTTE_SERVER_URL:-https://api-charlotte-server.onrender.com}"
+exec "$SCRIPT_DIR/Charlotte" "$@"
+EOF
+chmod +x "${LINUX_64}/charlotte.sh"
+
+cat << EOF > "${LINUX_64}/README.txt"
+Charlotte Desktop Native Runtime v${VERSION} (64-bit Linux x86_64)
+Default Cloud Server: https://api-charlotte-server.onrender.com
+
+To run:
+  ./charlotte.sh
+or:
+  ./Charlotte
+
+System dependencies:
+  - GTK 3 (libgtk-3-0)
+  - WebKitGTK (libwebkit2gtk-4.1-0 or libwebkit2gtk-4.0-37)
+EOF
+
+(
+  cd "${LINUX_64}"
+  tar -czf "charlotte-${VERSION}-linux-x86_64.tar.gz" --exclude="*.tar.gz" *
+)
+
+# 32-bit Linux
+cat << EOF > "${LINUX_32}/README.txt"
+Charlotte Desktop Native Runtime v${VERSION} (32-bit Linux i686)
+Default Cloud Server: https://api-charlotte-server.onrender.com
+
+To build for 32-bit Linux:
+  cargo build --release --target i686-unknown-linux-gnu
+EOF
+
+(
+  cd "${LINUX_32}"
+  tar -czf "charlotte-${VERSION}-linux-i686.tar.gz" --exclude="*.tar.gz" *
+)
+
+# 5. Copy Windows release binaries if present
+if [ -f "${BROWSER_DIR}/target/release/Charlotte.exe" ]; then
+  echo "Copying Windows release binaries to dist/..."
+  cp -f "${BROWSER_DIR}/target/release/Charlotte.exe" "${DIR_64}/windows/win8-11/Charlotte.exe" 2>/dev/null || true
+  cp -f "${BROWSER_DIR}/target/release/Charlotte.exe" "${DIR_64}/windows/win7-esr/Charlotte.exe" 2>/dev/null || true
+fi
+if [ -f "${BROWSER_DIR}/target/release/charlotte-installer.exe" ]; then
+  cp -f "${BROWSER_DIR}/target/release/charlotte-installer.exe" "${DIR_64}/windows/win8-11/charlotte-installer-x64.exe" 2>/dev/null || true
+fi
+if [ -f "${BROWSER_DIR}/target/release/charlotte-settings.exe" ]; then
+  cp -f "${BROWSER_DIR}/target/release/charlotte-settings.exe" "${DIR_64}/windows/win8-11/charlotte-settings.exe" 2>/dev/null || true
+fi
+
+# 6. Generate SHA256 Checksums
 echo "Generating SHA256 checksums..."
 (
     cd "${DIST_DIR}"
-    find 32-bit 64-bit -type f | sort | xargs sha256sum > SHA256SUMS.txt
+    find 32-bit 64-bit -type f ! -name "SHA256SUMS.txt" | sort | xargs sha256sum > SHA256SUMS.txt
 )
 
 echo "=== Release Matrix Created Successfully ==="
 echo "Folder 1 (32-bit): ${DIR_32}"
 echo "Folder 2 (64-bit): ${DIR_64}"
+echo "Checksums: ${DIST_DIR}/SHA256SUMS.txt"
