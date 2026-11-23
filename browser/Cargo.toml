@@ -27,6 +27,10 @@ path = "src/bin/charlotte_helper.rs"
 name = "charlotte-installer"
 path = "src/bin/charlotte_installer.rs"
 
+[[bin]]
+name = "charlotte-updater"
+path = "src/bin/charlotte_updater.rs"
+
 [package.metadata.cef.bundle]
 helper_name = "charlotte_helper"
 resources_path = "resources"
